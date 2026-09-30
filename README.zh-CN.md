@@ -337,6 +337,9 @@ docs(workspace): update external repository revisions
 
 | 文档 | 内容 |
 | --- | --- |
+| [功能范围与覆盖矩阵](docs/features/README.md) | 基础层、主流层、差异化层和 P0/P1/P2 的完整实现范围 |
+| [仓库代码文档索引](docs/repositories/README.md) | 平台、固件和 sub2api 各子项目的代码文档入口 |
+| [第三方库选型](docs/repositories/technology-selection.md) | Go、Flutter、Vue 和 PlatformIO 的成熟库选型 |
 | [家长控制端开发文档](docs/parent_app_development.md) | Flutter 技术栈、UI 工具、模块和接口边界 |
 | [后台管理端开发文档](docs/admin_web_development.md) | Vue 管理台、权限、运营模块和组件选型 |
 | [后台服务端开发文档](docs/backend_service_development.md) | Go 服务、数据层、`sub2api` 集成和安全方案 |
