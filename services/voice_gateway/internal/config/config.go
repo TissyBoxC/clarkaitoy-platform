@@ -32,8 +32,8 @@ type LogConfig struct {
 	Level string
 }
 
-// Level returns the configured slog level.
-func (c LogConfig) Level() slog.Level {
+// SlogLevel returns the configured slog level.
+func (c LogConfig) SlogLevel() slog.Level {
 	switch strings.ToLower(c.Level) {
 	case "debug":
 		return slog.LevelDebug

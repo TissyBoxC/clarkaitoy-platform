@@ -24,7 +24,7 @@ func Run() error {
 	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: cfg.LogLevel(),
+		Level: cfg.Log.SlogLevel(),
 	}))
 	slog.SetDefault(logger)
 

@@ -5,10 +5,10 @@ import "time"
 
 // Record describes one billable or observable usage event.
 type Record struct {
-	DeviceID  string
-	Model     string
-	Latency   time.Duration
-	InputSize int
+	DeviceID   string
+	Model      string
+	Latency    time.Duration
+	InputSize  int
 	OutputSize int
 }
 
