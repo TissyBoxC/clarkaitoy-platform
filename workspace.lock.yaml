@@ -11,7 +11,7 @@ repositories:
     path: services/sub2api_fork
     url: https://github.com/TissyBoxC/sprout-sub2api-fork.git
     branch: main
-    revision: 577390b99ba9d04d4b1ca0bdf6be048d1474a3dc
+    revision: 00bd9edf13afec3d216fa96289718d0699553515
 
 upstreams:
   sub2api:

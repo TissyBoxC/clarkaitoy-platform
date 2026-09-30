@@ -22,7 +22,7 @@ $repoDefinitions = @(
         Name = 'sub2api_fork'
         Path = 'services/sub2api_fork'
         Url = 'https://github.com/TissyBoxC/sprout-sub2api-fork.git'
-        Revision = '577390b99ba9d04d4b1ca0bdf6be048d1474a3dc'
+        Revision = '00bd9edf13afec3d216fa96289718d0699553515'
     }
 )
 
