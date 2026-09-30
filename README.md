@@ -1,5 +1,7 @@
 # Clarkaitoy
 
+English | [简体中文](README.zh-CN.md)
+
 Clarkaitoy is a modular AI early-education companion platform for young children.
 The workspace contains the parent application, admin console, backend services,
 firmware, and shared contracts.
