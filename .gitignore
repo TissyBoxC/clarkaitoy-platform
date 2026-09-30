@@ -1,0 +1,67 @@
+# Local agent instructions and editor state
+AGENTS.md
+agents.md
+.idea/
+.vscode/
+*.iml
+*.sw?
+
+# Standalone repositories checked out inside the workspace
+/firmware/
+/services/sub2api/
+
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+secrets/
+
+# Go build and test output
+bin/
+coverage/
+*.test
+*.out
+*.log
+
+# Flutter/Dart generated output
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/build/
+**/android/local.properties
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/flutter_export_environment.sh
+**/macos/Flutter/ephemeral/
+**/linux/flutter/ephemeral/
+**/windows/flutter/ephemeral/
+
+# Node and frontend build output
+**/node_modules/
+**/dist/
+**/dist-ssr/
+**/.vite/
+**/*.tsbuildinfo
+**/.eslintcache
+**/test-results/
+**/playwright-report/
+
+# PlatformIO and ESP-IDF generated output
+**/bgen/
+**/.pio/
+**/managed_components/
+**/compile_commands.json
+**/sdkconfig
+**/sdkconfig.*
+!**/sdkconfig.defaults
+
+# OS and temporary files
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.tmp
+*.temp
+*~
+[$]null

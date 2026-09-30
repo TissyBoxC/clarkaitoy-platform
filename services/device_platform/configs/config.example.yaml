@@ -1,0 +1,19 @@
+http:
+  host: "0.0.0.0"
+  port: "8081"
+
+log:
+  level: "info"
+
+database:
+  dsn: "postgres://device_platform:change-me@127.0.0.1:5432/device_platform?sslmode=disable"
+
+redis:
+  address: "127.0.0.1:6379"
+  password: ""
+
+mqtt:
+  broker: "tcp://127.0.0.1:1883"
+  client_id: "device-platform"
+  username: ""
+  password: ""

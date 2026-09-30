@@ -1,0 +1,17 @@
+openapi: 3.0.3
+info:
+  title: Clarkaitoy Voice Gateway Internal API
+  version: 0.1.0
+paths:
+  /healthz:
+    get:
+      summary: Check service health
+      responses:
+        "200":
+          description: Service is healthy
+  /readyz:
+    get:
+      summary: Check service readiness
+      responses:
+        "200":
+          description: Service is ready

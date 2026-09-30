@@ -1,0 +1,58 @@
+// Package app wires and runs the voice gateway.
+package app
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/clarkaitoy/voice_gateway/internal/config"
+	gatewayhttp "github.com/clarkaitoy/voice_gateway/internal/transport/http"
+)
+
+// Run starts the voice gateway and waits for a shutdown signal.
+func Run() error {
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: cfg.LogLevel(),
+	}))
+	slog.SetDefault(logger)
+
+	server := &http.Server{
+		Addr:              cfg.HTTP.Address(),
+		Handler:           gatewayhttp.NewRouter(),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		logger.Info("voice gateway started", "address", server.Addr)
+		if serveErr := server.ListenAndServe(); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			errCh <- serveErr
+		}
+	}()
+
+	stopCh := make(chan os.Signal, 1)
+	signal.Notify(stopCh, os.Interrupt, syscall.SIGTERM)
+
+	select {
+	case err := <-errCh:
+		return fmt.Errorf("serve: %w", err)
+	case sig := <-stopCh:
+		logger.Info("shutdown requested", "signal", sig.String())
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return server.Shutdown(shutdownCtx)
+}

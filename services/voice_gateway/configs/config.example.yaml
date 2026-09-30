@@ -1,0 +1,17 @@
+http:
+  host: "0.0.0.0"
+  port: "8082"
+
+log:
+  level: "info"
+
+redis:
+  address: "127.0.0.1:6379"
+  password: ""
+
+sub2api:
+  base_url: "http://127.0.0.1:8080"
+  api_key: "change-me"
+
+security:
+  content_policy_enabled: true
