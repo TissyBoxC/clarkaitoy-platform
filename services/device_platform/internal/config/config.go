@@ -4,16 +4,17 @@ package config
 import (
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 )
 
 // Config contains runtime settings for the device platform service.
 type Config struct {
-	HTTP    HTTPConfig
-	Log     LogConfig
+	HTTP     HTTPConfig
+	Log      LogConfig
 	Database DatabaseConfig
-	Redis   RedisConfig
-	MQTT    MQTTConfig
+	Redis    RedisConfig
+	MQTT     MQTTConfig
 }
 
 // HTTPConfig contains HTTP server settings.
@@ -32,8 +33,8 @@ type LogConfig struct {
 	Level string
 }
 
-// Level returns the configured slog level.
-func (c LogConfig) Level() slog.Level {
+// SlogLevel returns the configured slog level.
+func (c LogConfig) SlogLevel() slog.Level {
 	switch strings.ToLower(c.Level) {
 	case "debug":
 		return slog.LevelDebug
@@ -82,7 +83,7 @@ func Load() (Config, error) {
 		Redis: RedisConfig{
 			Address:  env("DEVICE_PLATFORM_REDIS_ADDRESS", "127.0.0.1:6379"),
 			Password: env("DEVICE_PLATFORM_REDIS_PASSWORD", ""),
-			DB:       0,
+			DB:       envInt("DEVICE_PLATFORM_REDIS_DB", 0),
 		},
 		MQTT: MQTTConfig{
 			Broker:   env("DEVICE_PLATFORM_MQTT_BROKER", "tcp://127.0.0.1:1883"),
@@ -98,4 +99,16 @@ func env(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func envInt(key string, fallback int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }

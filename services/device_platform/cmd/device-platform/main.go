@@ -2,6 +2,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/clarkaitoy/device_platform/internal/app"
@@ -9,6 +10,7 @@ import (
 
 func main() {
 	if err := app.Run(); err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
