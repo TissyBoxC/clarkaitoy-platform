@@ -1,0 +1,22 @@
+# Contracts
+
+This directory owns cross-application and cross-service contracts. Keep
+transport-specific implementation details inside the owning application or
+service.
+
+## Contents
+
+- `openapi/` contains public HTTP API schemas.
+- `events/` contains asynchronous event schemas.
+- `mqtt/` contains device topic and payload contracts.
+- `capabilities/` contains optional hardware capability identifiers.
+
+## Rules
+
+- Use `schema_version` on every breaking contract change.
+- Keep identifiers `lower_snake_case`.
+- Keep JSON field names `snake_case`.
+- Do not place secrets, provider credentials, or environment-specific URLs in
+  this directory.
+- A contract can be removed when its consumers and generated clients are
+  removed.

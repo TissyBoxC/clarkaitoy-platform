@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0.0",
+  "capabilities": [
+    "audio_input",
+    "audio_output",
+    "wifi",
+    "camera",
+    "display",
+    "touch",
+    "led",
+    "battery",
+    "cellular_4g",
+    "motion"
+  ]
+}

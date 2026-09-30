@@ -65,3 +65,7 @@ Desktop.ini
 *.temp
 *~
 [$]null
+
+# Local service configuration
+**/config.local.*
+**/application-local.*
