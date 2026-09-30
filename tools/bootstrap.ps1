@@ -21,7 +21,7 @@ $repoDefinitions = @(
     @{
         Name = 'sub2api_fork'
         Path = 'services/sub2api_fork'
-        Url = 'https://github.com/TissyBoxC/sub2api.git'
+        Url = 'https://github.com/TissyBoxC/clarkaitoy-sub2api-fork.git'
         Revision = '42bc7f6cf'
     }
 )

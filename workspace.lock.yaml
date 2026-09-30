@@ -9,7 +9,7 @@ repositories:
 
   sub2api_fork:
     path: services/sub2api_fork
-    url: https://github.com/TissyBoxC/sub2api.git
+    url: https://github.com/TissyBoxC/clarkaitoy-sub2api-fork.git
     branch: main
     revision: 42bc7f6cf
 
