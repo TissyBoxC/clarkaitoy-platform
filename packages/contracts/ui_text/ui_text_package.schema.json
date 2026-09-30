@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clarkaitoy.example/contracts/ui_text/ui_text_package.schema.json",
+  "title": "UI text package",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "package_id",
+    "package_version",
+    "language",
+    "platform",
+    "min_client_version",
+    "published_at",
+    "entries",
+    "signature"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "package_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "package_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "language": {
+      "type": "string",
+      "pattern": "^[a-z]{2,3}(-[A-Z]{2})?$"
+    },
+    "platform": {
+      "type": "string",
+      "enum": ["parent_app", "admin_web", "device_firmware"]
+    },
+    "min_client_version": {
+      "type": "string"
+    },
+    "published_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/text_entry"
+      }
+    },
+    "signature": {
+      "$ref": "#/$defs/signature"
+    }
+  },
+  "$defs": {
+    "text_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ui_text_key",
+        "value",
+        "max_length",
+        "variables"
+      ],
+      "properties": {
+        "ui_text_key": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+        },
+        "value": {
+          "type": "string"
+        },
+        "max_length": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "variables": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "key_id", "value"],
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "const": "ed25519"
+        },
+        "key_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*$"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -9,6 +9,7 @@ import { RouterLink, RouterView } from 'vue-router'
       <nav class="admin-nav" aria-label="Primary navigation">
         <RouterLink to="/">Overview</RouterLink>
         <RouterLink to="/devices">Devices</RouterLink>
+        <RouterLink to="/ui-text">界面文案</RouterLink>
       </nav>
     </aside>
     <main class="admin-content">
