@@ -6,18 +6,27 @@ firmware, and shared contracts.
 
 ## Workspace
 
+This workspace uses a hybrid repository layout. First-party platform code is
+versioned together, while firmware and the third-party AI gateway fork remain
+independent repositories.
+
 ```text
-apps/
-  parent_app/          Flutter application for parents and guardians
-  admin_web/           Vue 3 operations console
-docs/                  Architecture and development documents
-packages/
-  contracts/           Versioned API, event, and capability contracts
-services/
-  device_platform/     Go control plane for accounts, devices, content, OTA
-  voice_gateway/       Go realtime voice and AI gateway
-  sub2api/             Independent AI gateway fork, managed separately
-firmware/              ESP32-S3 N16R8 PlatformIO project
+clarkaitoy-platform/     this repository
+  apps/
+    parent_app/          Flutter application for parents and guardians
+    admin_web/           Vue 3 operations console
+  docs/                  Architecture and development documents
+  packages/
+    contracts/           Versioned API, event, and capability contracts
+  services/
+    device_platform/     Go control plane for accounts, devices, content, OTA
+    voice_gateway/       Go realtime voice and AI gateway
+  tools/
+    bootstrap.ps1        checks out the external repositories at locked commits
+  workspace.lock.yaml    external repository revision lock
+
+clarkaitoy-firmware/     separate repository, checked out as firmware/
+clarkaitoy-sub2api-fork/ separate repository, checked out as services/sub2api_fork/
 ```
 
 ## Ownership Boundaries
@@ -34,9 +43,13 @@ firmware/              ESP32-S3 N16R8 PlatformIO project
 
 ## Repository Layout
 
-`firmware/` and `services/sub2api/` are standalone repositories checked out
-inside this workspace. They are intentionally ignored by the workspace
+`firmware/` and `services/sub2api_fork/` are standalone repositories checked
+out inside this workspace. They are intentionally ignored by the platform
 repository and must be committed in their own repositories.
+
+`workspace.lock.yaml` records the external repository revisions used by a
+platform release. Run `tools/bootstrap.ps1` to clone or update those repositories
+at the locked revisions.
 
 Shared cross-service schemas live in `packages/contracts`. Service-local
 transport contracts stay in each service's `contracts/` directory.
@@ -66,3 +79,17 @@ starting a service. Do not commit local credentials.
 
 Every functional change must remain removable without breaking unrelated
 modules. Commit one focused change set at a time with a descriptive message.
+
+## GitHub Repositories
+
+Publish the platform repository first. After that, create and push the two
+external repositories separately:
+
+```text
+platform:     clarkaitoy-platform
+firmware:     clarkaitoy-firmware
+sub2api fork: clarkaitoy-sub2api-fork
+```
+
+Keep the upstream remote on the `sub2api_fork` checkout for future rebases.
+Do not push Clarkaitoy business code into the upstream repository.

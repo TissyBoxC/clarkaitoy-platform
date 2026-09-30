@@ -8,7 +8,7 @@
 
 ```text
 services/
-  platform_api/
+  device_platform/
     cmd/server/
     internal/
       modules/
@@ -31,7 +31,12 @@ services/
     migrations/
     configs/
 
-  sub2api_fork/
+  voice_gateway/
+    cmd/
+    internal/
+    contracts/
+
+  sub2api_fork/          independent fork checked out as a separate repository
     backend/
     frontend/
     deploy/

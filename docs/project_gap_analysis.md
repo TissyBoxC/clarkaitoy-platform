@@ -11,7 +11,7 @@
 - `firmware`：独立 PlatformIO 仓库，已配置 ESP32-S3 N16R8、16 MB Flash、8 MB OPI PSRAM 和 `bgen` 构建目录。
 - `packages/contracts`：已建立共享契约的版本化目录。
 
-`services/sub2api` 是独立上游仓库，不应在这里直接混入 Clarkaitoy 业务代码。
+`services/sub2api_fork` 是独立上游 fork，不应在这里直接混入 Clarkaitoy 业务代码。
 
 ## 2. 家长端缺口
 
@@ -82,7 +82,7 @@
 - Docker Compose、配置样例、数据库和本地依赖编排。
 - CI 中的 Flutter、Go、Vue 和 PlatformIO 质量门禁。
 - 密钥管理、设备证书轮换、隐私合规和审计方案。
-- `services/sub2api` 的 fork 命名、许可证保留、升级 rebase 策略和业务适配层。
+- `services/sub2api_fork` 的许可证保留、升级 rebase 策略和业务适配层。
 
 ## 7. 推荐实施顺序
 

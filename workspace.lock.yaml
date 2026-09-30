@@ -1,0 +1,18 @@
+version: 1
+
+repositories:
+  firmware:
+    path: firmware
+    url: https://github.com/TissyBoxC/Clarkaitoy.git
+    branch: main
+    revision: ff3eb53
+
+  sub2api_fork:
+    path: services/sub2api_fork
+    url: https://github.com/TissyBoxC/sub2api.git
+    branch: main
+    revision: 42bc7f6cf
+
+upstreams:
+  sub2api:
+    url: https://github.com/Wei-Shaw/sub2api.git

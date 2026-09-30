@@ -8,7 +8,7 @@ agents.md
 
 # Standalone repositories checked out inside the workspace
 /firmware/
-/services/sub2api/
+/services/sub2api_fork/
 
 # Environment files and secrets
 .env
