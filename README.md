@@ -17,7 +17,6 @@ clarkaitoy-platform/     this repository
   apps/
     parent_app/          Flutter application for parents and guardians
     admin_web/           Vue 3 operations console
-  docs/                  Architecture and development documents
   packages/
     contracts/           Versioned API, event, and capability contracts
   services/
@@ -83,11 +82,6 @@ Every functional change must remain removable without breaking unrelated
 modules. Commit one focused change set at a time with a descriptive message.
 
 ## GitHub Repositories
-
-Repository-level code documentation starts at
-[`docs/repositories/README.md`](docs/repositories/README.md). Feature scope and
-the P0/P1/P2 coverage matrix live in
-[`docs/features/feature-coverage.md`](docs/features/feature-coverage.md).
 
 Publish the platform repository first. After that, create and push the two
 external repositories separately:

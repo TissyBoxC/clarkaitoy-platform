@@ -11,7 +11,7 @@ Clarkaitoy 是面向幼儿的模块化 AI 早教陪伴平台，覆盖游戏机�
 ## 当前阶段
 
 当前仓库处于工程骨架阶段，各项目已经建立可运行入口和模块边界，但大部分业务
-尚未实现。各端的实际完成度见[项目缺口与下一阶段计划](docs/project_gap_analysis.md)。
+尚未实现。
 
 已经具备：
 
@@ -73,7 +73,6 @@ clarkaitoy-platform/       当前平台仓库
   apps/
     parent_app/            Flutter 家长控制端
     admin_web/             Vue 3 后台管理端
-  docs/                    架构、开发和仓库指南
   packages/
     contracts/             OpenAPI、事件、MQTT 和 capability 契约
   services/
@@ -107,13 +106,6 @@ clarkaitoy-sub2api-fork/   独立 fork 仓库，本地路径为 services/sub2api
 | 固件构建目录 | `bgen/` |
 | API 契约 | OpenAPI 3；异步消息预留 AsyncAPI 或事件 Schema |
 | 观测 | OpenTelemetry、Prometheus、Grafana、Loki、Jaeger 或 Tempo |
-
-详细的库选型和模块职责见：
-
-- [家长控制端开发文档](docs/parent_app_development.md)
-- [后台管理端开发文档](docs/admin_web_development.md)
-- [后台服务端开发文档](docs/backend_service_development.md)
-- [游戏机本体开发文档](docs/device_firmware_development.md)
 
 ## 环境准备
 
@@ -330,22 +322,7 @@ docs(workspace): update external repository revisions
 
 每次修改前，先确认对应仓库工作区干净且已有提交作为回归基线。每个独立功能完成
 后，由开发者或执行修改的 AI 生成一次聚焦的 commit。修改外部仓库时必须在对应
-仓库内提交和推送，不在平台仓库中混入其源码。完整流程见
-[GitHub 仓库与上传指南](docs/github_repository_guide.md)。
-
-## 文档索引
-
-| 文档 | 内容 |
-| --- | --- |
-| [功能范围与覆盖矩阵](docs/features/README.md) | 基础层、主流层、差异化层和 P0/P1/P2 的完整实现范围 |
-| [仓库代码文档索引](docs/repositories/README.md) | 平台、固件和 sub2api 各子项目的代码文档入口 |
-| [第三方库选型](docs/repositories/technology-selection.md) | Go、Flutter、Vue 和 PlatformIO 的成熟库选型 |
-| [家长控制端开发文档](docs/parent_app_development.md) | Flutter 技术栈、UI 工具、模块和接口边界 |
-| [后台管理端开发文档](docs/admin_web_development.md) | Vue 管理台、权限、运营模块和组件选型 |
-| [后台服务端开发文档](docs/backend_service_development.md) | Go 服务、数据层、`sub2api` 集成和安全方案 |
-| [游戏机本体开发文档](docs/device_firmware_development.md) | ESP32-S3 固件模块、语音链路、开关和构建方式 |
-| [项目缺口与下一阶段计划](docs/project_gap_analysis.md) | 当前基线、未完成能力、风险和推荐实施顺序 |
-| [GitHub 仓库与上传指南](docs/github_repository_guide.md) | 仓库划分、远端配置、提交规范和推送检查 |
+仓库内提交和推送，不在平台仓库中混入其源码。
 
 ## 近期重点
 

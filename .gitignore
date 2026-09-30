@@ -10,6 +10,19 @@ agents.md
 /firmware/
 /services/sub2api_fork/
 
+# Repository content policy: only code, runtime assets, and README files
+docs/
+documentation/
+openspec/
+skills/
+dev-docs/
+*.md
+!README.md
+!README.*.md
+!**/README.md
+!**/README.*.md
+!**/README
+
 # Environment files and secrets
 .env
 .env.*
