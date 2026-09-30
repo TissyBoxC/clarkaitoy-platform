@@ -3,7 +3,7 @@ version: 1
 repositories:
   firmware:
     path: firmware
-    url: https://github.com/TissyBoxC/Clarkaitoy.git
+    url: https://github.com/TissyBoxC/clarkaitoy-firmware.git
     branch: main
     revision: ff3eb53
 

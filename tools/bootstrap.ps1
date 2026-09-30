@@ -15,7 +15,7 @@ $repoDefinitions = @(
     @{
         Name = 'firmware'
         Path = 'firmware'
-        Url = 'https://github.com/TissyBoxC/Clarkaitoy.git'
+        Url = 'https://github.com/TissyBoxC/clarkaitoy-firmware.git'
         Revision = 'ff3eb53'
     },
     @{
@@ -45,7 +45,10 @@ foreach ($repository in $repoDefinitions) {
     Write-Host "Locked revision: $($repository.Revision)"
     Write-Host "Current revision: $currentRevision"
 
-    if ($currentRevision -ne $repository.Revision) {
+    if (-not $currentRevision.StartsWith(
+        $repository.Revision,
+        [System.StringComparison]::OrdinalIgnoreCase
+    )) {
         Write-Warning "Checkout does not match workspace.lock.yaml: $($repository.Name)"
     }
 }
