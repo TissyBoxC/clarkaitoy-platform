@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Clarkaitoy Voice Gateway Internal API
+  title: 芽系列·初芽 Voice Gateway Internal API
   version: 0.1.0
 paths:
   /healthz:

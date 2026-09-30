@@ -12,8 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/clarkaitoy/voice_gateway/internal/config"
-	gatewayhttp "github.com/clarkaitoy/voice_gateway/internal/transport/http"
+	"github.com/TissyBoxC/sprout-platform/services/voice_gateway/internal/config"
+	gatewayhttp "github.com/TissyBoxC/sprout-platform/services/voice_gateway/internal/transport/http"
 )
 
 // Run starts the voice gateway and waits for a shutdown signal.

@@ -4,7 +4,7 @@ package aliyun
 import (
 	"context"
 
-	"github.com/clarkaitoy/voice_gateway/internal/adapter/asr"
+	"github.com/TissyBoxC/sprout-platform/services/voice_gateway/internal/adapter/asr"
 )
 
 // Client implements the ASR adapter using Alibaba Cloud.

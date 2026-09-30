@@ -10,7 +10,7 @@ class ParentApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: 'Clarkaitoy',
+      title: '如此萌屋',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       routerConfig: createAppRouter(),

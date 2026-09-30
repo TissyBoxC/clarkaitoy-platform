@@ -1,8 +1,10 @@
-# Clarkaitoy
+# 如此萌屋
 
 English | [简体中文](README.zh-CN.md)
 
-Clarkaitoy is a modular AI early-education companion platform for young children.
+## 芽系列·初芽
+
+“芽系列·初芽” is a modular AI early-education companion platform for young children.
 The workspace contains the parent application, admin console, backend services,
 firmware, and shared contracts.
 
@@ -13,7 +15,7 @@ versioned together, while firmware and the third-party AI gateway fork remain
 independent repositories.
 
 ```text
-clarkaitoy-platform/     this repository
+sprout-platform/         this repository
   apps/
     parent_app/          Flutter application for parents and guardians
     admin_web/           Vue 3 operations console
@@ -26,8 +28,8 @@ clarkaitoy-platform/     this repository
     bootstrap.ps1        checks out the external repositories at locked commits
   workspace.lock.yaml    external repository revision lock
 
-clarkaitoy-firmware/     separate repository, checked out as firmware/
-clarkaitoy-sub2api-fork/ separate repository, checked out as services/sub2api_fork/
+sprout-firmware/         separate repository, checked out as firmware/
+sprout-sub2api-fork/     separate repository, checked out as services/sub2api_fork/
 ```
 
 ## Ownership Boundaries
@@ -87,10 +89,10 @@ Publish the platform repository first. After that, create and push the two
 external repositories separately:
 
 ```text
-platform:     clarkaitoy-platform
-firmware:     clarkaitoy-firmware
-sub2api fork: clarkaitoy-sub2api-fork
+platform:     sprout-platform
+firmware:     sprout-firmware
+sub2api fork: sprout-sub2api-fork
 ```
 
 Keep the upstream remote on the `sub2api_fork` checkout for future rebases.
-Do not push Clarkaitoy business code into the upstream repository.
+Do not push “芽系列·初芽” business code into the upstream repository.

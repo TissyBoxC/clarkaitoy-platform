@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://clarkaitoy.example/contracts/ui_text/ui_text_package.schema.json",
+  "$id": "https://sprout.example/contracts/ui_text/ui_text_package.schema.json",
   "title": "UI text package",
   "type": "object",
   "additionalProperties": false,

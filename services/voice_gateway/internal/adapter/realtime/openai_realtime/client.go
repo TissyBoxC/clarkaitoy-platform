@@ -4,7 +4,7 @@ package openai_realtime
 import (
 	"context"
 
-	"github.com/clarkaitoy/voice_gateway/internal/adapter/realtime"
+	"github.com/TissyBoxC/sprout-platform/services/voice_gateway/internal/adapter/realtime"
 )
 
 // Client connects to the OpenAI Realtime API.

@@ -1,8 +1,10 @@
-# Clarkaitoy
+# 如此萌屋
 
 [English](README.md) | 简体中文
 
-Clarkaitoy 是面向幼儿的模块化 AI 早教陪伴平台，覆盖游戏机本体、家长控制端、
+## 芽系列·初芽
+
+“芽系列·初芽”是面向幼儿的模块化 AI 早教陪伴平台，覆盖游戏机本体、家长控制端、
 后台管理端、业务服务、实时语音服务和共享契约。
 
 项目按“功能可独立增加、独立删除”的原则组织。设备不支持摄像头、屏幕、触摸、
@@ -69,7 +71,7 @@ Clarkaitoy 是面向幼儿的模块化 AI 早教陪伴平台，覆盖游戏机�
 保持独立仓库，并在平台工作区中以固定版本检出。
 
 ```text
-clarkaitoy-platform/       当前平台仓库
+sprout-platform/           当前平台仓库
   apps/
     parent_app/            Flutter 家长控制端
     admin_web/             Vue 3 后台管理端
@@ -82,8 +84,8 @@ clarkaitoy-platform/       当前平台仓库
     bootstrap.ps1          检出或更新锁定版本的外部仓库
   workspace.lock.yaml      外部仓库版本锁定
 
-clarkaitoy-firmware/       独立固件仓库，本地路径为 firmware/
-clarkaitoy-sub2api-fork/   独立 fork 仓库，本地路径为 services/sub2api_fork/
+sprout-firmware/           独立固件仓库，本地路径为 firmware/
+sprout-sub2api-fork/       独立 fork 仓库，本地路径为 services/sub2api_fork/
 ```
 
 `firmware/` 和 `services/sub2api_fork/` 由平台根目录的 `.gitignore` 排除，
@@ -132,8 +134,8 @@ clarkaitoy-sub2api-fork/   独立 fork 仓库，本地路径为 services/sub2api
 ```
 
 外部仓库必须位于 `workspace.lock.yaml` 记录的版本。`sub2api_fork` 同时保留
-`origin` 和 `upstream`：`origin` 是可修改的 Clarkaitoy fork，`upstream` 只用于
-同步上游代码，禁止向 `upstream` 推送 Clarkaitoy 业务。
+`origin` 和 `upstream`：`origin` 是可修改的 `sprout-sub2api-fork`，
+`upstream` 只用于同步上游代码，禁止向 `upstream` 推送“芽系列·初芽”业务。
 
 ## 本地运行
 
@@ -289,9 +291,9 @@ platformio run -e esp32-s3-n16r8
 
 | 仓库 | 本地路径 | 用途 |
 | --- | --- | --- |
-| `clarkaitoy-platform` | `D:\service\clarkaitoy` | 应用、服务、共享契约和文档 |
-| `clarkaitoy-firmware` | `D:\service\clarkaitoy\firmware` | ESP32-S3 固件 |
-| `clarkaitoy-sub2api-fork` | `D:\service\clarkaitoy\services\sub2api_fork` | `sub2api` fork |
+| `sprout-platform` | `D:\service\clarkaitoy` | 应用、服务、共享契约和文档 |
+| `sprout-firmware` | `D:\service\clarkaitoy\firmware` | ESP32-S3 固件 |
+| `sprout-sub2api-fork` | `D:\service\clarkaitoy\services\sub2api_fork` | `sub2api` fork |
 
 提交信息统一使用：
 

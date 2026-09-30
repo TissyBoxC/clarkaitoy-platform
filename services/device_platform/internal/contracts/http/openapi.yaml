@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Clarkaitoy Device Platform API
+  title: 芽系列·初芽 Device Platform API
   version: 0.1.0
 paths:
   /healthz:

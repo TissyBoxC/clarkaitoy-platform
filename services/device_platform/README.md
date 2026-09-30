@@ -1,6 +1,6 @@
 # Device Platform
 
-Game console business service for Clarkaitoy.
+Game console business service for 如此萌屋 · 芽系列·初芽.
 
 ## Responsibilities
 

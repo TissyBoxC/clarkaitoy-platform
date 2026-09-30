@@ -12,8 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/clarkaitoy/device_platform/internal/config"
-	platformhttp "github.com/clarkaitoy/device_platform/internal/transport/http"
+	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/config"
+	platformhttp "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/transport/http"
 )
 
 // Run starts the HTTP server and waits for a shutdown signal.

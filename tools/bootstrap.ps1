@@ -15,14 +15,14 @@ $repoDefinitions = @(
     @{
         Name = 'firmware'
         Path = 'firmware'
-        Url = 'https://github.com/TissyBoxC/clarkaitoy-firmware.git'
-        Revision = 'ff3eb53'
+        Url = 'https://github.com/TissyBoxC/sprout-firmware.git'
+        Revision = '97c3b802998a28f30c0adcc4783b1be7b7a0d9a9'
     },
     @{
         Name = 'sub2api_fork'
         Path = 'services/sub2api_fork'
-        Url = 'https://github.com/TissyBoxC/clarkaitoy-sub2api-fork.git'
-        Revision = '42bc7f6cf'
+        Url = 'https://github.com/TissyBoxC/sprout-sub2api-fork.git'
+        Revision = '577390b99ba9d04d4b1ca0bdf6be048d1474a3dc'
     }
 )
 

@@ -1,11 +1,11 @@
-// Command voice-gateway starts the Clarkaitoy realtime voice gateway.
+// Command voice-gateway starts the 芽系列·初芽 realtime voice gateway.
 package main
 
 import (
 	"fmt"
 	"os"
 
-	"github.com/clarkaitoy/voice_gateway/internal/app"
+	"github.com/TissyBoxC/sprout-platform/services/voice_gateway/internal/app"
 )
 
 func main() {

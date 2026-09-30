@@ -4,7 +4,7 @@ package local_piper
 import (
 	"context"
 
-	"github.com/clarkaitoy/voice_gateway/internal/adapter/tts"
+	"github.com/TissyBoxC/sprout-platform/services/voice_gateway/internal/adapter/tts"
 )
 
 // Client implements the TTS adapter using a local Piper service.

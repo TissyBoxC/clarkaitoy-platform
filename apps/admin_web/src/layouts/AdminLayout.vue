@@ -5,7 +5,7 @@ import { RouterLink, RouterView } from 'vue-router'
 <template>
   <div class="admin-layout">
     <aside class="admin-sidebar">
-      <RouterLink class="brand" to="/">Clarkaitoy</RouterLink>
+      <RouterLink class="brand" to="/">如此萌屋</RouterLink>
       <nav class="admin-nav" aria-label="Primary navigation">
         <RouterLink to="/">Overview</RouterLink>
         <RouterLink to="/devices">Devices</RouterLink>

@@ -4,7 +4,7 @@ package openai
 import (
 	"context"
 
-	"github.com/clarkaitoy/voice_gateway/internal/adapter/tts"
+	"github.com/TissyBoxC/sprout-platform/services/voice_gateway/internal/adapter/tts"
 )
 
 // Client implements the TTS adapter using OpenAI.

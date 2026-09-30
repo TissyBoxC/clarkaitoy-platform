@@ -4,7 +4,7 @@ package sub2api_client
 import (
 	"context"
 
-	"github.com/clarkaitoy/voice_gateway/internal/llm"
+	"github.com/TissyBoxC/sprout-platform/services/voice_gateway/internal/llm"
 )
 
 // Client sends chat requests to the sub2api AI gateway.

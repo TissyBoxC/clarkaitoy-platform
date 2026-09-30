@@ -1,11 +1,11 @@
-// Command device-platform starts the Clarkaitoy device management service.
+// Command device-platform starts the 芽系列·初芽 device management service.
 package main
 
 import (
 	"fmt"
 	"os"
 
-	"github.com/clarkaitoy/device_platform/internal/app"
+	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/app"
 )
 
 func main() {

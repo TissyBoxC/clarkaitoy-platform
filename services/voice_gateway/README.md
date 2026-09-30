@@ -1,6 +1,6 @@
 # Voice Gateway
 
-Realtime voice gateway for Clarkaitoy game consoles.
+Realtime voice gateway for 如此萌屋 · 芽系列·初芽 game consoles.
 
 ## Responsibilities
 

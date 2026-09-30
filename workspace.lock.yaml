@@ -3,15 +3,15 @@ version: 1
 repositories:
   firmware:
     path: firmware
-    url: https://github.com/TissyBoxC/clarkaitoy-firmware.git
+    url: https://github.com/TissyBoxC/sprout-firmware.git
     branch: main
-    revision: ff3eb53
+    revision: 97c3b802998a28f30c0adcc4783b1be7b7a0d9a9
 
   sub2api_fork:
     path: services/sub2api_fork
-    url: https://github.com/TissyBoxC/clarkaitoy-sub2api-fork.git
+    url: https://github.com/TissyBoxC/sprout-sub2api-fork.git
     branch: main
-    revision: 42bc7f6cf
+    revision: 577390b99ba9d04d4b1ca0bdf6be048d1474a3dc
 
 upstreams:
   sub2api:

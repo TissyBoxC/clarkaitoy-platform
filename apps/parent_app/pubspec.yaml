@@ -1,5 +1,5 @@
 name: parent_app
-description: "Clarkaitoy parent and guardian control application."
+description: "Sprout parent and guardian control application for 如此萌屋 · 芽系列·初芽."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
