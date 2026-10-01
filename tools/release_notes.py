@@ -257,10 +257,19 @@ def localize_description(description: str) -> str:
     if not words:
         return description
 
+    # Preserve the original wording when a commit is already readable in
+    # Chinese, so release notes stay specific instead of becoming generic.
+    if contains_cjk(description):
+        return description.rstrip("。.!！")
+
     action = DESCRIPTION_TITLES.get(words[0].lower())
     if action is None:
-        return "完善相关功能"
+        return description
     return action
+
+
+def contains_cjk(text: str) -> bool:
+    return any("\u4e00" <= character <= "\u9fff" for character in text)
 
 
 def main() -> int:
