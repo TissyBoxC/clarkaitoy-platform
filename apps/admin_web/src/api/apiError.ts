@@ -1,5 +1,7 @@
 import axios from 'axios'
 
+import type { APIResponseEnvelope } from '../../../../packages/contracts/generated/typescript/envelope'
+
 /// Categories let pages choose a safe next action without reading raw errors.
 export type ApiErrorKind =
   | 'unauthenticated'
@@ -18,19 +20,11 @@ export interface ApiError {
   retryable: boolean
 }
 
-interface ErrorEnvelope {
-  error?: {
-    code?: string
-    message?: string
-    retryable?: boolean
-  }
-}
-
 /// Maps transport and contract errors to stable user-facing categories.
 export function mapApiError(error: unknown): ApiError {
   if (axios.isAxiosError(error)) {
     const status = error.response?.status
-    const envelope = error.response?.data as ErrorEnvelope | undefined
+    const envelope = error.response?.data as APIResponseEnvelope | undefined
     const code = envelope?.error?.code
 
     if (status === 401) {

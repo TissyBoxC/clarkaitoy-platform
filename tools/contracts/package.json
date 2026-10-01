@@ -3,11 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "generate": "node generate_contract_types.mjs",
     "validate": "node validate_contracts.mjs"
   },
   "devDependencies": {
     "ajv": "^8.17.1",
-    "ajv-formats": "^3.0.1"
+    "ajv-formats": "^3.0.1",
+    "quicktype-core": "^26.0.0"
   },
   "engines": {
     "node": ">=22"

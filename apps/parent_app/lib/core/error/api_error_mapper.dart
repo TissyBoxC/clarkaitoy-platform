@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
 
+import '../contracts/generated/envelope.dart';
+
 import 'app_exception.dart';
 
 /// Maps transport and contract failures to stable user-facing errors.
@@ -78,12 +80,28 @@ AppException mapApiError(Object error) {
 }
 
 String? _readErrorCode(Object? responseData) {
-  if (responseData is! Map) {
+  final ErrorResponseSchema? error = _readError(responseData);
+  if (error == null) {
     return null;
   }
-  final error = responseData['error'];
-  if (error is! Map) {
-    return null;
+  return error.code;
+}
+
+ErrorResponseSchema? _readError(Object? responseData) {
+  if (responseData is Map) {
+    final error = responseData['error'];
+    if (error is Map) {
+      final code = error['code'];
+      final message = error['message'];
+      final retryable = error['retryable'];
+      if (code is String && message is String && retryable is bool) {
+        return ErrorResponseSchema(
+          code: code,
+          message: message,
+          retryable: retryable,
+        );
+      }
+    }
   }
-  return error['code'] as String?;
+  return null;
 }
