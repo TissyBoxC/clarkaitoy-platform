@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/TissyBoxC/sprout-platform/packages/go/observability"
 	"github.com/TissyBoxC/sprout-platform/services/voice_gateway/internal/config"
 	gatewayhttp "github.com/TissyBoxC/sprout-platform/services/voice_gateway/internal/transport/http"
 )
@@ -23,14 +24,17 @@ func Run() error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: cfg.Log.SlogLevel(),
-	}))
+	logger := slog.New(observability.NewRedactingHandler(slog.NewJSONHandler(
+		os.Stdout,
+		&slog.HandlerOptions{
+			Level: cfg.Log.SlogLevel(),
+		},
+	)))
 	slog.SetDefault(logger)
 
 	server := &http.Server{
 		Addr:              cfg.HTTP.Address(),
-		Handler:           gatewayhttp.NewRouter(),
+		Handler:           gatewayhttp.NewRouter(logger),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

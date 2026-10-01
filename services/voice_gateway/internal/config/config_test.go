@@ -17,3 +17,13 @@ func TestLoadReadsServiceSettings(t *testing.T) {
 		t.Fatalf("unexpected sub2api URL: %q", cfg.Sub2API.BaseURL)
 	}
 }
+
+func TestLoadUsesConservativeSecurityDefaults(t *testing.T) {
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned unexpected error: %v", err)
+	}
+	if !cfg.Security.ContentPolicyEnabled {
+		t.Fatal("content policy must be enabled by default")
+	}
+}
