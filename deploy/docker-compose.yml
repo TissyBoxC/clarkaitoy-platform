@@ -66,7 +66,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "mosquitto_sub -h 127.0.0.1 -p 1883 -t '$$SYS/broker/version' -C 1 -W 3 >/dev/null 2>&1",
+          "mosquitto_sub -h 127.0.0.1 -p 8883 --cafile /mosquitto/certs/ca.crt --cert /mosquitto/certs/device.crt --key /mosquitto/certs/device.key -t '$$SYS/broker/version' -C 1 -W 3 >/dev/null 2>&1",
         ]
       interval: 15s
       timeout: 5s

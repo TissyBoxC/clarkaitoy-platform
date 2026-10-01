@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
@@ -48,7 +49,18 @@ if (missingVariables.length > 0) {
 
 const localEnvironment = path.join(workspaceRoot, 'deploy', '.env')
 if (existsSync(localEnvironment)) {
-  throw new Error('deploy/.env must not be present in a source checkout')
+  if (process.env.CI === 'true') {
+    throw new Error('deploy/.env must not be present in CI')
+  }
+
+  try {
+    execFileSync('git', ['check-ignore', '--quiet', '--', 'deploy/.env'], {
+      cwd: workspaceRoot,
+      stdio: 'ignore',
+    })
+  } catch {
+    throw new Error('deploy/.env must be ignored by Git')
+  }
 }
 const certificateDirectory = path.join(workspaceRoot, 'deploy', 'mosquitto', 'certs')
 if (process.env.CI === 'true' && existsSync(certificateDirectory)) {
