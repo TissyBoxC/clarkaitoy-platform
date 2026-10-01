@@ -2,14 +2,17 @@
 package config
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 )
 
 // Config contains runtime settings for the voice gateway.
 type Config struct {
 	HTTP     HTTPConfig
+	Internal InternalAPIConfig
 	Log      LogConfig
 	Redis    RedisConfig
 	Sub2API  Sub2APIConfig
@@ -25,6 +28,12 @@ type HTTPConfig struct {
 // Address returns the HTTP listen address.
 func (c HTTPConfig) Address() string {
 	return c.Host + ":" + c.Port
+}
+
+// InternalAPIConfig contains service-to-service management API settings.
+type InternalAPIConfig struct {
+	Enabled   bool
+	AuthToken string
 }
 
 // LogConfig contains logging settings.
@@ -65,10 +74,14 @@ type SecurityConfig struct {
 
 // Load reads configuration from environment variables with local defaults.
 func Load() (Config, error) {
-	return Config{
+	cfg := Config{
 		HTTP: HTTPConfig{
 			Host: env("VOICE_GATEWAY_HTTP_HOST", "0.0.0.0"),
 			Port: env("VOICE_GATEWAY_HTTP_PORT", "8082"),
+		},
+		Internal: InternalAPIConfig{
+			Enabled:   envBool("VOICE_GATEWAY_INTERNAL_API_ENABLED", false),
+			AuthToken: env("VOICE_GATEWAY_INTERNAL_API_TOKEN", ""),
 		},
 		Log: LogConfig{
 			Level: env("VOICE_GATEWAY_LOG_LEVEL", "info"),
@@ -84,7 +97,13 @@ func Load() (Config, error) {
 		Security: SecurityConfig{
 			ContentPolicyEnabled: true,
 		},
-	}, nil
+	}
+
+	if cfg.Internal.Enabled && len(strings.TrimSpace(cfg.Internal.AuthToken)) < 32 {
+		return Config{}, fmt.Errorf("VOICE_GATEWAY_INTERNAL_API_TOKEN must contain at least 32 characters when the internal API is enabled")
+	}
+
+	return cfg, nil
 }
 
 func env(key, fallback string) string {
@@ -92,4 +111,16 @@ func env(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func envBool(key string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }

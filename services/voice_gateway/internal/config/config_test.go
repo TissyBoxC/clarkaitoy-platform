@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestLoadReadsServiceSettings(t *testing.T) {
 	t.Setenv("VOICE_GATEWAY_HTTP_PORT", "9090")
@@ -25,5 +28,33 @@ func TestLoadUsesConservativeSecurityDefaults(t *testing.T) {
 	}
 	if !cfg.Security.ContentPolicyEnabled {
 		t.Fatal("content policy must be enabled by default")
+	}
+	if cfg.Internal.Enabled {
+		t.Fatal("internal API must be disabled by default")
+	}
+}
+
+func TestLoadReadsInternalAPISettings(t *testing.T) {
+	t.Setenv("VOICE_GATEWAY_INTERNAL_API_ENABLED", "true")
+	t.Setenv("VOICE_GATEWAY_INTERNAL_API_TOKEN", strings.Repeat("t", 32))
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned unexpected error: %v", err)
+	}
+	if !cfg.Internal.Enabled {
+		t.Fatal("expected internal API to be enabled")
+	}
+	if cfg.Internal.AuthToken != strings.Repeat("t", 32) {
+		t.Fatalf("unexpected internal API token: %q", cfg.Internal.AuthToken)
+	}
+}
+
+func TestLoadRejectsEnabledInternalAPIWithoutStrongToken(t *testing.T) {
+	t.Setenv("VOICE_GATEWAY_INTERNAL_API_ENABLED", "true")
+	t.Setenv("VOICE_GATEWAY_INTERNAL_API_TOKEN", "short-token")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected weak internal API token to be rejected")
 	}
 }
