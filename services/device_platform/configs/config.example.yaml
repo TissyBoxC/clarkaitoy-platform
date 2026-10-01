@@ -18,7 +18,11 @@ redis:
   password: ""
 
 mqtt:
-  broker: "tcp://127.0.0.1:1883"
+  broker: "tls://127.0.0.1:8883"
   client_id: "device-platform"
   username: ""
   password: ""
+  ca_file: "deploy/mosquitto/certs/ca.crt"
+  client_certificate_file: "deploy/mosquitto/certs/device.crt"
+  client_key_file: "deploy/mosquitto/certs/device.key"
+  insecure_skip_verify: false

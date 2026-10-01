@@ -69,10 +69,14 @@ type RedisConfig struct {
 
 // MQTTConfig contains MQTT broker settings.
 type MQTTConfig struct {
-	Broker   string
-	ClientID string
-	Username string
-	Password string
+	Broker                string
+	ClientID              string
+	Username              string
+	Password              string
+	CAFile                string
+	ClientCertificateFile string
+	ClientKeyFile         string
+	InsecureSkipVerify    bool
 }
 
 // Load reads configuration from environment variables with local defaults.
@@ -98,15 +102,22 @@ func Load() (Config, error) {
 			DB:       envInt("DEVICE_PLATFORM_REDIS_DB", 0),
 		},
 		MQTT: MQTTConfig{
-			Broker:   env("DEVICE_PLATFORM_MQTT_BROKER", "tcp://127.0.0.1:1883"),
-			ClientID: env("DEVICE_PLATFORM_MQTT_CLIENT_ID", "device-platform"),
-			Username: env("DEVICE_PLATFORM_MQTT_USERNAME", ""),
-			Password: env("DEVICE_PLATFORM_MQTT_PASSWORD", ""),
+			Broker:                env("DEVICE_PLATFORM_MQTT_BROKER", "tls://127.0.0.1:8883"),
+			ClientID:              env("DEVICE_PLATFORM_MQTT_CLIENT_ID", "device-platform"),
+			Username:              env("DEVICE_PLATFORM_MQTT_USERNAME", ""),
+			Password:              env("DEVICE_PLATFORM_MQTT_PASSWORD", ""),
+			CAFile:                env("DEVICE_PLATFORM_MQTT_CA_FILE", ""),
+			ClientCertificateFile: env("DEVICE_PLATFORM_MQTT_CLIENT_CERTIFICATE_FILE", ""),
+			ClientKeyFile:         env("DEVICE_PLATFORM_MQTT_CLIENT_KEY_FILE", ""),
+			InsecureSkipVerify:    envBool("DEVICE_PLATFORM_MQTT_INSECURE_SKIP_VERIFY", false),
 		},
 	}
 
 	if cfg.Internal.Enabled && len(strings.TrimSpace(cfg.Internal.AuthToken)) < 32 {
 		return Config{}, fmt.Errorf("DEVICE_PLATFORM_INTERNAL_API_TOKEN must contain at least 32 characters when the internal API is enabled")
+	}
+	if cfg.MQTT.InsecureSkipVerify {
+		return Config{}, fmt.Errorf("DEVICE_PLATFORM_MQTT_INSECURE_SKIP_VERIFY must remain false")
 	}
 
 	return cfg, nil

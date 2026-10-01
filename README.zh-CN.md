@@ -149,7 +149,6 @@ sprout-sub2api-fork/       独立 fork 仓库，本地路径为 services/sub2api
 | PostgreSQL | [文档](https://www.postgresql.org/docs/) | PostgreSQL License |
 | Redis | [文档](https://redis.io/docs/latest/) | AGPL-3.0，或按发行版使用 RSALv2/SSPLv1 |
 | Eclipse Mosquitto | [文档](https://mosquitto.org/documentation/) | EPL-2.0 |
-| MinIO | [文档](https://min.io/docs/minio/container/index.html) | AGPL-3.0 |
 | ESP-IDF | [文档](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/) | Apache-2.0 |
 | FreeRTOS Kernel | [文档](https://www.freertos.org/Documentation/RTOS_book.html) | MIT |
 | PlatformIO | [文档](https://docs.platformio.org/) | Apache-2.0 |
@@ -221,7 +220,10 @@ $env:DEVICE_PLATFORM_HTTP_HOST = "0.0.0.0"
 $env:DEVICE_PLATFORM_HTTP_PORT = "8081"
 $env:DEVICE_PLATFORM_DATABASE_DSN = "postgres://device_platform:change-me@127.0.0.1:5432/device_platform?sslmode=disable"
 $env:DEVICE_PLATFORM_REDIS_ADDRESS = "127.0.0.1:6379"
-$env:DEVICE_PLATFORM_MQTT_BROKER = "tcp://127.0.0.1:1883"
+$env:DEVICE_PLATFORM_MQTT_BROKER = "tls://127.0.0.1:8883"
+$env:DEVICE_PLATFORM_MQTT_CA_FILE = "deploy/mosquitto/certs/ca.crt"
+$env:DEVICE_PLATFORM_MQTT_CLIENT_CERTIFICATE_FILE = "deploy/mosquitto/certs/device.crt"
+$env:DEVICE_PLATFORM_MQTT_CLIENT_KEY_FILE = "deploy/mosquitto/certs/device.key"
 go run ./cmd/device-platform
 ```
 

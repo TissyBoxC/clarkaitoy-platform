@@ -14,6 +14,7 @@ import (
 
 	"github.com/TissyBoxC/sprout-platform/packages/go/observability"
 	"github.com/TissyBoxC/sprout-platform/services/voice_gateway/internal/config"
+	"github.com/TissyBoxC/sprout-platform/services/voice_gateway/internal/platform/cache"
 	gatewayhttp "github.com/TissyBoxC/sprout-platform/services/voice_gateway/internal/transport/http"
 )
 
@@ -31,6 +32,15 @@ func Run() error {
 		},
 	)))
 	slog.SetDefault(logger)
+
+	startupCtx, startupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer startupCancel()
+
+	redisCache, err := cache.Open(startupCtx, cfg.Redis.Address, cfg.Redis.Password)
+	if err != nil {
+		return fmt.Errorf("open redis: %w", err)
+	}
+	defer redisCache.Close()
 
 	server := &http.Server{
 		Addr: cfg.HTTP.Address(),

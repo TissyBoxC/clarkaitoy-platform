@@ -74,31 +74,6 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${SPROUT_MINIO_ROOT_USER:?set SPROUT_MINIO_ROOT_USER in deploy/.env}
-      MINIO_ROOT_PASSWORD: ${SPROUT_MINIO_ROOT_PASSWORD:?set SPROUT_MINIO_ROOT_PASSWORD in deploy/.env}
-    ports:
-      - "127.0.0.1:${SPROUT_MINIO_PORT:-9000}:9000"
-      - "127.0.0.1:${SPROUT_MINIO_CONSOLE_PORT:-9001}:9001"
-    volumes:
-      - sprout_minio_data:/data
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "mc",
-          "ready",
-          "local",
-        ]
-      interval: 15s
-      timeout: 5s
-      retries: 8
-      start_period: 10s
-    restart: unless-stopped
-
   sub2api:
     image: weishaw/sub2api:latest
     profiles:
@@ -147,8 +122,8 @@ services:
 
   device_platform:
     build:
-      context: ../services/device_platform
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: services/device_platform/Dockerfile
     profiles:
       - services
     ports:
@@ -160,8 +135,14 @@ services:
       DEVICE_PLATFORM_REDIS_ADDRESS: "redis:6379"
       DEVICE_PLATFORM_REDIS_PASSWORD: ${SPROUT_REDIS_PASSWORD:?set SPROUT_REDIS_PASSWORD in deploy/.env}
       DEVICE_PLATFORM_REDIS_DB: "0"
-      DEVICE_PLATFORM_MQTT_BROKER: "mqtts://mqtt:8883"
+      DEVICE_PLATFORM_MQTT_BROKER: "tls://mqtt:8883"
       DEVICE_PLATFORM_MQTT_CLIENT_ID: "device-platform"
+      DEVICE_PLATFORM_MQTT_CA_FILE: "/run/sprout/mqtt/ca.crt"
+      DEVICE_PLATFORM_MQTT_CLIENT_CERTIFICATE_FILE: "/run/sprout/mqtt/device.crt"
+      DEVICE_PLATFORM_MQTT_CLIENT_KEY_FILE: "/run/sprout/mqtt/device.key"
+      DEVICE_PLATFORM_MQTT_INSECURE_SKIP_VERIFY: "false"
+    volumes:
+      - ./mosquitto/certs:/run/sprout/mqtt:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -173,8 +154,8 @@ services:
 
   voice_gateway:
     build:
-      context: ../services/voice_gateway
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: services/voice_gateway/Dockerfile
     profiles:
       - services
     ports:
@@ -196,5 +177,4 @@ volumes:
   sprout_redis_data:
   sprout_mqtt_data:
   sprout_mqtt_log:
-  sprout_minio_data:
   sprout_sub2api_data:

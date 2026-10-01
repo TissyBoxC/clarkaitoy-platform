@@ -16,7 +16,6 @@ const requiredServices = [
   'postgres',
   'redis',
   'mqtt',
-  'minio',
   'sub2api',
   'device_platform',
   'voice_gateway',

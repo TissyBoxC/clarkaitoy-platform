@@ -66,7 +66,7 @@ sprout-sub2api-fork/     separate repository, checked out as services/sub2api_fo
 | Device platform | Go, PostgreSQL, Redis, MQTT/TLS | [Go](https://go.dev/doc/) · [PostgreSQL](https://www.postgresql.org/docs/) · [Redis](https://redis.io/docs/latest/) · [Eclipse Mosquitto](https://mosquitto.org/documentation/) |
 | Voice gateway | Go, WebSocket, Opus, ASR, TTS, Sub2API | [Go](https://go.dev/doc/) · [WebSocket](https://datatracker.ietf.org/doc/html/rfc6455) · [Opus](https://opus-codec.org/docs/) |
 | Firmware | ESP-IDF, C, FreeRTOS, PlatformIO | [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/) · [FreeRTOS](https://www.freertos.org/Documentation/RTOS_book.html) · [PlatformIO](https://docs.platformio.org/) |
-| Local services | Docker Compose, MinIO | [Docker Compose](https://docs.docker.com/compose/) · [MinIO](https://min.io/docs/minio/container/index.html) |
+| Local services | Docker Compose, PostgreSQL, Redis, MQTT/TLS | [Docker Compose](https://docs.docker.com/compose/) · [PostgreSQL](https://www.postgresql.org/docs/) · [Redis](https://redis.io/docs/latest/) · [Eclipse Mosquitto](https://mosquitto.org/documentation/) |
 
 ## Open Source Notices
 
@@ -86,7 +86,6 @@ under its own license; the project does not relicense third-party code.
 - [PostgreSQL](https://www.postgresql.org/about/licence/) - PostgreSQL License.
 - [Redis](https://github.com/redis/redis/blob/unstable/LICENSE.txt) - AGPL-3.0 or RSALv2/SSPLv1 depending on distribution.
 - [Eclipse Mosquitto](https://github.com/eclipse-mosquitto/mosquitto/blob/master/LICENSE.txt) - EPL-2.0.
-- [MinIO](https://github.com/minio/minio/blob/master/LICENSE) - AGPL-3.0.
 - [ESP-IDF](https://github.com/espressif/esp-idf/blob/master/LICENSE) - Apache-2.0.
 - [FreeRTOS Kernel](https://github.com/FreeRTOS/FreeRTOS-Kernel/blob/main/LICENSE.md) - MIT.
 - [PlatformIO Core](https://github.com/platformio/platformio-core/blob/develop/LICENSE) - Apache-2.0.
