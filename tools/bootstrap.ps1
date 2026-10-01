@@ -16,7 +16,7 @@ $repoDefinitions = @(
         Name = 'firmware'
         Path = 'firmware'
         Url = 'https://github.com/TissyBoxC/sprout-firmware.git'
-        Revision = '97c3b802998a28f30c0adcc4783b1be7b7a0d9a9'
+        Revision = 'e65fb9e937c6f243f82254aaeb8f84a7dc7a7f44'
     },
     @{
         Name = 'sub2api_fork'
