@@ -39,6 +39,13 @@ jobs:
       - name: Validate shared contracts
         working-directory: tools/contracts
         run: npm run validate
+      - name: Check generated types are current
+        working-directory: tools/contracts
+        run: |
+          npm run generate
+          git diff --exit-code -- \
+            ../../packages/contracts/generated \
+            ../../apps/parent_app/lib/core/contracts/generated
 
   go-services:
     runs-on: ubuntu-latest

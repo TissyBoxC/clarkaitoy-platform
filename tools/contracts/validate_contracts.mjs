@@ -3,18 +3,43 @@ import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
+import { parse as parseYaml } from 'yaml';
 
-const contractsRoot = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  '..',
-  '..',
-  'packages',
-  'contracts',
-);
+const toolsRoot = dirname(fileURLToPath(import.meta.url));
+const repositoryRoot = resolve(toolsRoot, '..', '..');
+const contractsRoot = resolve(repositoryRoot, 'packages', 'contracts');
 
 const contractNamespace = 'https://sprout.example/contracts/';
+const expectedSchemaVersion = '1.0.0';
 const schemaFiles = [];
 const fixtureFiles = [];
+const responseSchemaPaths = [
+  resolve(contractsRoot, 'schemas', 'envelope.schema.json'),
+  resolve(contractsRoot, 'errors', 'error_response.schema.json'),
+];
+const responseFixturePaths = [
+  resolve(contractsRoot, 'schemas', 'envelope.example.json'),
+  resolve(contractsRoot, 'errors', 'error_response.example.json'),
+];
+const openAPIpaths = [
+  resolve(
+    repositoryRoot,
+    'services',
+    'device_platform',
+    'internal',
+    'contracts',
+    'http',
+    'openapi.yaml',
+  ),
+  resolve(
+    repositoryRoot,
+    'services',
+    'voice_gateway',
+    'contracts',
+    'internal-api',
+    'openapi.yaml',
+  ),
+];
 
 async function collectJsonFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -119,6 +144,43 @@ for (const fixturePath of fixtureFiles.sort()) {
   }
 }
 
+await validateResponseContractVersions();
+
+async function validateResponseContractVersions() {
+  for (const filePath of responseSchemaPaths) {
+    const schema = JSON.parse(await readFile(filePath, 'utf8'));
+    const version = schema.properties?.schema_version?.const;
+    if (version !== expectedSchemaVersion) {
+      throw new Error(
+        `${filePath}: expected response schema version ${expectedSchemaVersion}`,
+      );
+    }
+  }
+
+  for (const filePath of responseFixturePaths) {
+    const fixture = JSON.parse(await readFile(filePath, 'utf8'));
+    if (fixture.schema_version !== expectedSchemaVersion) {
+      throw new Error(
+        `${filePath}: expected response fixture version ${expectedSchemaVersion}`,
+      );
+    }
+  }
+
+  for (const filePath of openAPIpaths) {
+    const document = parseYaml(await readFile(filePath, 'utf8'));
+    const apiVersion = document.info?.version;
+    const envelopeVersion =
+      document.components?.schemas?.ResponseEnvelope?.properties?.schema_version
+        ?.const;
+    if (apiVersion !== expectedSchemaVersion || envelopeVersion !== expectedSchemaVersion) {
+      throw new Error(
+        `${filePath}: expected API and response envelope version ${expectedSchemaVersion}`,
+      );
+    }
+  }
+}
+
 console.log(
-  `Validated ${schemas.length} schemas and ${fixtureFiles.length} contract examples.`,
+  `Validated ${schemas.length} schemas, ${fixtureFiles.length} contract examples, `
+    + `and response versions in ${openAPIpaths.length} services.`,
 );
