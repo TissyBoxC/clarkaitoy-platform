@@ -104,6 +104,68 @@ func TestMetadataFromContextWithoutMetadata(t *testing.T) {
 	}
 }
 
+func TestWithRequestLabelsFiltersUnsupportedValues(t *testing.T) {
+	handler := WithRequestLabels(http.HandlerFunc(func(
+		response http.ResponseWriter,
+		request *http.Request,
+	) {
+		labels := RequestLabelsFromContext(request.Context())
+		if labels.TenantID != "tenant_001" {
+			t.Fatalf("expected tenant label, got %q", labels.TenantID)
+		}
+		if labels.DeviceID != "" {
+			t.Fatalf("expected unsafe device label to be dropped, got %q", labels.DeviceID)
+		}
+		response.WriteHeader(http.StatusNoContent)
+	}))
+
+	request := httptest.NewRequest(http.MethodGet, "/internal/v1/runtime", nil)
+	request.Header.Set(TenantIDHeader, "tenant_001")
+	request.Header.Set(DeviceIDHeader, "device id with spaces")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, recorder.Code)
+	}
+}
+
+func TestWithAccessLogIncludesValidatedLabels(t *testing.T) {
+	var output bytes.Buffer
+	logger := slog.New(NewRedactingHandler(slog.NewJSONHandler(&output, nil)))
+
+	handler := WithRequestLabels(WithAccessLog(
+		http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+			response.WriteHeader(http.StatusOK)
+		}),
+		AccessLogOptions{
+			Logger:      logger,
+			ServiceName: "test-service",
+		},
+	))
+
+	request := httptest.NewRequest(http.MethodGet, "/internal/v1/runtime", nil)
+	request.Header.Set(TenantIDHeader, "tenant_001")
+	request.Header.Set(DeviceIDHeader, "device_001")
+	request.Header.Set(RequestPurposeHeader, "voice_conversation")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	var record map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(output.Bytes()), &record); err != nil {
+		t.Fatalf("decode log record: %v", err)
+	}
+	if record[TenantIDField] != "tenant_001" {
+		t.Fatalf("expected tenant label in access log, got %v", record[TenantIDField])
+	}
+	if record[DeviceIDField] != "device_001" {
+		t.Fatalf("expected device label in access log, got %v", record[DeviceIDField])
+	}
+	if record[RequestPurposeField] != "voice_conversation" {
+		t.Fatalf("expected purpose in access log, got %v", record[RequestPurposeField])
+	}
+}
+
 type capturingAuditSink struct {
 	event AuditEvent
 }

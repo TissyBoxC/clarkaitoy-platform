@@ -31,7 +31,10 @@ type Metadata struct {
 
 type metadataContextKey struct{}
 
-var requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
+var (
+	requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
+	labelPattern     = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+)
 
 // WithRequestMetadata assigns request and trace identifiers, returns them in
 // response headers, and stores them in the request context for downstream code.

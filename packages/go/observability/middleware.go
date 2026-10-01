@@ -53,8 +53,8 @@ func WithAccessLog(next http.Handler, options AccessLogOptions) http.Handler {
 		next.ServeHTTP(recorder, request)
 
 		metadata := MetadataFromContext(request.Context())
-		logger.Info(
-			"http request completed",
+		labels := RequestLabelsFromContext(request.Context())
+		fields := []any{
 			ServiceField, options.ServiceName,
 			"method", request.Method,
 			"path", request.URL.Path,
@@ -62,7 +62,9 @@ func WithAccessLog(next http.Handler, options AccessLogOptions) http.Handler {
 			"duration_ms", time.Since(startedAt).Milliseconds(),
 			RequestIDField, metadata.RequestID,
 			TraceIDField, metadata.TraceID,
-		)
+		}
+		fields = appendRequestLabelFields(fields, labels)
+		logger.Info("http request completed", fields...)
 
 		if options.Audit != nil && isMutatingMethod(request.Method) {
 			options.Audit.RecordAudit(AuditEvent{
@@ -75,6 +77,25 @@ func WithAccessLog(next http.Handler, options AccessLogOptions) http.Handler {
 			})
 		}
 	})
+}
+
+func appendRequestLabelFields(fields []any, labels RequestLabels) []any {
+	if labels.TenantID != "" {
+		fields = append(fields, TenantIDField, labels.TenantID)
+	}
+	if labels.DeviceID != "" {
+		fields = append(fields, DeviceIDField, labels.DeviceID)
+	}
+	if labels.RequestPurpose != "" {
+		fields = append(fields, RequestPurposeField, labels.RequestPurpose)
+	}
+	if labels.PolicyVersion != "" {
+		fields = append(fields, PolicyVersionField, labels.PolicyVersion)
+	}
+	if labels.SessionID != "" {
+		fields = append(fields, SessionIDField, labels.SessionID)
+	}
+	return fields
 }
 
 func isMutatingMethod(method string) bool {
