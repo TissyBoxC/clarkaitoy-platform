@@ -90,7 +90,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python tools/release_notes.py \
+          python3 tools/release_notes.py \
             --version "${{ steps.detect.outputs.version }}" \
             --current-tag "${{ steps.detect.outputs.tag }}" \
             --repository "$GITHUB_REPOSITORY" \

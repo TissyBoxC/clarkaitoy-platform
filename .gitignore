@@ -46,6 +46,11 @@ coverage/
 *.out
 *.log
 
+# Python cache and test output
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
 # Flutter/Dart generated output
 **/.dart_tool/
 **/.flutter-plugins
