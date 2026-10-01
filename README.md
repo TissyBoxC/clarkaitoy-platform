@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/brand/sprout/brand_banner.png" alt="如此萌屋" width="720" />
+<img src="assets/brand/sprout/brand_avatar.png" alt="如此萌屋" width="180" />
 
 # 如此萌屋
 
@@ -9,6 +9,16 @@
 面向幼儿的模块化 AI 早教陪伴平台
 
 English | [简体中文](README.zh-CN.md)
+
+[![Go](https://img.shields.io/badge/Go-1.27.1-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![Flutter](https://img.shields.io/badge/Flutter-Dart%203.11-02569B?logo=flutter&logoColor=white)](https://flutter.dev/)
+[![Vue 3](https://img.shields.io/badge/Vue%203-TypeScript-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
+[![ESP-IDF](https://img.shields.io/badge/ESP--IDF-ESP32--S3-E7352C?logo=espressif&logoColor=white)](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io/)
+
+<!-- COMMUNITY_LINKS_START: 群链接待补充。 -->
+<!-- DOCUMENTATION_LINKS_START: 项目文档入口待补充。 -->
 
 </div>
 
@@ -46,6 +56,43 @@ sprout-platform/         this repository
 sprout-firmware/         separate repository, checked out as firmware/
 sprout-sub2api-fork/     separate repository, checked out as services/sub2api_fork/
 ```
+
+## Technology
+
+| Layer | Technology | Documentation |
+| --- | --- | --- |
+| Parent app | Flutter, Dart, Riverpod, go_router, Dio, secure storage | [Flutter](https://docs.flutter.dev/) · [Dart](https://dart.dev/guides) · [Riverpod](https://riverpod.dev/) · [go_router](https://pub.dev/packages/go_router) · [Dio](https://pub.dev/packages/dio) |
+| Admin console | Vue 3, TypeScript, Vite, Pinia, Vue Router, Axios | [Vue 3](https://vuejs.org/guide/) · [TypeScript](https://www.typescriptlang.org/docs/) · [Vite](https://vite.dev/guide/) · [Pinia](https://pinia.vuejs.org/) · [Vue Router](https://router.vuejs.org/) · [Axios](https://axios-http.com/docs/intro) |
+| Device platform | Go, PostgreSQL, Redis, MQTT/TLS | [Go](https://go.dev/doc/) · [PostgreSQL](https://www.postgresql.org/docs/) · [Redis](https://redis.io/docs/latest/) · [Eclipse Mosquitto](https://mosquitto.org/documentation/) |
+| Voice gateway | Go, WebSocket, Opus, ASR, TTS, Sub2API | [Go](https://go.dev/doc/) · [WebSocket](https://datatracker.ietf.org/doc/html/rfc6455) · [Opus](https://opus-codec.org/docs/) |
+| Firmware | ESP-IDF, C, FreeRTOS, PlatformIO | [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/) · [FreeRTOS](https://www.freertos.org/Documentation/RTOS_book.html) · [PlatformIO](https://docs.platformio.org/) |
+| Local services | Docker Compose, MinIO | [Docker Compose](https://docs.docker.com/compose/) · [MinIO](https://min.io/docs/minio/container/index.html) |
+
+## Open Source Notices
+
+This repository uses third-party open-source software. Each dependency remains
+under its own license; the project does not relicense third-party code.
+
+- [Go standard library and toolchain](https://go.dev/LICENSE) - BSD-3-Clause.
+- [Flutter and Dart](https://github.com/flutter/flutter/blob/master/LICENSE) - BSD-3-Clause.
+- [Vue 3](https://github.com/vuejs/core/blob/main/LICENSE) - MIT.
+- [Vite](https://github.com/vitejs/vite/blob/main/LICENSE) - MIT.
+- [Pinia](https://github.com/vuejs/pinia/blob/v3/LICENSE) - MIT.
+- [Vue Router](https://github.com/vuejs/router/blob/main/LICENSE) - MIT.
+- [Axios](https://github.com/axios/axios/blob/v1.x/LICENSE) - MIT.
+- [Dio](https://github.com/cfug/dio/blob/main/dio/LICENSE) - MIT.
+- [Riverpod](https://github.com/rrousselGit/riverpod/blob/master/LICENSE) - MIT.
+- [go_router](https://github.com/flutter/packages/blob/main/packages/go_router/LICENSE) - BSD-3-Clause.
+- [PostgreSQL](https://www.postgresql.org/about/licence/) - PostgreSQL License.
+- [Redis](https://github.com/redis/redis/blob/unstable/LICENSE.txt) - AGPL-3.0 or RSALv2/SSPLv1 depending on distribution.
+- [Eclipse Mosquitto](https://github.com/eclipse-mosquitto/mosquitto/blob/master/LICENSE.txt) - EPL-2.0.
+- [MinIO](https://github.com/minio/minio/blob/master/LICENSE) - AGPL-3.0.
+- [ESP-IDF](https://github.com/espressif/esp-idf/blob/master/LICENSE) - Apache-2.0.
+- [FreeRTOS Kernel](https://github.com/FreeRTOS/FreeRTOS-Kernel/blob/main/LICENSE.md) - MIT.
+- [PlatformIO Core](https://github.com/platformio/platformio-core/blob/develop/LICENSE) - Apache-2.0.
+
+The platform repository does not yet declare a project-level license. No
+license is granted for first-party code until a `LICENSE` file is added.
 
 ## Ownership Boundaries
 

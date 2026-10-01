@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/brand/sprout/brand_banner.png" alt="如此萌屋" width="720" />
+<img src="assets/brand/sprout/brand_avatar.png" alt="如此萌屋" width="180" />
 
 # 如此萌屋
 
@@ -9,6 +9,16 @@
 面向幼儿的模块化 AI 早教陪伴平台
 
 [English](README.md) | 简体中文
+
+[![Go](https://img.shields.io/badge/Go-1.27.1-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![Flutter](https://img.shields.io/badge/Flutter-Dart%203.11-02569B?logo=flutter&logoColor=white)](https://flutter.dev/)
+[![Vue 3](https://img.shields.io/badge/Vue%203-TypeScript-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
+[![ESP-IDF](https://img.shields.io/badge/ESP--IDF-ESP32--S3-E7352C?logo=espressif&logoColor=white)](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io/)
+
+<!-- COMMUNITY_LINKS_START: 群链接待补充。 -->
+<!-- DOCUMENTATION_LINKS_START: 项目文档入口待补充。 -->
 
 </div>
 
@@ -121,6 +131,32 @@ sprout-sub2api-fork/       独立 fork 仓库，本地路径为 services/sub2api
 | 固件构建目录 | `bgen/` |
 | API 契约 | OpenAPI 3；异步消息预留 AsyncAPI 或事件 Schema |
 | 观测 | OpenTelemetry、Prometheus、Grafana、Loki、Jaeger 或 Tempo |
+
+### 技术文档与开源组件
+
+| 技术 | 官方文档 | 许可证 |
+| --- | --- | --- |
+| Flutter / Dart | [文档](https://docs.flutter.dev/) · [Dart](https://dart.dev/guides) | BSD-3-Clause |
+| Riverpod | [文档](https://riverpod.dev/) | MIT |
+| go_router | [包说明](https://pub.dev/packages/go_router) | BSD-3-Clause |
+| Dio | [文档](https://pub.dev/packages/dio) | MIT |
+| Vue 3 | [文档](https://vuejs.org/guide/) | MIT |
+| Vite | [文档](https://vite.dev/guide/) | MIT |
+| Pinia | [文档](https://pinia.vuejs.org/) | MIT |
+| Vue Router | [文档](https://router.vuejs.org/) | MIT |
+| Axios | [文档](https://axios-http.com/docs/intro) | MIT |
+| Go | [文档](https://go.dev/doc/) | BSD-3-Clause |
+| PostgreSQL | [文档](https://www.postgresql.org/docs/) | PostgreSQL License |
+| Redis | [文档](https://redis.io/docs/latest/) | AGPL-3.0，或按发行版使用 RSALv2/SSPLv1 |
+| Eclipse Mosquitto | [文档](https://mosquitto.org/documentation/) | EPL-2.0 |
+| MinIO | [文档](https://min.io/docs/minio/container/index.html) | AGPL-3.0 |
+| ESP-IDF | [文档](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/) | Apache-2.0 |
+| FreeRTOS Kernel | [文档](https://www.freertos.org/Documentation/RTOS_book.html) | MIT |
+| PlatformIO | [文档](https://docs.platformio.org/) | Apache-2.0 |
+
+本项目会保留第三方组件的版权与许可证声明，不重新授权第三方代码。
+平台仓库当前尚未声明项目级开源许可证；在添加 `LICENSE` 前，第一方代码不授予
+额外使用许可。
 
 ## 环境准备
 
