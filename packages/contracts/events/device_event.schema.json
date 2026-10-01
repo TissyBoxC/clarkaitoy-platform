@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sprout.example/contracts/events/device_event.schema.json",
+  "title": "Cross-service event envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "event_type",
+    "occurred_at",
+    "producer",
+    "subject",
+    "request_id",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "event_id": {
+      "$ref": "https://sprout.example/contracts/schemas/common.schema.json#/$defs/identifier"
+    },
+    "event_type": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+    },
+    "occurred_at": {
+      "$ref": "https://sprout.example/contracts/schemas/common.schema.json#/$defs/timestamp"
+    },
+    "producer": {
+      "type": "string",
+      "enum": [
+        "device_platform",
+        "voice_gateway",
+        "firmware"
+      ]
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "device",
+            "family",
+            "child",
+            "content_package",
+            "ota_release"
+          ]
+        },
+        "id": {
+          "$ref": "https://sprout.example/contracts/schemas/common.schema.json#/$defs/identifier"
+        }
+      }
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "payload": {
+      "type": "object"
+    }
+  }
+}

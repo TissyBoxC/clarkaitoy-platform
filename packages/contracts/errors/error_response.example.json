@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "request_id": "request_demo_001",
+  "error": {
+    "code": "invalid_request",
+    "message": "请求内容不完整",
+    "retryable": false,
+    "details": {
+      "field": "nickname",
+      "reason": "不能为空"
+    }
+  }
+}

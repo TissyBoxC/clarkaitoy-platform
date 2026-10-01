@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "family_id": "family_demo_001",
+  "family_name": "初芽之家",
+  "owner_user_id": "user_guardian_001",
+  "members": [
+    {
+      "user_id": "user_guardian_001",
+      "role": "owner"
+    }
+  ],
+  "created_at": "2026-10-01T00:00:00Z"
+}

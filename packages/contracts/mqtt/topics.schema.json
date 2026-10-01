@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sprout.example/contracts/mqtt/topics.schema.json",
+  "title": "MQTT topic contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "topics"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "topics": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "topic",
+          "direction",
+          "qos",
+          "retain",
+          "payload_schema"
+        ],
+        "properties": {
+          "topic": {
+            "type": "string",
+            "pattern": "^sprout/v1/[a-z_]+(?:/[a-z_]+)*$"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "device_to_platform",
+              "platform_to_device"
+            ]
+          },
+          "qos": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ]
+          },
+          "retain": {
+            "type": "boolean"
+          },
+          "payload_schema": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://sprout\\.example/contracts/"
+          }
+        }
+      }
+    }
+  }
+}

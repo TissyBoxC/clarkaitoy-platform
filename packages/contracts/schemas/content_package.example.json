@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0.0",
+  "package_id": "content_story_001",
+  "package_version": 1,
+  "title": "月亮晚安故事",
+  "category": "story",
+  "age_tiers": [
+    "age_3_4",
+    "age_5_6"
+  ],
+  "asset_key": "content/story/moon-night-v1.bin",
+  "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "size_bytes": 1048576,
+  "published_at": "2026-10-01T00:00:00Z"
+}

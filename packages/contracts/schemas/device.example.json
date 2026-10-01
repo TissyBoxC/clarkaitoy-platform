@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0.0",
+  "device_id": "device_demo_001",
+  "family_id": "family_demo_001",
+  "product_family": "sprout",
+  "hardware_revision": "s3_n16r8",
+  "firmware_version": "0.1.0",
+  "protocol_version": "1.0.0",
+  "capabilities": [
+    "audio_input",
+    "audio_output",
+    "wifi",
+    "led"
+  ],
+  "status": "active",
+  "activated_at": "2026-10-01T00:00:00Z"
+}

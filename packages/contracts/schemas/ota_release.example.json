@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "release_id": "ota_release_001",
+  "firmware_version": "0.1.0",
+  "hardware_revision": "s3_n16r8",
+  "channel": "stable",
+  "artifact_key": "firmware/stable/sprout-0.1.0.bin",
+  "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "size_bytes": 4194304,
+  "signature_key_id": "ota_signing_001",
+  "rollback_allowed": true,
+  "published_at": "2026-10-01T00:00:00Z"
+}

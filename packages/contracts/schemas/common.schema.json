@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sprout.example/contracts/schemas/common.schema.json",
+  "title": "Shared contract definitions",
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+){1,7}$"
+    },
+    "firmware_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "object_key": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._/-]*$",
+      "maxLength": 512
+    },
+    "age_tier": {
+      "type": "string",
+      "enum": [
+        "age_3_4",
+        "age_5_6",
+        "age_7_8"
+      ]
+    },
+    "content_category": {
+      "type": "string",
+      "enum": [
+        "story",
+        "nursery_rhyme",
+        "poetry",
+        "english",
+        "encyclopedia",
+        "bedtime"
+      ]
+    },
+    "device_capability": {
+      "type": "string",
+      "enum": [
+        "audio_input",
+        "audio_output",
+        "wifi",
+        "camera",
+        "display",
+        "touch",
+        "led",
+        "battery",
+        "cellular_4g",
+        "motion",
+        "bluetooth_audio",
+        "video_call",
+        "location",
+        "geofence",
+        "sos",
+        "multi_device"
+      ]
+    },
+    "device_status": {
+      "type": "string",
+      "enum": [
+        "provisioning",
+        "active",
+        "suspended",
+        "retired"
+      ]
+    }
+  }
+}

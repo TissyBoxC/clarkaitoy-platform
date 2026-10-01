@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0.0",
+  "request_id": "request_demo_001",
+  "data": {
+    "device_id": "device_demo_001"
+  },
+  "error": null
+}

@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0.0",
+  "event_id": "event_device_online_001",
+  "event_type": "device.online",
+  "occurred_at": "2026-10-01T00:00:00Z",
+  "producer": "device_platform",
+  "subject": {
+    "type": "device",
+    "id": "device_demo_001"
+  },
+  "request_id": "request_demo_001",
+  "payload": {
+    "firmware_version": "0.1.0"
+  }
+}

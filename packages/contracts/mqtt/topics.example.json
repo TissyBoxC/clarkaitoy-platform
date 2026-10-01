@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0.0",
+  "topics": [
+    {
+      "topic": "sprout/v1/device/heartbeat",
+      "direction": "device_to_platform",
+      "qos": 1,
+      "retain": false,
+      "payload_schema": "https://sprout.example/contracts/events/device_event.schema.json"
+    }
+  ]
+}

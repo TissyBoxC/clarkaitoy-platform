@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0.0",
+  "policy_id": "policy_demo_001",
+  "family_id": "family_demo_001",
+  "child_id": "child_demo_001",
+  "policy_version": 1,
+  "daily_limit_minutes": 60,
+  "allowed_categories": [
+    "story",
+    "nursery_rhyme"
+  ],
+  "disabled_periods": [
+    {
+      "start_time": "21:00",
+      "end_time": "07:00"
+    }
+  ],
+  "max_volume_percent": 70,
+  "updated_at": "2026-10-01T00:00:00Z"
+}

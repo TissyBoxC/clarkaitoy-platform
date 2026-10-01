@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0.0",
+  "child_id": "child_demo_001",
+  "family_id": "family_demo_001",
+  "nickname": "小芽",
+  "age_tier": "age_3_4",
+  "interests": [
+    "animals",
+    "music"
+  ],
+  "content_categories": [
+    "story",
+    "nursery_rhyme"
+  ],
+  "guardian_consent": true
+}
