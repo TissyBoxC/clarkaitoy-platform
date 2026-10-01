@@ -11,23 +11,51 @@ if (-not (Test-Path -LiteralPath $lockFilePath)) {
     throw "Workspace lock file not found: $lockFilePath"
 }
 
-$repoDefinitions = @(
-    @{
-        Name = 'firmware'
-        Path = 'firmware'
-        Url = 'https://github.com/TissyBoxC/sprout-firmware.git'
-        Revision = '4cee6385ad7c6b74d2a8ef7e243523dfd1d652d7'
-    },
-    @{
-        Name = 'sub2api_fork'
-        Path = 'services/sub2api_fork'
-        Url = 'https://github.com/TissyBoxC/sprout-sub2api-fork.git'
-        Revision = '00bd9edf13afec3d216fa96289718d0699553515'
-    }
-)
+$repoDefinitions = @()
+$currentRepository = $null
+$insideRepositories = $false
 
-# This script intentionally keeps the clone URLs explicit because PowerShell
-# cannot parse the YAML lock file without adding a runtime dependency.
+# The lock file has a small, fixed schema. Parsing only the repository block
+# avoids adding a YAML runtime dependency to a lightweight checkout script.
+foreach ($line in Get-Content -LiteralPath $lockFilePath) {
+    if ($line -match '^repositories:\s*$') {
+        $insideRepositories = $true
+        continue
+    }
+    if ($insideRepositories -and $line -match '^\S') {
+        break
+    }
+    if (-not $insideRepositories -or $line -match '^\s*#') {
+        continue
+    }
+
+    if ($line -match '^  ([a-z0-9_]+):\s*$') {
+        if ($null -ne $currentRepository) {
+            $repoDefinitions += $currentRepository
+        }
+        $currentRepository = @{ Name = $Matches[1] }
+        continue
+    }
+    if ($null -eq $currentRepository) {
+        continue
+    }
+    if ($line -match '^\s{4}(path|url|branch|revision):\s*(.+?)\s*$') {
+        $currentRepository[$Matches[1]] = $Matches[2].Trim('"', "'")
+    }
+}
+
+if ($null -ne $currentRepository) {
+    $repoDefinitions += $currentRepository
+}
+
+foreach ($repository in $repoDefinitions) {
+    if (-not $repository.ContainsKey('path') -or
+        -not $repository.ContainsKey('url') -or
+        -not $repository.ContainsKey('revision')) {
+        throw "Workspace lock entry is incomplete: $($repository.Name)"
+    }
+}
+
 foreach ($repository in $repoDefinitions) {
     $destination = Join-Path $workspaceRoot $repository.Path
 
