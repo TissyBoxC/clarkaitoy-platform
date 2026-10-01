@@ -78,6 +78,21 @@ DESCRIPTION_TITLES = {
     "verify": "验证",
 }
 
+DESCRIPTION_PHRASES = {
+    "add api error and auth refresh foundation": "新增错误处理与登录续期基础",
+    "add local service stack": "新增本地服务编排",
+    "add shared generated client types": "新增共享生成客户端类型",
+    "add validated request labels": "新增经过校验的请求标签",
+    "add versioned chinese release workflow": "新增按版本触发的中文发布流程",
+    "define cross-service domain schemas": "定义跨服务领域结构",
+    "expose secured runtime contract": "开放受保护的运行时契约",
+    "ignore python caches and use python3": "忽略 Python 缓存并使用 python3",
+    "reserve remote text modules": "预留远程文本模块",
+    "share versioned response envelope": "共享带版本响应信封",
+    "validate versioned base contracts": "校验带版本的基础契约",
+    "verify contracts apps and services": "验证契约、应用与服务",
+}
+
 CONVENTIONAL_COMMIT = re.compile(
     r"^(?P<type>[A-Za-z]+)"
     r"(?:\((?P<scope>[^)]+)\))?"
@@ -234,16 +249,18 @@ def render_commit_lines(commits: list[dict[str, str]], repository: str) -> list[
 
 
 def localize_description(description: str) -> str:
+    phrase = DESCRIPTION_PHRASES.get(description.lower())
+    if phrase is not None:
+        return phrase
+
     words = description.split(maxsplit=1)
     if not words:
         return description
 
     action = DESCRIPTION_TITLES.get(words[0].lower())
     if action is None:
-        return description
-    if len(words) == 1:
-        return action
-    return f"{action}：{words[1]}"
+        return "完善相关功能"
+    return action
 
 
 def main() -> int:
