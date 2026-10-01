@@ -22,47 +22,121 @@
 
 </div>
 
-## 芽系列·初芽
+`sprout-platform` 是“如此萌屋”首个产品“芽系列·初芽”的平台仓库，包含家长
+控制端、后台管理端、业务服务、实时语音服务、共享契约和本地部署工具。固件和
+AI 网关 fork 保持独立仓库，不在本仓库中重复版本化。
 
-芽系列·初芽面向 3 至 8 岁儿童及其监护人，覆盖游戏机本体、家长控制端、
-后台管理端、业务服务、实时语音服务和共享契约。
+> 所有能力默认关闭或采用最保守配置。社交、摄像头、麦克风上传和数据采集必须由
+> 监护人主动开启；儿童隐私、心理安全和人身安全优先于功能交付。
 
-项目按“功能可独立增加、独立删除”的原则组织。设备不支持摄像头、屏幕、触摸、
-4G 或电池等硬件时，应能只移除对应模块，不修改无关业务。
+## 当前状态
 
-> 所有能力默认关闭或采用最保守配置。社交、摄像头、麦克风上传和数据采集
-> 必须由监护人主动开启，儿童隐私和安全优先于功能交付。
+仓库当前版本为 `0.1.0`，处于工程底座和首批基础模块实现阶段。功能状态以可运行的
+端到端闭环为准，不以目录、接口或占位文件是否存在为准。
 
-## 当前阶段
+| 标记 | 含义 |
+| --- | --- |
+| `[已实现]` | 功能闭环、错误路径、权限或隐私约束和相关测试已经具备。 |
+| `[部分实现]` | 已有可运行骨架、契约或单端能力，但尚未形成完整闭环。 |
+| `[未实现]` | 尚未提供可验收的业务实现，仅有规划、目录或空接口。 |
 
-当前仓库处于工程骨架阶段，各项目已经建立可运行入口和模块边界，但大部分业务
-尚未实现。
+## 全量功能清单
 
-已经具备：
+以下清单覆盖基础层、主流层和差异化层的 P0、P1、P2 范围。所有条目最终都应实现；
+优先级只决定开发顺序，不代表可以删除功能。
 
-- `apps/parent_app`：可启动的 Flutter 应用骨架，包含路由、主题、配置边界和
-  feature-first 目录。
-- `apps/admin_web`：可构建的 Vue 3 管理端骨架，包含路由、状态容器、HTTP 边界
-  和基础页面。
-- `services/device_platform`：可测试、可构建的 Go 业务服务骨架，已划分账号、
-  家庭、儿童、设备、家长策略、内容、OTA、遥测和审计等模块。
-- `services/voice_gateway`：可测试、可构建的 Go 实时语音网关骨架，已划分音频、
-  会话、ASR、TTS、LLM、内容安全和用量统计边界。
-- `firmware`：独立的 PlatformIO 工程，目标芯片为 ESP32-S3 N16R8，构建目录为
-  `bgen/`。
-- `packages/contracts`：跨应用、跨服务的版本化契约目录。
+### P0 必须能力
+
+| ID | 功能 | 涉及模块 | 状态 | 当前说明 |
+| --- | --- | --- | --- | --- |
+| P0-01 | 系统启动、版本和错误恢复 | `system_core`、`module_registry`、`version_info`、`error_code`、`error_recovery` | `[部分实现]` | 固件已实现模块注册、版本读取、错误码和单项失败记录；平台审计、管理端诊断查询和完整崩溃闭环未完成。 |
+| P0-02 | 音频输入 | `audio_input`、`audio_pipeline`、`voice_gateway` | `[未实现]` | 仅有语音网关音频包边界和适配接口，未实现采集、增益、降噪、回声消除和可验证音频帧。 |
+| P0-03 | 音频输出 | `audio_output`、`playback_queue`、`voice_gateway` | `[未实现]` | 尚未实现 TTS 播放、本地内容播放、队列、打断和恢复。 |
+| P0-04 | 语音唤醒 | `voice_wake`、`wake_feedback`、`voice_gateway` | `[未实现]` | 未实现唤醒词、误唤醒控制、唤醒反馈和唤醒事件链路。 |
+| P0-05 | 语音会话 | `voice_session`、`asr_client`、`llm_client`、`tts_client`、`voice_gateway` | `[未实现]` | 已有会话状态机、ASR/TTS 接口和 WebSocket 包骨架；WebSocket 服务、ASR、LLM、TTS、打断和超时闭环尚未实现。 |
+| P0-06 | AI 对话 | `conversation_context`、`child_prompt_profile`、`voice_gateway`、`sub2api_fork` | `[未实现]` | `sub2api` 客户端仍为空实现，未实现多轮上下文、儿童提示词、超时、降级和合规策略。 |
+| P0-07 | 内容 | 内容库、故事、儿歌、古诗、英语、百科、睡前、分龄模块 | `[未实现]` | 仅有共享内容包 Schema，没有内容生产、审核、发布、下发、缓存和播放闭环。 |
+| P0-08 | 联网 | `network_manager`、`wifi_provisioning`、`time_sync`、`cloud_auth` | `[未实现]` | 未实现配网、重连、时间同步、设备鉴权、心跳和断网恢复。 |
+| P0-09 | 家长控制 | `parent_link`、`parent_policy`、`usage_report` | `[未实现]` | 未实现设备绑定、内容等级、使用时长、禁用时段、策略下发和使用报告。 |
+| P0-10 | 安全与隐私 | `privacy_guard`、`content_filter`、`transport_security`、平台和语音服务安全模块 | `[部分实现]` | 已有 MQTT 双向 TLS、证书校验、请求标签、日志脱敏、安全默认值和契约校验；身份、权限、内容审核、数据删除和隐私授权闭环未完成。 |
+| P0-11 | OTA | `ota_manager`、`ota_download`、`ota_validate`、`ota_rollback` | `[未实现]` | 未实现固件包管理、签名校验、灰度、下载、安装、回滚和版本统计。 |
+| P0-12 | 设备交互 | 按键、LED、提示音、音量、恢复出厂和状态反馈 | `[未实现]` | 未实现按键、LED、提示音、音量、复位和无屏幕反馈链路。 |
+
+### P1 主流能力
+
+| ID | 功能 | 涉及模块 | 状态 | 当前说明 |
+| --- | --- | --- | --- | --- |
+| P1-01 | 语音增强 | 全双工、远场拾音、连续会话 | `[未实现]` | 仅有 VAD 和音频基础目录，未完成双工、回声消除、远场和连续对话。 |
+| P1-02 | 内容运营 | 内容包、主题包、更新、收藏、播放历史 | `[未实现]` | 未实现内容包生命周期、主题、增量更新、收藏和播放历史。 |
+| P1-03 | 陪伴 | 情绪回应、鼓励、成长记录、习惯提醒、长记忆 | `[未实现]` | 未实现情绪上下文、成长记录、提醒、授权记忆和删除路径。 |
+| P1-04 | 英语学习 | 单词、句型、口语练习、发音反馈 | `[未实现]` | 未实现课程、练习、评分、进度和家长端展示。 |
+| P1-05 | 家长端 | 远程留言、点播、设备状态、内容推荐 | `[未实现]` | 家长端只有家庭页和设备列表骨架，尚无远程业务闭环。 |
+| P1-06 | 本地兜底 | 离线故事、本地指令、缓存播放 | `[未实现]` | 未实现离线内容、指令、缓存、版本和恢复同步。 |
+| P1-07 | 诊断 | 系统诊断、日志、崩溃、网络质量、温度 | `[部分实现]` | 平台已有请求标签、访问日志和日志脱敏；固件诊断、崩溃上报、指标聚合和管理端查询未完成。 |
+| P1-08 | 摄像头 | 拍照、识物、绘本识别、拍照问答 | `[未实现]` | 未实现摄像头 capability、采集、本地处理、授权上传、模型调用和短期存储。 |
+
+### P2 差异化能力
+
+| ID | 功能 | 涉及模块 | 状态 | 当前说明 |
+| --- | --- | --- | --- | --- |
+| P2-01 | 屏幕 | 表情、动画、点读、视频播放 | `[未实现]` | 未实现显示驱动、界面、资源、点读和视频播放。 |
+| P2-02 | 护眼屏幕 | 亮度、色温、距离和时长策略 | `[未实现]` | 未实现护眼策略、家长配置、提醒和设备执行。 |
+| P2-03 | 触摸 | 点击、滑动、手势、触觉反馈 | `[未实现]` | 未实现触摸输入、手势识别和触觉反馈。 |
+| P2-04 | 4G | eSIM、流量、远程唤醒、联网切换 | `[未实现]` | 未实现蜂窝模组、eSIM、流量限额、远程唤醒和网络切换。 |
+| P2-05 | 电池 | 充电、电量估算、低功耗、深度休眠 | `[未实现]` | 未实现电量、充电、功耗策略、休眠和唤醒源。 |
+| P2-06 | 动作 | 电机、舵机、行走、舞蹈、尾巴动作 | `[未实现]` | 未实现驱动、动作编排、停止保护和超时安全。 |
+| P2-07 | 拟人形态 | 多外形能力集合 | `[未实现]` | 未实现按 capability 组合的形态 Profile；命名不绑定外观。 |
+| P2-08 | 视频陪伴 | 视频通话、远程陪伴 | `[未实现]` | 未实现媒体协商、编解码、弱网、权限和通话记录。 |
+| P2-09 | 穿戴与定位 | 定位、通话、电子围栏、SOS | `[未实现]` | 未实现定位、联系人、围栏、SOS、离线补报和紧急通知。 |
+| P2-10 | 多设备 | 家庭联动、设备组网、内容同步 | `[未实现]` | 未实现消息路由、设备组、同步冲突处理和最终一致性。 |
+
+### 分层覆盖
+
+| 层级 | 范围 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| 基础层 | 开机配网、唤醒、录音播放、AI 对话、内容、家长控制、OTA | `[部分实现]` | 基础工程、契约、部署和固件模块注册已有雏形；核心用户闭环尚未实现。 |
+| 主流层 | 连续会话、内容运营、陪伴、英语、远程留言、离线兜底、诊断、摄像头 | `[未实现]` | 除日志脱敏外尚无可用闭环。 |
+| 差异化层 | 屏幕、触摸、护眼、4G、电池、动作、视频、定位、多设备 | `[未实现]` | 目录和规划不等同于实现，所有能力仍需按 capability 模块化落地。 |
+
+### 补充模块
+
+| 模块 | 用途 | 状态 | 当前说明 |
+| --- | --- | --- | --- |
+| `module_registry` | 注册、初始化和停止可选模块 | `[已实现]` | 固件支持可选模块注册、初始化失败记录和独立删除验证。 |
+| `config_store` | 保存设备配置和能力集合 | `[未实现]` | 未实现配置读写、迁移、加密存储和删除。 |
+| `playback_queue` | 管理播放优先级、打断和恢复 | `[未实现]` | 未实现音频队列和播放状态控制。 |
+| `alarm_reminder` | 定时提醒、闹钟和日程 | `[未实现]` | 未实现时间同步、提醒调度和家长配置。 |
+| `bluetooth_audio` | 蓝牙音箱模式和配对 | `[未实现]` | 未实现蓝牙音频、配对、模式切换和播放优先级。 |
+| `learning_visualization` | 触屏学习内容和可视化反馈 | `[未实现]` | 未实现学习可视化、课程联动和屏幕交互。 |
+| `long_term_memory` | 经监护人授权保存长期陪伴记忆 | `[未实现]` | 未实现授权、最小化存储、读取范围和删除。 |
+| `image_privacy` | 图片本地处理和上传授权 | `[未实现]` | 未实现本地预处理、监护人授权、上传最小化和删除。 |
+| `video_session` | 视频通话和远程陪伴媒体会话 | `[未实现]` | 未实现媒体协商、编解码、弱网和设备提示。 |
+
+### 先行工程底座
+
+以下内容不替代 P0/P1/P2 功能，但决定后续模块能否独立增删和回归。
+
+| 能力 | 状态 | 当前说明 |
+| --- | --- | --- |
+| 共享契约与生成类型 | `[部分实现]` | 已有身份、家庭、儿童、设备、内容、OTA、策略、事件、MQTT、错误和界面文案 Schema，以及 Dart/TypeScript 生成类型；业务 API 契约尚未完整冻结。 |
+| 契约校验和 CI | `[已实现]` | 平台 CI 校验本地部署、契约、生成类型、Go 服务、Vue 管理端和 Flutter 家长端。 |
+| 自动 Release | `[已实现]` | `VERSION` 变更后创建中文 Release，并输出 Go 服务、管理端和契约产物；外部仓库独立发布。 |
+| Docker Compose | `[已实现]` | 支持 PostgreSQL、Redis、MQTT/TLS、可选 `sub2api`、`device_platform` 和 `voice_gateway`。业务功能仍未完成。 |
+| 请求标签、日志与脱敏 | `[已实现]` | 服务接入请求 ID、追踪字段、访问日志和敏感信息脱敏。 |
+| 远程界面文案 | `[部分实现]` | 已有界面文案契约、平台模块骨架和管理端页面；发布、缓存、版本和固件消费闭环未完成。 |
+| `sub2api_fork` 定制 | `[未实现]` | fork 当前保留上游能力；租户标签、儿童策略、内部 API、调用审计和配置前缀尚未定制。 |
 
 ## 系统组成
 
-| 项目 | 面向对象 | 主要职责 |
-| --- | --- | --- |
-| `apps/parent_app` | 家长和监护人 | 登录、家庭、儿童档案、设备绑定、家长策略、使用报告、远程留言、内容和 OTA |
-| `apps/admin_web` | 平台运营和管理人员 | 账号权限、家庭儿童设备管理、内容运营、AI 网关、OTA、审计和监控 |
-| `services/device_platform` | 平台内部 | 家长与设备业务 API、设备通信、内容、家长策略、OTA、遥测、审计和通知 |
-| `services/voice_gateway` | 平台内部 | 实时音频会话、ASR、TTS、内容安全、`sub2api` 调用和用量统计 |
-| `services/sub2api_fork` | AI 基础设施 | 模型账号池、路由、配额、限流、计费和多供应商兼容接口 |
-| `firmware` | 游戏机本体 | 唤醒、录音、播放、语音会话、内容缓存、网络、家长策略执行和 OTA |
-| `packages/contracts` | 全项目共享 | HTTP、事件、MQTT 和设备 capability 的跨端契约 |
+| 项目 | 面向对象 | 主要职责 | 当前状态 |
+| --- | --- | --- | --- |
+| `apps/parent_app` | 家长和监护人 | 登录、家庭、儿童、设备、策略、报告、远程留言、内容和 OTA | `[部分实现]` |
+| `apps/admin_web` | 平台运营和管理人员 | 账号权限、家庭儿童设备、内容、AI 网关、OTA、审计和监控 | `[部分实现]` |
+| `services/device_platform` | 平台内部 | 家长与设备业务 API、设备通信、内容、策略、OTA、遥测和审计 | `[部分实现]` |
+| `services/voice_gateway` | 平台内部 | 实时语音、ASR、TTS、内容安全、`sub2api` 调用和用量统计 | `[部分实现]` |
+| `services/sub2api_fork` | AI 基础设施 | 模型账号池、路由、配额、限流、计费和供应商兼容 | `[部分实现]` |
+| `firmware` | 游戏机本体 | 唤醒、录音、播放、会话、缓存、网络、策略和 OTA | `[部分实现]` |
+| `packages/contracts` | 全项目共享 | HTTP、事件、MQTT、capability 和界面文案契约 | `[部分实现]` |
 
 ## 边界与调用关系
 
@@ -79,19 +153,17 @@
                                   └──> TTS 服务
 ```
 
-主要边界：
-
-- `parent_app` 只访问 `device_platform`，不直接连接 ESP32。
-- `admin_web` 只访问平台管理 API，不在浏览器中保存供应商密钥。
-- `device_platform` 负责儿童、家庭、设备、内容、家长策略、OTA 和审计数据。
-- `voice_gateway` 负责实时语音和 AI 调用适配，不保存设备和家庭业务数据。
-- `sub2api` 负责模型凭据、路由、配额和上游供应商，不包含儿童或设备业务。
-- `firmware` 只保存设备身份、配置和必要缓存，不保存模型供应商密钥。
+- `parent_app` 只访问 `device_platform`，不直接连接设备。
+- `admin_web` 只访问平台管理能力，不在浏览器中保存供应商密钥。
+- `device_platform` 负责儿童、家庭、设备、内容、策略、OTA 和审计数据。
+- `voice_gateway` 负责实时语音和 AI 调用适配，不保存家庭和设备业务主数据。
+- `sub2api` 负责模型凭据、路由、配额和供应商，不包含儿童或设备数据。
+- `firmware` 只保存设备身份、必要配置和缓存，不保存上游模型密钥。
 
 ## 工作区结构
 
-项目采用混合式仓库布局：平台代码放在同一个仓库，固件和 `sub2api` fork
-保持独立仓库，并在平台工作区中以固定版本检出。
+项目采用混合式仓库布局：平台代码放在同一个仓库，固件和 AI 网关 fork 保持独立
+仓库，并在平台工作区中以固定版本检出。
 
 ```text
 sprout-platform/           当前平台仓库
@@ -99,206 +171,110 @@ sprout-platform/           当前平台仓库
     parent_app/            Flutter 家长控制端
     admin_web/             Vue 3 后台管理端
   packages/
-    contracts/             OpenAPI、事件、MQTT 和 capability 契约
+    contracts/             OpenAPI、事件、MQTT、capability 和文案契约
+    go/                    共享 Go HTTP 和可观测性包
   services/
     device_platform/       Go 设备与家庭业务服务
     voice_gateway/         Go 实时语音和 AI 网关
-  tools/
-    bootstrap.ps1          检出或更新锁定版本的外部仓库
+  deploy/                  Docker Compose、PostgreSQL 初始化和 MQTT 配置
+  tools/                   引导、契约、证书和本地部署工具
   workspace.lock.yaml      外部仓库版本锁定
 
 sprout-firmware/           独立固件仓库，本地路径为 firmware/
 sprout-sub2api-fork/       独立 fork 仓库，本地路径为 services/sub2api_fork/
 ```
 
-`firmware/` 和 `services/sub2api_fork/` 由平台根目录的 `.gitignore` 排除，
-需要分别在各自仓库中提交和推送。`workspace.lock.yaml` 只记录平台发布所引用的
-外部仓库版本，不把它们变成 Git submodule。
+`firmware/` 和 `services/sub2api_fork/` 由平台根目录 `.gitignore` 排除，分别在
+各自仓库提交和推送。平台仓库不保存它们的源码副本。
 
 ## 技术栈
 
-| 层级 | 当前或推荐技术 |
+| 层级 | 技术 |
 | --- | --- |
-| 家长端 | Flutter、Dart、go_router；后续可接入 Riverpod 或 Bloc、dio、freezed |
+| 家长端 | Flutter、Dart、Riverpod、go_router、Dio、secure storage、json_serializable |
 | 管理端 | Vue 3、TypeScript、Vite、Pinia、Vue Router、Axios |
-| 业务服务 | Go 1.27.1；推荐 Gin 或 Echo、PostgreSQL、Redis、MQTT/TLS |
+| 业务服务 | Go、标准库 HTTP、pgx、go-redis、Eclipse Paho MQTT |
 | 实时语音 | Go、WebSocket、Opus、ASR/TTS 适配器、`sub2api` |
-| 管理数据库 | PostgreSQL 16 |
-| 缓存与消息 | Redis 7，后续可选 NATS JetStream 或 Redis Streams |
-| 设备通信 | MQTT/TLS、WebSocket、HTTPS |
-| 固件 | ESP-IDF、C、FreeRTOS、PlatformIO |
-| 目标硬件 | ESP32-S3 N16R8，16 MB Flash，8 MB OPI PSRAM |
-| 固件构建目录 | `bgen/` |
-| API 契约 | OpenAPI 3；异步消息预留 AsyncAPI 或事件 Schema |
-| 观测 | OpenTelemetry、Prometheus、Grafana、Loki、Jaeger 或 Tempo |
-
-### 技术文档与开源组件
-
-| 技术 | 官方文档 | 许可证 |
-| --- | --- | --- |
-| Flutter / Dart | [文档](https://docs.flutter.dev/) · [Dart](https://dart.dev/guides) | BSD-3-Clause |
-| Riverpod | [文档](https://riverpod.dev/) | MIT |
-| go_router | [包说明](https://pub.dev/packages/go_router) | BSD-3-Clause |
-| Dio | [文档](https://pub.dev/packages/dio) | MIT |
-| Vue 3 | [文档](https://vuejs.org/guide/) | MIT |
-| Vite | [文档](https://vite.dev/guide/) | MIT |
-| Pinia | [文档](https://pinia.vuejs.org/) | MIT |
-| Vue Router | [文档](https://router.vuejs.org/) | MIT |
-| Axios | [文档](https://axios-http.com/docs/intro) | MIT |
-| Go | [文档](https://go.dev/doc/) | BSD-3-Clause |
-| PostgreSQL | [文档](https://www.postgresql.org/docs/) | PostgreSQL License |
-| Redis | [文档](https://redis.io/docs/latest/) | AGPL-3.0，或按发行版使用 RSALv2/SSPLv1 |
-| Eclipse Mosquitto | [文档](https://mosquitto.org/documentation/) | EPL-2.0 |
-| ESP-IDF | [文档](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/) | Apache-2.0 |
-| FreeRTOS Kernel | [文档](https://www.freertos.org/Documentation/RTOS_book.html) | MIT |
-| PlatformIO | [文档](https://docs.platformio.org/) | Apache-2.0 |
-
-本项目会保留第三方组件的版权与许可证声明，不重新授权第三方代码。
-平台仓库当前尚未声明项目级开源许可证；在添加 `LICENSE` 前，第一方代码不授予
-额外使用许可。
+| 数据与消息 | PostgreSQL 16、Redis 7、MQTT/TLS、MinIO AIStor 可选 |
+| 固件 | ESP-IDF、C、FreeRTOS、PlatformIO、ESP32-S3 N16R8 |
+| 契约 | JSON Schema、OpenAPI、Dart/TypeScript 生成类型 |
+| 可观测性 | `log/slog`、请求 ID、追踪字段、访问日志和脱敏 |
 
 ## 环境准备
 
-根据要开发的项目安装以下工具：
+| 工具 | 建议版本 | 用途 |
+| --- | --- | --- |
+| Git | 当前稳定版 | 版本控制和外部仓库引导 |
+| Flutter | Dart SDK 3.11.5 及以上 | 家长端开发和测试 |
+| Node.js | 22.18 或 24.12 及以上 | 管理端、契约和部署校验 |
+| Go | 1.27.1 及以上 | 两个平台服务 |
+| Docker Desktop 或 Docker Engine | 当前稳定版，含 Compose v2 | 本地依赖和服务部署 |
+| PlatformIO CLI | 当前稳定版 | 固件构建、烧录和测试 |
 
-- Git
-- Flutter，满足 Dart SDK 3.11.5 及以上
-- Node.js 22.18 或 24.12 及以上，以及 npm
-- Go 1.27.1 及以上
-- PlatformIO CLI，仅在开发固件时需要
-- Docker，后续用于 PostgreSQL、Redis、MQTT 和其他本地依赖
-
-首次检出平台仓库后，可在平台根目录执行：
+首次检出平台仓库后，在平台根目录执行：
 
 ```powershell
 .\tools\bootstrap.ps1
 ```
 
-脚本会在缺少目录时克隆 `firmware` 和 `services/sub2api_fork`，已经存在时保留
-当前检出。需要拉取远端信息时使用：
+缺少外部仓库时会按 `workspace.lock.yaml` 克隆；需要更新本地检出时：
 
 ```powershell
 .\tools\bootstrap.ps1 -Update
 ```
 
-外部仓库必须位于 `workspace.lock.yaml` 记录的版本。`sub2api_fork` 同时保留
-`origin` 和 `upstream`：`origin` 是可修改的 `sprout-sub2api-fork`，
-`upstream` 只用于同步上游代码，禁止向 `upstream` 推送“芽系列·初芽”业务。
+`sub2api_fork` 同时保留 `origin` 和 `upstream`。`origin` 是可修改的
+`sprout-sub2api-fork`，`upstream` 只用于同步上游，禁止向上游推送本项目业务。
 
-## 本地运行
+## 构建与测试
 
-各应用和服务可以独立启动。
+### 共享契约
+
+```powershell
+Set-Location tools/contracts
+npm ci
+npm run validate
+npm run generate
+```
+
+生成结果写入 `packages/contracts/generated` 和
+`apps/parent_app/lib/core/contracts/generated`。提交前必须检查生成类型是否同步。
 
 ### 家长控制端
 
 ```powershell
 Set-Location apps/parent_app
 flutter pub get
-flutter run
+flutter analyze
+flutter test
+flutter build apk --release
+```
+
+如需重新生成应用图标，在 Flutter 环境可用时执行：
+
+```powershell
+dart run flutter_launcher_icons
 ```
 
 ### 后台管理端
 
 ```powershell
 Set-Location apps/admin_web
-npm install
-npm run dev
-```
-
-### 业务服务
-
-```powershell
-Set-Location services/device_platform
-go run ./cmd/device-platform
-```
-
-当前服务直接读取环境变量，常用变量如下。完整部署形态参考
-`configs/config.example.yaml`。
-
-```powershell
-$env:DEVICE_PLATFORM_HTTP_HOST = "0.0.0.0"
-$env:DEVICE_PLATFORM_HTTP_PORT = "8081"
-$env:DEVICE_PLATFORM_DATABASE_DSN = "postgres://device_platform:change-me@127.0.0.1:5432/device_platform?sslmode=disable"
-$env:DEVICE_PLATFORM_REDIS_ADDRESS = "127.0.0.1:6379"
-$env:DEVICE_PLATFORM_MQTT_BROKER = "tls://127.0.0.1:8883"
-$env:DEVICE_PLATFORM_MQTT_CA_FILE = "deploy/mosquitto/certs/ca.crt"
-$env:DEVICE_PLATFORM_MQTT_CLIENT_CERTIFICATE_FILE = "deploy/mosquitto/certs/device.crt"
-$env:DEVICE_PLATFORM_MQTT_CLIENT_KEY_FILE = "deploy/mosquitto/certs/device.key"
-go run ./cmd/device-platform
-```
-
-### 实时语音服务
-
-```powershell
-Set-Location services/voice_gateway
-go run ./cmd/voice-gateway
-```
-
-当前服务直接读取环境变量，常用变量如下。完整部署形态参考
-`configs/config.example.yaml`。
-
-```powershell
-$env:VOICE_GATEWAY_HTTP_HOST = "0.0.0.0"
-$env:VOICE_GATEWAY_HTTP_PORT = "8082"
-$env:VOICE_GATEWAY_REDIS_ADDRESS = "127.0.0.1:6379"
-$env:VOICE_GATEWAY_SUB2API_BASE_URL = "http://127.0.0.1:8080"
-$env:VOICE_GATEWAY_SUB2API_API_KEY = "<local-api-key>"
-go run ./cmd/voice-gateway
-```
-
-两个 Go 服务当前都提供健康检查：
-
-```text
-GET /healthz
-GET /readyz
-```
-
-### 游戏机本体
-
-```powershell
-Set-Location firmware
-platformio run -e esp32-s3-n16r8
-```
-
-固件的所有构建中间文件、镜像和测试输出统一写入 `bgen/`，该目录不进入 Git。
-烧录和串口监视仍使用 PlatformIO 或 ESP-IDF 命令。
-
-## 配置与凭据
-
-- 本地凭据不得提交到 Git。
-- 使用各项目提供的 `.env.example` 或 `config.example.yaml` 作为配置参考。
-- 当前 Go 服务从环境变量加载配置，`config.example.yaml` 只用于说明部署形态。
-- 不要把 `.env`、设备证书、私钥、模型供应商密钥写入源码或共享契约。
-- 固件只保存设备身份和设备令牌，不保存模型供应商凭据。
-- 管理端只能显示脱敏后的配置，不向浏览器返回真实密钥。
-- 提交前检查根目录和各独立仓库的忽略规则是否覆盖本地生成文件。
-
-## 质量门禁
-
-### Flutter
-
-```powershell
-Set-Location apps/parent_app
-flutter analyze
-flutter test
-```
-
-### Vue 管理端
-
-```powershell
-Set-Location apps/admin_web
+npm ci
 npm run type-check
 npm run build
 npm run test:e2e
 ```
 
-首次运行端到端测试前，需要安装 Playwright 浏览器：
+首次运行端到端测试前执行：
 
 ```powershell
 npx playwright install
 ```
 
-### Go 服务
+构建产物位于 `apps/admin_web/dist`，该目录不进入 Git。
+
+### Go 平台服务
 
 ```powershell
 Set-Location services/device_platform
@@ -312,6 +288,15 @@ go test ./...
 go build ./...
 ```
 
+两个服务当前提供：
+
+```text
+GET /healthz
+GET /readyz
+```
+
+`readyz` 当前返回服务就绪状态；数据库、Redis 和 MQTT 的独立依赖就绪判断仍待接入。
+
 ### 固件
 
 ```powershell
@@ -319,32 +304,266 @@ Set-Location firmware
 platformio run -e esp32-s3-n16r8
 ```
 
-每个功能修改都应补对应测试，并至少覆盖受影响项目的质量门禁。删除模块后，
-还要验证无关模块仍能独立编译和启动。
+固件所有构建中间文件、镜像和测试输出统一写入 `bgen/`。该目录不进入 Git。
+`esp32-s3-n16r8-minimal` 用于验证关闭可选模块后仍能构建。
+
+### 本地部署校验
+
+```powershell
+Set-Location tools/local-deployment
+npm ci
+npm run validate
+```
+
+## Docker 部署
+
+### 1. 准备本地配置
+
+首次部署在平台根目录执行：
+
+```powershell
+.\tools\local-deployment\Initialize-LocalEnvironment.ps1
+```
+
+脚本从 `deploy/.env.example` 生成 `deploy/.env`，并为数据库、Redis、管理员和
+服务密钥生成随机值。`deploy/.env` 不得提交。
+
+生成仅供本地开发使用的 MQTT 双向 TLS 证书：
+
+```powershell
+.\tools\generate-local-mqtt-certs.ps1
+```
+
+证书写入 `deploy/mosquitto/certs`。该目录已在 Git 中忽略，禁止把开发证书用于
+生产环境。
+
+### 2. 启动 Compose 服务
+
+Compose 文件位于 `deploy/docker-compose.yml`，支持以下配置：
+
+| 配置 | 启动内容 | 命令 |
+| --- | --- | --- |
+| 默认 | PostgreSQL、Redis、MQTT/TLS | `docker compose -f deploy/docker-compose.yml up -d` |
+| AI | 默认服务加 `sub2api` | `docker compose -f deploy/docker-compose.yml --profile ai up -d` |
+| 平台服务 | 默认服务加两个 Go 服务 | `docker compose -f deploy/docker-compose.yml --profile services up -d --build` |
+| 全量 | 默认、AI 和平台服务 | `docker compose -f deploy/docker-compose.yml --profile ai --profile services up -d --build` |
+
+Docker Desktop 需要先启动并确认 Compose 可用：
+
+```powershell
+docker version
+docker compose version
+```
+
+### 3. 检查运行状态
+
+```powershell
+docker compose -f deploy/docker-compose.yml ps
+docker compose -f deploy/docker-compose.yml logs -f device_platform
+docker compose -f deploy/docker-compose.yml logs -f voice_gateway
+docker compose -f deploy/docker-compose.yml logs -f sub2api
+```
+
+默认只监听本机地址：
+
+| 服务 | 地址 |
+| --- | --- |
+| PostgreSQL | `127.0.0.1:5432` |
+| Redis | `127.0.0.1:6379` |
+| MQTT | `127.0.0.1:1883` |
+| MQTT/TLS | `127.0.0.1:8883` |
+| `sub2api` | `http://127.0.0.1:8080` |
+| `device_platform` | `http://127.0.0.1:8081` |
+| `voice_gateway` | `http://127.0.0.1:8082` |
+
+健康检查：
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8081/healthz
+Invoke-RestMethod http://127.0.0.1:8081/readyz
+Invoke-RestMethod http://127.0.0.1:8082/healthz
+Invoke-RestMethod http://127.0.0.1:8082/readyz
+```
+
+### 4. 停止和清理
+
+停止服务但保留数据：
+
+```powershell
+docker compose -f deploy/docker-compose.yml down
+```
+
+同时删除本地 Compose 数据卷：
+
+```powershell
+docker compose -f deploy/docker-compose.yml down --volumes
+```
+
+删除数据卷会丢失本地数据库、Redis、MQTT 和 `sub2api` 数据，只能在确认不需要
+恢复时执行。
+
+## MinIO AIStor 可选部署
+
+对象存储在需要保存合规的短期媒体、内容包或备份时启用。AIStor 不默认包含在
+`deploy/docker-compose.yml` 中，因为它需要单独挂载许可证、证书和专用数据目录，
+并且许可证和容量规划与业务服务不同。
+
+AIStor 必须有有效许可证。免费层许可证可以在
+[MinIO 定价页](https://min.io/pricing) 申请，免费层限制为单计算资源配置且不包含
+商业支持。请先阅读许可证条款，再决定是否用于生产。
+
+### Linux Docker
+
+```bash
+docker pull quay.io/minio/aistor/minio
+
+mkdir -p "$HOME/minio/data" "$HOME/minio/certs"
+
+# 将许可证文件保存为 $HOME/minio/minio.license
+
+docker run -dt \
+  -p 9000:9000 -p 9001:9001 \
+  -v "$HOME/minio/data:/mnt/data" \
+  -v "$HOME/minio/minio.license:/minio.license" \
+  -v "$HOME/minio/certs:/etc/minio/certs" \
+  --name "aistor-server" \
+  quay.io/minio/aistor/minio:latest minio server /mnt/data \
+  --license /minio.license
+
+docker logs aistor-server
+```
+
+### Windows PowerShell
+
+```powershell
+$minioRoot = Join-Path $HOME "minio"
+$minioData = Join-Path $minioRoot "data"
+$minioCerts = Join-Path $minioRoot "certs"
+New-Item -ItemType Directory -Force -Path $minioData, $minioCerts | Out-Null
+
+# 将许可证文件保存为 $minioRoot\minio.license
+
+docker pull quay.io/minio/aistor/minio
+docker run -dt `
+  -p 9000:9000 -p 9001:9001 `
+  -v "${minioData}:/mnt/data" `
+  -v "${minioRoot}\minio.license:/minio.license" `
+  -v "${minioCerts}:/etc/minio/certs" `
+  --name "aistor-server" `
+  quay.io/minio/aistor/minio:latest minio server /mnt/data `
+  --license /minio.license
+
+docker logs aistor-server
+```
+
+### Podman
+
+Podman 的目录和许可证准备方式相同，将 `docker pull` 和 `docker run` 替换为
+`podman pull` 和 `podman run` 即可。容器配置、端口和卷挂载参数保持不变。
+
+### 控制台和安全
+
+- 控制台默认地址：`http://localhost:9001`。
+- 如果首次初始化暂时使用本地默认账号，必须在开始使用前改成强密码。任何情况下
+  都不得把默认密码带进共享或生产环境。
+- 生产环境必须启用 TLS，使用正式证书，限制管理端访问来源，并遵循
+  [MinIO 网络加密文档](https://docs.min.io/aistor/installation/container/network-encryption/)。
+- `9000` 和 `9001` 不应直接暴露到公网。若必须跨主机访问，应放在受控反向代理、
+  私网和访问控制之后。
+- AIStor 当前是独立对象存储组件，平台服务尚未内置 AIStor 配置项；接入前必须先
+  补充 Secret 注入、TLS 信任、租户隔离、保留期和删除策略。
+
+### `mc` 客户端
+
+Linux AMD64：
+
+```bash
+curl --progress-bar -L \
+  https://dl.min.io/aistor/mc/release/linux-amd64/mc -o mc
+chmod +x ./mc
+sudo mv ./mc /usr/local/bin/
+mc --version
+```
+
+Linux ARM64：
+
+```bash
+curl --progress-bar -L \
+  https://dl.min.io/aistor/mc/release/linux-arm64/mc -o mc
+chmod +x ./mc
+sudo mv ./mc /usr/local/bin/
+mc --version
+```
+
+## 本地服务配置
+
+两个 Go 服务当前从环境变量加载配置，示例配置文件只用于说明部署形态。
+
+### `device_platform`
+
+```powershell
+$env:DEVICE_PLATFORM_HTTP_HOST = "0.0.0.0"
+$env:DEVICE_PLATFORM_HTTP_PORT = "8081"
+$env:DEVICE_PLATFORM_DATABASE_DSN = "postgres://sprout:<password>@127.0.0.1:5432/sprout_device_platform?sslmode=disable"
+$env:DEVICE_PLATFORM_REDIS_ADDRESS = "127.0.0.1:6379"
+$env:DEVICE_PLATFORM_REDIS_PASSWORD = "<redis-password>"
+$env:DEVICE_PLATFORM_MQTT_BROKER = "tls://127.0.0.1:8883"
+$env:DEVICE_PLATFORM_MQTT_CA_FILE = "deploy/mosquitto/certs/ca.crt"
+$env:DEVICE_PLATFORM_MQTT_CLIENT_CERTIFICATE_FILE = "deploy/mosquitto/certs/device.crt"
+$env:DEVICE_PLATFORM_MQTT_CLIENT_KEY_FILE = "deploy/mosquitto/certs/device.key"
+```
+
+### `voice_gateway`
+
+```powershell
+$env:VOICE_GATEWAY_HTTP_HOST = "0.0.0.0"
+$env:VOICE_GATEWAY_HTTP_PORT = "8082"
+$env:VOICE_GATEWAY_REDIS_ADDRESS = "127.0.0.1:6379"
+$env:VOICE_GATEWAY_REDIS_PASSWORD = "<redis-password>"
+$env:VOICE_GATEWAY_SUB2API_BASE_URL = "http://127.0.0.1:8080"
+$env:VOICE_GATEWAY_SUB2API_API_KEY = "<local-api-key>"
+```
+
+不要把真实密钥写入 README、源码、镜像、日志或前端配置。
+
+## CI 与 Release
+
+平台仓库包含：
+
+- `.github/workflows/ci.yml`：校验部署文件、契约、生成类型、Go 服务、Vue 管理端
+  和 Flutter 家长端。
+- `.github/workflows/release.yml`：监听 `main` 分支上的 `VERSION` 变更，构建
+  Go 服务、管理端和契约归档，生成中文 Release 说明并创建 GitHub Release。
+
+发布平台版本时只修改根目录 `VERSION`，格式固定为 `X.Y.Z`，提交并推送到 `main`。
+标签由工作流自动生成和使用。`firmware`、`sprout-sub2api-fork` 在各自仓库独立
+执行 CI 和 Release，不混入平台发布。
 
 ## 模块化约束
 
-模块边界是本项目的一等约束，不能只在目录上做表面拆分。
+- 每个功能都必须能独立增加和删除，删除只影响注册表、组合根、契约消费者和构建
+  开关。
+- 固件可选硬件使用独立 `CONFIG_FEATURE_<MODULE_NAME>` 开关，并在 CMake 中排除
+  对应源码和依赖。
+- 平台服务模块保持 `domain`、`service`、`handler`、`repository` 边界。
+- 跨端协议进入 `packages/contracts`；服务内部传输契约留在各服务目录。
+- 一个概念只使用一个 canonical 名称。设备形态使用 `camera`、`display`、
+  `touch`、`cellular`、`battery` 等能力名，不使用角色外形命名。
+- 公共 API 和复杂流程必须有简短、面向开发者的契约注释；注释解释约束和原因。
 
-- 包名、模块名、方法名和变量名必须表达业务含义，并保持项目内一致。
-- 公共 API 和复杂流程必须有面向开发者的简洁注释，说明参数、失败行为和约束。
-- 模块之间只通过公开接口或 service 调用，禁止跨模块直接访问对方数据表。
-- 单个功能模块必须能独立删除，不需要修改无关业务代码。
-- 固件可选硬件必须使用独立 Kconfig 开关；关闭后，其初始化、依赖和资源都应被
-  条件编译移除。
-- 跨端协议必须进入 `packages/contracts`，接口变更必须带 `schema_version`。
-- 服务内部传输细节留在各自的 `contracts/` 或 `internal/contracts/`，不要污染
-  全项目共享契约。
+## 安全与隐私强制项
+
+- 默认关闭或采用最保守配置；社交、摄像头、麦克风上传和数据采集必须由监护人
+  明确开启。
+- 所有公网通信使用 TLS 1.2+，必须校验证书，禁止跳过证书验证。
+- 设备使用唯一身份和短期令牌，服务端密钥只存在于服务端 Secret 管理。
+- 日志、指标、审计和错误响应不得包含完整对话、音频、图片、令牌、密钥或儿童
+  个人信息。
+- AI 请求和输出必须经过内容安全策略；模型供应商密钥不得下发设备或前端。
+- 音频、图像、对话和诊断数据采用最短保留期，并提供授权撤回、删除和账号注销。
+- 生产固件必须启用安全启动、Flash 加密、签名 OTA 和看门狗，并关闭调试接口。
 
 ## Git 工作流
-
-仓库按以下边界独立管理：
-
-| 仓库 | 本地路径 | 用途 |
-| --- | --- | --- |
-| `sprout-platform` | `D:\service\clarkaitoy` | 应用、服务、共享契约和文档 |
-| `sprout-firmware` | `D:\service\clarkaitoy\firmware` | ESP32-S3 固件 |
-| `sprout-sub2api-fork` | `D:\service\clarkaitoy\services\sub2api_fork` | `sub2api` fork |
 
 提交信息统一使用：
 
@@ -373,26 +592,30 @@ fix(voice_gateway): reject expired websocket sessions
 docs(workspace): update external repository revisions
 ```
 
-每次修改前，先确认对应仓库工作区干净且已有提交作为回归基线。每个独立功能完成
-后，由开发者或执行修改的 AI 生成一次聚焦的 commit。修改外部仓库时必须在对应
-仓库内提交和推送，不在平台仓库中混入其源码。
+平台、固件和 `sub2api` fork 在各自仓库提交和推送。不提交 `AGENTS.md`、规划文档、
+构建产物、本地配置、密钥、证书或无关文件。
 
-## 近期重点
+## 开源组件
 
-1. 固化身份、家庭、儿童、设备和 capability 契约。
-2. 完成 `device_platform` 的数据库、认证和设备绑定闭环。
-3. 完成 `voice_gateway` 的 WebSocket、ASR、`sub2api` 和 TTS 闭环。
-4. 接入家长端的登录、设备绑定、儿童档案和家长策略。
-5. 接入管理端的设备、内容、OTA 和审计页面。
-6. 按 Kconfig 开关逐项启用固件音频、网络、策略和 OTA 能力。
-7. 补充 CI、监控、压测、隐私合规、灰度发布和灾难恢复。
+本项目保留第三方组件的版权和许可证声明，不重新授权第三方代码。主要依赖：
 
-## 儿童隐私与安全
+- [Go](https://go.dev/LICENSE)：BSD-3-Clause。
+- [Flutter 和 Dart](https://github.com/flutter/flutter/blob/master/LICENSE)：BSD-3-Clause。
+- [Vue 3](https://github.com/vuejs/core/blob/main/LICENSE)：MIT。
+- [Vite](https://github.com/vitejs/vite/blob/main/LICENSE)：MIT。
+- [Pinia](https://github.com/vuejs/pinia/blob/v3/LICENSE)：MIT。
+- [Vue Router](https://github.com/vuejs/router/blob/main/LICENSE)：MIT。
+- [Axios](https://github.com/axios/axios/blob/v1.x/LICENSE)：MIT。
+- [Dio](https://github.com/cfug/dio/blob/main/dio/LICENSE)：MIT。
+- [Riverpod](https://github.com/rrousselGit/riverpod/blob/master/LICENSE)：MIT。
+- [go_router](https://github.com/flutter/packages/blob/main/packages/go_router/LICENSE)：BSD-3-Clause。
+- [PostgreSQL](https://www.postgresql.org/about/licence/)：PostgreSQL License。
+- [Redis](https://github.com/redis/redis/blob/unstable/LICENSE.txt)：AGPL-3.0，或按发行版使用 RSALv2/SSPLv1。
+- [Eclipse Mosquitto](https://github.com/eclipse-mosquitto/mosquitto/blob/master/LICENSE.txt)：EPL-2.0。
+- [ESP-IDF](https://github.com/espressif/esp-idf/blob/master/LICENSE)：Apache-2.0。
+- [FreeRTOS Kernel](https://github.com/FreeRTOS/FreeRTOS-Kernel/blob/main/LICENSE.md)：MIT。
+- [PlatformIO Core](https://github.com/platformio/platformio-core/blob/develop/LICENSE)：Apache-2.0。
+- [MinIO AIStor](https://min.io/pricing)：使用前必须确认商业许可、免费层限制和支持范围。
 
-- 所有公网通信使用 TLS。
-- 儿童语音、照片、位置等数据按最小必要原则采集和处理。
-- 未获得明确授权时，不保存儿童原始语音和图像。
-- 日志必须脱敏，不记录密码、设备密钥、完整音频或真实身份信息。
-- 模型请求必须经过内容安全策略，设备和管理端不持有模型供应商密钥。
-- 管理操作、敏感数据访问、设备凭证变更和 OTA 发布必须留存审计记录。
-- 提供家庭数据导出、删除和账号注销流程。
+平台仓库当前尚未声明项目级开源许可证；在添加 `LICENSE` 前，第一方代码不授予
+额外使用许可。
