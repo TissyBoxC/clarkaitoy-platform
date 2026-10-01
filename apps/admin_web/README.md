@@ -1,63 +1,58 @@
-# admin_web
+<div align="center">
 
-This template should help get you started developing with Vue 3 in Vite.
+<img src="../../assets/brand/sprout/brand_banner.png" alt="如此萌屋" width="560" />
 
-## Recommended IDE Setup
+</div>
 
-[VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+# 如此萌屋后台管理端
 
-This project replaces its workspace TypeScript package with [typescript-native-bridge](https://github.com/johnsoncodehk/typescript-native-bridge). Command-line tools use the bridge automatically. To use it in VS Code after installing dependencies, accept the prompt to use the workspace TypeScript version. If the prompt does not appear, run **TypeScript: Select TypeScript Version** and choose **Use Workspace Version**.
+面向平台运营和管理人员的 Vue 3 管理端，负责芽系列·初芽平台的日常管理和安全审计。
 
-## Recommended Browser Setup
+## 职责
 
-- Chromium-based browsers (Chrome, Edge, Brave, etc.):
-  - [Vue.js devtools](https://chromewebstore.google.com/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd)
-  - [Turn on Custom Object Formatter in Chrome DevTools](http://bit.ly/object-formatters)
-- Firefox:
-  - [Vue.js devtools](https://addons.mozilla.org/en-US/firefox/addon/vue-js-devtools/)
-  - [Turn on Custom Object Formatter in Firefox DevTools](https://fxdx.dev/firefox-devtools-custom-object-formatters/)
+- 账号、角色、MFA 和最小权限管理。
+- 家庭、儿童和设备状态管理。
+- 内容、界面文案、AI 网关和 OTA 发布管理。
+- 审计日志、异常告警和运营数据查看。
 
-## Type Support for `.vue` Imports in TS
+浏览器只访问平台管理服务，不保存供应商密钥，也不直接暴露儿童敏感数据。
 
-TypeScript cannot handle type information for `.vue` imports by default, so we replace the `tsc` CLI with `vue-tsc` for type checking. In editors, we need [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) to make the TypeScript language service aware of `.vue` types.
+## 技术栈
 
-## Customize configuration
+| 场景 | 选型 |
+| --- | --- |
+| 框架 | Vue 3、TypeScript、Vite |
+| 路由 | Vue Router |
+| 状态管理 | Pinia |
+| 网络 | Axios |
+| 测试 | Playwright、Vue Test Utils 按功能补充 |
+| 格式化 | Prettier |
 
-See [Vite Configuration Reference](https://vite.dev/config/).
+管理端 UI 组件库将在中后台功能开发时优先从 Element Plus、Naive UI 或
+Ant Design Vue 中按现有设计约束选定，避免同时引入多套组件体系。
 
-## Project Setup
+## 本地运行
 
-```sh
+```powershell
 npm install
-```
-
-### Compile and Hot-Reload for Development
-
-```sh
 npm run dev
 ```
 
-### Type-Check, Compile and Minify for Production
+## 目录
 
-```sh
-npm run build
+```text
+src/api/          HTTP、错误映射和会话刷新边界
+src/app/          应用装配、路由和全局状态
+src/components/   无业务通用组件
+src/features/     按业务能力拆分的功能模块
+src/layouts/      管理端页面骨架和品牌区域
+public/brand/     浏览器可直接访问的品牌资源
 ```
 
-### Run End-to-End Tests with [Playwright](https://playwright.dev)
+## 质量门禁
 
-```sh
-# Install browsers for the first run
-npx playwright install
-
-# When testing on CI, must build the project first
+```powershell
+npm run type-check
 npm run build
-
-# Runs the end-to-end tests
 npm run test:e2e
-# Runs the tests only on Chromium
-npm run test:e2e -- --project=chromium
-# Runs the tests of a specific file
-npm run test:e2e -- tests/example.spec.ts
-# Runs the tests in debug mode
-npm run test:e2e -- --debug
 ```

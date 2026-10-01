@@ -6,16 +6,16 @@ import MetricCard from '@/components/MetricCard.vue'
   <section>
     <header class="page-header">
       <div>
-        <p class="eyebrow">Operations overview</p>
-        <h1>Platform status</h1>
+        <p class="eyebrow">运营概览</p>
+        <h1>平台状态</h1>
       </div>
     </header>
 
     <div class="metric-grid">
-      <MetricCard label="Families" value="--" detail="Awaiting platform API" />
-      <MetricCard label="Devices online" value="--" detail="Awaiting telemetry API" />
-      <MetricCard label="AI calls today" value="--" detail="Awaiting gateway metrics" />
-      <MetricCard label="OTA pending" value="--" detail="Awaiting release API" />
+      <MetricCard label="家庭" value="--" detail="等待业务服务接入" />
+      <MetricCard label="在线设备" value="--" detail="等待设备状态接入" />
+      <MetricCard label="今日 AI 对话" value="--" detail="等待网关统计接入" />
+      <MetricCard label="待发布更新" value="--" detail="等待发布记录接入" />
     </div>
   </section>
 </template>

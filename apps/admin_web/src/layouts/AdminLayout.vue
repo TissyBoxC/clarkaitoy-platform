@@ -5,10 +5,22 @@ import { RouterLink, RouterView } from 'vue-router'
 <template>
   <div class="admin-layout">
     <aside class="admin-sidebar">
-      <RouterLink class="brand" to="/">如此萌屋</RouterLink>
+      <RouterLink class="brand" to="/">
+        <img
+          class="brand-avatar"
+          src="/brand/sprout/brand_avatar.png"
+          alt=""
+          width="48"
+          height="48"
+        />
+        <span>
+          <strong>如此萌屋</strong>
+          <small>芽系列 · 初芽</small>
+        </span>
+      </RouterLink>
       <nav class="admin-nav" aria-label="Primary navigation">
-        <RouterLink to="/">Overview</RouterLink>
-        <RouterLink to="/devices">Devices</RouterLink>
+        <RouterLink to="/">运营概览</RouterLink>
+        <RouterLink to="/devices">设备管理</RouterLink>
         <RouterLink to="/ui-text">界面文案</RouterLink>
       </nav>
     </aside>
@@ -33,12 +45,31 @@ import { RouterLink, RouterView } from 'vue-router'
 }
 
 .brand {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 32px;
   color: inherit;
-  font-size: 18px;
-  font-weight: 700;
   text-decoration: none;
+}
+
+.brand-avatar {
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+.brand span {
+  display: grid;
+  gap: 2px;
+}
+
+.brand strong {
+  font-size: 18px;
+}
+
+.brand small {
+  color: #cbe3d8;
+  font-size: 12px;
 }
 
 .admin-nav {

@@ -1,10 +1,10 @@
 <template>
   <section>
     <header class="page-header">
-      <p class="eyebrow">Device operations</p>
-      <h1>Devices</h1>
+      <p class="eyebrow">设备运营</p>
+      <h1>设备管理</h1>
       <p class="page-description">
-        Device binding and health data will appear after the platform API is connected.
+        设备列表将在业务服务接入后显示。这里用于查看绑定关系、在线状态和版本信息。
       </p>
     </header>
   </section>

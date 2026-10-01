@@ -1,12 +1,27 @@
+<div align="center">
+
+<img src="assets/brand/sprout/brand_banner.png" alt="如此萌屋" width="720" />
+
 # 如此萌屋
+
+### 芽系列 · 初芽
+
+面向幼儿的模块化 AI 早教陪伴平台
 
 English | [简体中文](README.zh-CN.md)
 
+</div>
+
+> `sprout-platform` is the platform repository for 如此萌屋's first product,
+> 芽系列·初芽. It contains the parent application, admin console, backend
+> services, shared contracts, and workspace tooling. Firmware and the AI
+> gateway fork remain independent repositories.
+
 ## 芽系列·初芽
 
-“芽系列·初芽” is a modular AI early-education companion platform for young children.
-The workspace contains the parent application, admin console, backend services,
-firmware, and shared contracts.
+芽系列·初芽面向 3 至 8 岁儿童及其监护人，目标是把游戏机本体、家长控制端、
+后台管理端和 AI 服务组合成一套可持续演进的产品。平台默认保护儿童隐私，
+所有摄像头、麦克风、社交和数据采集能力默认关闭，需由监护人明确开启。
 
 ## Workspace
 

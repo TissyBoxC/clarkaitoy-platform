@@ -8,7 +8,22 @@ class FamilyHomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('如此萌屋')),
+      appBar: AppBar(
+        title: Row(
+          children: [
+            ClipOval(
+              child: Image.asset(
+                'assets/brand/sprout/brand_avatar.png',
+                width: 32,
+                height: 32,
+                semanticLabel: '如此萌屋',
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Text('如此萌屋'),
+          ],
+        ),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [

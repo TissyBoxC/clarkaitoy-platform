@@ -40,6 +40,7 @@ dependencies:
 
 dev_dependencies:
   build_runner: ^2.10.4
+  flutter_launcher_icons: ^0.14.4
   flutter_test:
     sdk: flutter
 
@@ -61,6 +62,29 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/brand/sprout/brand_avatar.png
+    - assets/brand/sprout/brand_banner.png
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/brand/sprout/app_icon.png
+  adaptive_icon_background: "#F8B8CA"
+  adaptive_icon_foreground: assets/brand/sprout/app_icon.png
+  web:
+    generate: true
+    image_path: assets/brand/sprout/app_icon.png
+    background_color: "#F8B8CA"
+    theme_color: "#F8B8CA"
+  windows:
+    generate: true
+    image_path: assets/brand/sprout/app_icon.png
+    icon_size: 256
+  macos:
+    generate: true
+    image_path: assets/brand/sprout/app_icon.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

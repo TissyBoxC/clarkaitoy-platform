@@ -7,6 +7,7 @@ void main() {
     await tester.pumpWidget(const ParentApp());
     await tester.pumpAndSettle();
 
+    expect(find.text('如此萌屋'), findsOneWidget);
     expect(find.text('Family workspace'), findsOneWidget);
     expect(find.text('View devices'), findsOneWidget);
   });
