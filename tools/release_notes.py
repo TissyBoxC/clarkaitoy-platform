@@ -88,6 +88,7 @@ DESCRIPTION_PHRASES = {
     "expose secured runtime contract": "开放受保护的运行时契约",
     "ignore python caches and use python3": "忽略 Python 缓存并使用 python3",
     "localize release note fallback": "完善发行说明的中文回退文本",
+    "localize fallback summary": "补充发行说明的中文摘要",
     "reserve remote text modules": "预留远程文本模块",
     "preserve concrete release note descriptions": "保留具体的发行说明内容",
     "share versioned response envelope": "共享带版本响应信封",
