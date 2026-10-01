@@ -1,0 +1,121 @@
+name: Release Platform
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - VERSION
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-platform
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect version change
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid VERSION: $version" >&2
+            exit 1
+          fi
+
+          tag="v$version"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "Release $tag already exists; skipping."
+            exit 0
+          fi
+
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Preparing release $tag."
+
+      - name: Set up Go
+        if: steps.detect.outputs.should_release == 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: services/device_platform/go.mod
+          cache-dependency-path: |
+            services/device_platform/go.sum
+            services/voice_gateway/go.sum
+
+      - name: Build Go services and package contracts
+        if: steps.detect.outputs.should_release == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          (cd services/device_platform && go test ./... && go build -o ../../dist/device-platform ./cmd/device-platform)
+          (cd services/voice_gateway && go test ./... && go build -o ../../dist/voice-gateway ./cmd/voice-gateway)
+
+          tar -czf "dist/sprout-contracts-${{ steps.detect.outputs.tag }}.tar.gz" packages/contracts
+
+      - name: Set up Node.js
+        if: steps.detect.outputs.should_release == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/admin_web/package-lock.json
+
+      - name: Build admin web
+        if: steps.detect.outputs.should_release == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --prefix apps/admin_web
+          npm run build --prefix apps/admin_web
+          tar -czf "dist/admin-web-${{ steps.detect.outputs.tag }}.tar.gz" -C apps/admin_web dist
+
+      - name: Generate Chinese release notes
+        if: steps.detect.outputs.should_release == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/release_notes.py \
+            --version "${{ steps.detect.outputs.version }}" \
+            --current-tag "${{ steps.detect.outputs.tag }}" \
+            --repository "$GITHUB_REPOSITORY" \
+            --output release-notes.md
+          cat release-notes.md
+
+      - name: Create release assets checksum
+        if: steps.detect.outputs.should_release == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          find dist -maxdepth 1 -type f ! -name SHA256SUMS -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > dist/SHA256SUMS
+
+      - name: Publish GitHub release
+        if: steps.detect.outputs.should_release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.detect.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.detect.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "如此萌屋平台 $RELEASE_VERSION" \
+            --notes-file release-notes.md
