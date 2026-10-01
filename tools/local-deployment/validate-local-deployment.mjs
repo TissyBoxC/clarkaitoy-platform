@@ -1,0 +1,60 @@
+import { readFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import path from 'node:path'
+import YAML from 'yaml'
+
+const workspaceRoot = path.resolve(import.meta.dirname, '..', '..')
+const composePath = path.join(workspaceRoot, 'deploy', 'docker-compose.yml')
+const examplePath = path.join(workspaceRoot, 'deploy', '.env.example')
+
+const compose = YAML.parse(await readFile(composePath, 'utf8'))
+const composeSource = await readFile(composePath, 'utf8')
+const example = await readFile(examplePath, 'utf8')
+
+const requiredServices = [
+  'postgres',
+  'redis',
+  'mqtt',
+  'minio',
+  'sub2api',
+  'device_platform',
+  'voice_gateway',
+]
+
+for (const serviceName of requiredServices) {
+  if (!compose.services?.[serviceName]) {
+    throw new Error(`Missing required Compose service: ${serviceName}`)
+  }
+}
+
+const declaredVariables = new Set(
+  example
+    .split(/\r?\n/)
+    .map((line) => line.match(/^([A-Z][A-Z0-9_]*)=/)?.[1])
+    .filter(Boolean),
+)
+
+const referencedVariables = new Set(
+  [...composeSource.matchAll(/\$\{(SPROUT_[A-Z0-9_]+)/g)].map((match) => match[1]),
+)
+
+const missingVariables = [...referencedVariables].filter(
+  (variableName) => !declaredVariables.has(variableName),
+)
+
+if (missingVariables.length > 0) {
+  throw new Error(`Undocumented local variables: ${missingVariables.join(', ')}`)
+}
+
+const localEnvironment = path.join(workspaceRoot, 'deploy', '.env')
+if (existsSync(localEnvironment)) {
+  throw new Error('deploy/.env must not be present in a source checkout')
+}
+const certificateDirectory = path.join(workspaceRoot, 'deploy', 'mosquitto', 'certs')
+if (process.env.CI === 'true' && existsSync(certificateDirectory)) {
+  throw new Error('Generated MQTT certificates must not be committed')
+}
+
+console.log(
+  `Validated ${requiredServices.length} local services and ${referencedVariables.size} variables`,
+)

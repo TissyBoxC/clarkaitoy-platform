@@ -1,0 +1,15 @@
+{
+  "name": "@sprout/local-deployment-tools",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "validate": "node validate-local-deployment.mjs"
+  },
+  "dependencies": {
+    "yaml": "2.8.1"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

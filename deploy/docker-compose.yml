@@ -1,0 +1,200 @@
+name: sprout-local
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${SPROUT_POSTGRES_USER:-sprout}
+      POSTGRES_PASSWORD: ${SPROUT_POSTGRES_PASSWORD:?set SPROUT_POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_DB: ${SPROUT_POSTGRES_DB:-sprout}
+    ports:
+      - "127.0.0.1:${SPROUT_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - sprout_postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${SPROUT_POSTGRES_USER:-sprout} -d ${SPROUT_POSTGRES_DB:-sprout}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--requirepass",
+        "${SPROUT_REDIS_PASSWORD:?set SPROUT_REDIS_PASSWORD in deploy/.env}",
+      ]
+    ports:
+      - "127.0.0.1:${SPROUT_REDIS_PORT:-6379}:6379"
+    volumes:
+      - sprout_redis_data:/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "redis-cli -a \"$${SPROUT_REDIS_PASSWORD}\" ping | grep PONG",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    environment:
+      SPROUT_REDIS_PASSWORD: ${SPROUT_REDIS_PASSWORD:?set SPROUT_REDIS_PASSWORD in deploy/.env}
+    restart: unless-stopped
+
+  mqtt:
+    image: eclipse-mosquitto:2
+    ports:
+      - "127.0.0.1:${SPROUT_MQTT_PORT:-1883}:1883"
+      - "127.0.0.1:${SPROUT_MQTTS_PORT:-8883}:8883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/certs:/mosquitto/certs:ro
+      - sprout_mqtt_data:/mosquitto/data
+      - sprout_mqtt_log:/mosquitto/log
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mosquitto_sub -h 127.0.0.1 -p 1883 -t '$$SYS/broker/version' -C 1 -W 3 >/dev/null 2>&1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 10s
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${SPROUT_MINIO_ROOT_USER:?set SPROUT_MINIO_ROOT_USER in deploy/.env}
+      MINIO_ROOT_PASSWORD: ${SPROUT_MINIO_ROOT_PASSWORD:?set SPROUT_MINIO_ROOT_PASSWORD in deploy/.env}
+    ports:
+      - "127.0.0.1:${SPROUT_MINIO_PORT:-9000}:9000"
+      - "127.0.0.1:${SPROUT_MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - sprout_minio_data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mc",
+          "ready",
+          "local",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 10s
+    restart: unless-stopped
+
+  sub2api:
+    image: weishaw/sub2api:latest
+    profiles:
+      - ai
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:${SPROUT_SUB2API_PORT:-8080}:8080"
+    volumes:
+      - sprout_sub2api_data:/app/data
+    environment:
+      AUTO_SETUP: "true"
+      SERVER_HOST: "0.0.0.0"
+      SERVER_PORT: "8080"
+      SERVER_MODE: "release"
+      DATABASE_HOST: "postgres"
+      DATABASE_PORT: "5432"
+      DATABASE_USER: ${SPROUT_POSTGRES_USER:-sprout}
+      DATABASE_PASSWORD: ${SPROUT_POSTGRES_PASSWORD:?set SPROUT_POSTGRES_PASSWORD in deploy/.env}
+      DATABASE_DBNAME: ${SPROUT_SUB2API_DATABASE_NAME:-sprout_sub2api}
+      DATABASE_SSLMODE: "disable"
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${SPROUT_REDIS_PASSWORD:?set SPROUT_REDIS_PASSWORD in deploy/.env}
+      REDIS_DB: "1"
+      ADMIN_EMAIL: ${SPROUT_SUB2API_ADMIN_EMAIL:-admin@sprout.local}
+      ADMIN_PASSWORD: ${SPROUT_SUB2API_ADMIN_PASSWORD:?set SPROUT_SUB2API_ADMIN_PASSWORD in deploy/.env}
+      JWT_SECRET: ${SPROUT_SUB2API_JWT_SECRET:?set SPROUT_SUB2API_JWT_SECRET in deploy/.env}
+      TOTP_ENCRYPTION_KEY: ${SPROUT_SUB2API_TOTP_ENCRYPTION_KEY:?set SPROUT_SUB2API_TOTP_ENCRYPTION_KEY in deploy/.env}
+      TZ: ${SPROUT_TIMEZONE:-Asia/Shanghai}
+      SECURITY_URL_ALLOWLIST_ENABLED: "true"
+      SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP: "false"
+      SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+
+  device_platform:
+    build:
+      context: ../services/device_platform
+      dockerfile: Dockerfile
+    profiles:
+      - services
+    ports:
+      - "127.0.0.1:${SPROUT_DEVICE_PLATFORM_PORT:-8081}:8081"
+    environment:
+      DEVICE_PLATFORM_HTTP_HOST: "0.0.0.0"
+      DEVICE_PLATFORM_HTTP_PORT: "8081"
+      DEVICE_PLATFORM_DATABASE_DSN: "postgres://${SPROUT_POSTGRES_USER:-sprout}:${SPROUT_POSTGRES_PASSWORD:?set SPROUT_POSTGRES_PASSWORD in deploy/.env}@postgres:5432/${SPROUT_DEVICE_PLATFORM_DATABASE_NAME:-sprout_device_platform}?sslmode=disable"
+      DEVICE_PLATFORM_REDIS_ADDRESS: "redis:6379"
+      DEVICE_PLATFORM_REDIS_PASSWORD: ${SPROUT_REDIS_PASSWORD:?set SPROUT_REDIS_PASSWORD in deploy/.env}
+      DEVICE_PLATFORM_REDIS_DB: "0"
+      DEVICE_PLATFORM_MQTT_BROKER: "mqtts://mqtt:8883"
+      DEVICE_PLATFORM_MQTT_CLIENT_ID: "device-platform"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mqtt:
+        condition: service_healthy
+    restart: unless-stopped
+
+  voice_gateway:
+    build:
+      context: ../services/voice_gateway
+      dockerfile: Dockerfile
+    profiles:
+      - services
+    ports:
+      - "127.0.0.1:${SPROUT_VOICE_GATEWAY_PORT:-8082}:8082"
+    environment:
+      VOICE_GATEWAY_HTTP_HOST: "0.0.0.0"
+      VOICE_GATEWAY_HTTP_PORT: "8082"
+      VOICE_GATEWAY_REDIS_ADDRESS: "redis:6379"
+      VOICE_GATEWAY_REDIS_PASSWORD: ${SPROUT_REDIS_PASSWORD:?set SPROUT_REDIS_PASSWORD in deploy/.env}
+      VOICE_GATEWAY_SUB2API_BASE_URL: "http://sub2api:8080"
+      VOICE_GATEWAY_SUB2API_API_KEY: ${SPROUT_SUB2API_API_KEY:?set SPROUT_SUB2API_API_KEY in deploy/.env}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  sprout_postgres_data:
+  sprout_redis_data:
+  sprout_mqtt_data:
+  sprout_mqtt_log:
+  sprout_minio_data:
+  sprout_sub2api_data:

@@ -32,6 +32,13 @@ dev-docs/
 *.crt
 secrets/
 
+# Local development service data and generated certificates
+deploy/.env
+deploy/.env.*
+!deploy/.env.example
+deploy/mosquitto/certs/
+deploy/**/data/
+
 # Go build and test output
 bin/
 coverage/
