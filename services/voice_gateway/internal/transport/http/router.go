@@ -8,11 +8,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/TissyBoxC/sprout-platform/packages/go/httpapi"
 	"github.com/TissyBoxC/sprout-platform/packages/go/observability"
 	"github.com/TissyBoxC/sprout-platform/services/voice_gateway/internal/config"
 )
-
-const schemaVersion = "1.0.0"
 
 // RouterOptions contains dependencies for the voice gateway HTTP transport.
 type RouterOptions struct {
@@ -68,10 +67,10 @@ func readyHandler(response http.ResponseWriter, _ *http.Request) {
 }
 
 func runtimeHandler(response http.ResponseWriter, request *http.Request) {
-	writeEnvelope(response, request, http.StatusOK, map[string]any{
+	httpapi.WriteSuccess(response, request, http.StatusOK, map[string]any{
 		"service":          "voice-gateway",
 		"status":           "running",
-		"protocol_version": schemaVersion,
+		"protocol_version": httpapi.SchemaVersion,
 	})
 }
 
@@ -81,7 +80,7 @@ func requireServiceToken(expectedToken string, next http.Handler) http.Handler {
 		const bearerPrefix = "Bearer "
 		if len(providedToken) <= len(bearerPrefix) ||
 			providedToken[:len(bearerPrefix)] != bearerPrefix {
-			writeError(
+			httpapi.WriteError(
 				response,
 				request,
 				http.StatusUnauthorized,
@@ -94,7 +93,7 @@ func requireServiceToken(expectedToken string, next http.Handler) http.Handler {
 
 		providedToken = providedToken[len(bearerPrefix):]
 		if subtle.ConstantTimeCompare([]byte(providedToken), []byte(expectedToken)) != 1 {
-			writeError(
+			httpapi.WriteError(
 				response,
 				request,
 				http.StatusUnauthorized,
@@ -106,53 +105,6 @@ func requireServiceToken(expectedToken string, next http.Handler) http.Handler {
 		}
 
 		next.ServeHTTP(response, request)
-	})
-}
-
-type responseEnvelope struct {
-	SchemaVersion string     `json:"schema_version"`
-	RequestID     string     `json:"request_id"`
-	Data          any        `json:"data"`
-	Error         *errorBody `json:"error"`
-}
-
-type errorBody struct {
-	Code      string `json:"code"`
-	Message   string `json:"message"`
-	Retryable bool   `json:"retryable"`
-}
-
-func writeEnvelope(
-	response http.ResponseWriter,
-	request *http.Request,
-	status int,
-	data any,
-) {
-	writeJSON(response, status, responseEnvelope{
-		SchemaVersion: schemaVersion,
-		RequestID:     observability.MetadataFromContext(request.Context()).RequestID,
-		Data:          data,
-		Error:         nil,
-	})
-}
-
-func writeError(
-	response http.ResponseWriter,
-	request *http.Request,
-	status int,
-	code string,
-	message string,
-	retryable bool,
-) {
-	writeJSON(response, status, responseEnvelope{
-		SchemaVersion: schemaVersion,
-		RequestID:     observability.MetadataFromContext(request.Context()).RequestID,
-		Data:          nil,
-		Error: &errorBody{
-			Code:      code,
-			Message:   message,
-			Retryable: retryable,
-		},
 	})
 }
 

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/TissyBoxC/sprout-platform/packages/go/httpapi"
 	"github.com/TissyBoxC/sprout-platform/services/voice_gateway/internal/config"
 )
 
@@ -74,7 +75,7 @@ func TestInternalAPIReturnsRuntimeEnvelope(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", stdhttp.StatusOK, recorder.Code)
 	}
 	envelope := decodeEnvelope(t, recorder)
-	if envelope.SchemaVersion != schemaVersion {
+	if envelope.SchemaVersion != httpapi.SchemaVersion {
 		t.Fatalf("unexpected schema version: %q", envelope.SchemaVersion)
 	}
 	if envelope.RequestID == "" {
@@ -96,9 +97,9 @@ func TestInternalAPIContractDocumentsRuntimeEndpoint(t *testing.T) {
 }
 
 type testEnvelope struct {
-	SchemaVersion string     `json:"schema_version"`
-	RequestID     string     `json:"request_id"`
-	Error         *errorBody `json:"error"`
+	SchemaVersion string             `json:"schema_version"`
+	RequestID     string             `json:"request_id"`
+	Error         *httpapi.ErrorBody `json:"error"`
 }
 
 func decodeEnvelope(t *testing.T, recorder *httptest.ResponseRecorder) testEnvelope {
