@@ -1,0 +1,15 @@
+{
+  "name": "sprout-contracts-tools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "validate": "node validate_contracts.mjs"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

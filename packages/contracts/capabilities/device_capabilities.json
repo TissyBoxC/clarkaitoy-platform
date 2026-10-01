@@ -10,6 +10,12 @@
     "led",
     "battery",
     "cellular_4g",
-    "motion"
+    "motion",
+    "bluetooth_audio",
+    "video_call",
+    "location",
+    "geofence",
+    "sos",
+    "multi_device"
   ]
 }
