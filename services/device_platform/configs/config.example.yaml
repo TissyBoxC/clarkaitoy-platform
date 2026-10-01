@@ -2,6 +2,11 @@ http:
   host: "0.0.0.0"
   port: "8081"
 
+internal:
+  # Keep the management API disabled until service identity is configured.
+  enabled: false
+  auth_token: "change-me"
+
 log:
   level: "info"
 

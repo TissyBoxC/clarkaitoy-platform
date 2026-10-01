@@ -2,6 +2,7 @@
 package config
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 // Config contains runtime settings for the device platform service.
 type Config struct {
 	HTTP     HTTPConfig
+	Internal InternalAPIConfig
 	Log      LogConfig
 	Database DatabaseConfig
 	Redis    RedisConfig
@@ -26,6 +28,12 @@ type HTTPConfig struct {
 // Address returns the HTTP listen address.
 func (c HTTPConfig) Address() string {
 	return c.Host + ":" + c.Port
+}
+
+// InternalAPIConfig contains service-to-service management API settings.
+type InternalAPIConfig struct {
+	Enabled   bool
+	AuthToken string
 }
 
 // LogConfig contains logging settings.
@@ -69,10 +77,14 @@ type MQTTConfig struct {
 
 // Load reads configuration from environment variables with local defaults.
 func Load() (Config, error) {
-	return Config{
+	cfg := Config{
 		HTTP: HTTPConfig{
 			Host: env("DEVICE_PLATFORM_HTTP_HOST", "0.0.0.0"),
 			Port: env("DEVICE_PLATFORM_HTTP_PORT", "8081"),
+		},
+		Internal: InternalAPIConfig{
+			Enabled:   envBool("DEVICE_PLATFORM_INTERNAL_API_ENABLED", false),
+			AuthToken: env("DEVICE_PLATFORM_INTERNAL_API_TOKEN", ""),
 		},
 		Log: LogConfig{
 			Level: env("DEVICE_PLATFORM_LOG_LEVEL", "info"),
@@ -91,7 +103,13 @@ func Load() (Config, error) {
 			Username: env("DEVICE_PLATFORM_MQTT_USERNAME", ""),
 			Password: env("DEVICE_PLATFORM_MQTT_PASSWORD", ""),
 		},
-	}, nil
+	}
+
+	if cfg.Internal.Enabled && len(strings.TrimSpace(cfg.Internal.AuthToken)) < 32 {
+		return Config{}, fmt.Errorf("DEVICE_PLATFORM_INTERNAL_API_TOKEN must contain at least 32 characters when the internal API is enabled")
+	}
+
+	return cfg, nil
 }
 
 func env(key, fallback string) string {
@@ -107,6 +125,18 @@ func envInt(key string, fallback int) int {
 		return fallback
 	}
 	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func envBool(key string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
 	if err != nil {
 		return fallback
 	}

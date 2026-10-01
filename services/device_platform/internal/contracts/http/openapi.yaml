@@ -1,17 +1,84 @@
 openapi: 3.0.3
 info:
   title: 芽系列·初芽 Device Platform API
-  version: 0.1.0
+  version: 1.0.0
+security:
+  - serviceToken: []
 paths:
   /healthz:
     get:
       summary: Check service health
+      security: []
       responses:
         "200":
           description: Service is healthy
   /readyz:
     get:
       summary: Check service readiness
+      security: []
       responses:
         "200":
           description: Service is ready
+  /internal/v1/runtime:
+    get:
+      summary: Read service runtime information
+      responses:
+        "200":
+          description: Runtime information
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseEnvelope"
+        "401":
+          description: Service authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseEnvelope"
+components:
+  securitySchemes:
+    serviceToken:
+      type: http
+      scheme: bearer
+      bearerFormat: service-token
+  schemas:
+    ResponseEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+        - schema_version
+        - request_id
+        - data
+        - error
+      properties:
+        schema_version:
+          type: string
+          const: 1.0.0
+        request_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        data:
+          type: object
+          nullable: true
+        error:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/Error"
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+        - retryable
+      properties:
+        code:
+          type: string
+          pattern: "^[a-z][a-z0-9_]{2,63}$"
+        message:
+          type: string
+          minLength: 1
+          maxLength: 256
+        retryable:
+          type: boolean

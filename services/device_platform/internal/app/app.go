@@ -33,8 +33,11 @@ func Run() error {
 	slog.SetDefault(logger)
 
 	server := &http.Server{
-		Addr:              cfg.HTTP.Address(),
-		Handler:           platformhttp.NewRouter(logger),
+		Addr: cfg.HTTP.Address(),
+		Handler: platformhttp.NewRouter(platformhttp.RouterOptions{
+			Logger:            logger,
+			InternalAPIConfig: cfg.Internal,
+		}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
