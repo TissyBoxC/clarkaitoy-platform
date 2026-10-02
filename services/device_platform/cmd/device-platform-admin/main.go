@@ -24,10 +24,15 @@ func main() {
 }
 
 func run(arguments []string) error {
-	if len(arguments) == 0 || strings.TrimSpace(arguments[0]) != "bootstrap" {
-		return errors.New("usage: device-platform-admin bootstrap --email <email> --display-name <name> (password from DEVICE_PLATFORM_ADMIN_PASSWORD)")
+	if len(arguments) == 0 {
+		return errors.New("usage: device-platform-admin <bootstrap|reset-password>")
 	}
-	email, displayName, err := parseBootstrapArguments(arguments[1:])
+	command := strings.TrimSpace(arguments[0])
+	if command != "bootstrap" && command != "reset-password" {
+		return errors.New("usage: device-platform-admin <bootstrap|reset-password>")
+	}
+
+	email, displayName, err := parseAdminArguments(command, arguments[1:])
 	if err != nil {
 		return err
 	}
@@ -82,6 +87,14 @@ func run(arguments []string) error {
 	if err != nil {
 		return err
 	}
+	if command == "reset-password" {
+		if err := service.ResetAdminPassword(ctx, email, password); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintln(os.Stdout, "管理员密码已重置，原有登录会话已失效。")
+		return nil
+	}
+
 	uri, err := service.BootstrapAdmin(ctx, email, password, displayName)
 	if err != nil {
 		return err
@@ -92,7 +105,7 @@ func run(arguments []string) error {
 	return nil
 }
 
-func parseBootstrapArguments(arguments []string) (string, string, error) {
+func parseAdminArguments(command string, arguments []string) (string, string, error) {
 	email := ""
 	displayName := ""
 	for index := 0; index < len(arguments); index++ {
@@ -104,6 +117,9 @@ func parseBootstrapArguments(arguments []string) (string, string, error) {
 			email = strings.TrimSpace(arguments[index+1])
 			index++
 		case "--display-name":
+			if command != "bootstrap" {
+				return "", "", errors.New("--display-name is only valid for bootstrap")
+			}
 			if index+1 >= len(arguments) {
 				return "", "", errors.New("--display-name requires a value")
 			}
@@ -113,8 +129,11 @@ func parseBootstrapArguments(arguments []string) (string, string, error) {
 			return "", "", fmt.Errorf("unknown argument %q", arguments[index])
 		}
 	}
-	if email == "" || displayName == "" {
-		return "", "", errors.New("--email and --display-name are required")
+	if email == "" {
+		return "", "", errors.New("--email is required")
+	}
+	if command == "bootstrap" && displayName == "" {
+		return "", "", errors.New("--display-name is required for bootstrap")
 	}
 	return email, displayName, nil
 }

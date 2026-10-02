@@ -76,3 +76,40 @@ func (s *Service) BootstrapAdmin(
 	}
 	return uri, nil
 }
+
+// ResetAdminPassword replaces the password for one existing administrator.
+//
+// This operation is intended for a trusted local maintenance command. It
+// deliberately refuses non-admin accounts and does not touch TOTP enrollment.
+func (s *Service) ResetAdminPassword(
+	ctx context.Context,
+	email string,
+	password string,
+) error {
+	email = normalizeEmail(email)
+	if email == "" || !strings.Contains(email, "@") ||
+		strings.HasPrefix(email, "@") || strings.HasSuffix(email, "@") {
+		return domain.ErrInvalidEmail
+	}
+	if len(password) < 12 || len(password) > 128 ||
+		!containsLetterAndNumber(password) {
+		return domain.ErrWeakPassword
+	}
+
+	account, err := s.repository.GetParentAccountByEmail(ctx, email)
+	if err != nil {
+		return err
+	}
+	if account.Role != domain.RoleAdmin {
+		return domain.ErrInsufficientPrivilege
+	}
+
+	passwordHash, err := bcrypt.GenerateFromPassword(
+		[]byte(password),
+		bcrypt.DefaultCost,
+	)
+	if err != nil {
+		return fmt.Errorf("hash administrator password: %w", err)
+	}
+	return s.repository.UpdatePasswordHash(ctx, account.ID, string(passwordHash))
+}

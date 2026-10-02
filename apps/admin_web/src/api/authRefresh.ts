@@ -2,6 +2,14 @@ import type { AxiosInstance, AxiosRequestConfig } from 'axios'
 
 import type { AuthSessionStore } from './authSession'
 
+const sessionEstablishmentPaths = [
+  '/api/v1/admin/auth/login',
+  '/api/v1/admin/auth/mfa',
+  '/api/v1/auth/login',
+  '/api/v1/auth/register',
+  '/api/v1/auth/refresh',
+]
+
 /// Refreshes an access token from the current refresh token.
 export type RefreshSession = (refreshToken: string) => Promise<{
   accessToken: string
@@ -62,7 +70,12 @@ export function installAuthInterceptors(
   httpClient.interceptors.response.use(
     (response) => response,
     async (error: unknown) => {
-      if (!isUnauthorizedResponse(error) || isRetriedRequest(error.config)) {
+      if (
+        !isUnauthorizedResponse(error) ||
+        isRetriedRequest(error.config) ||
+        isSessionEstablishmentRequest(error.config) ||
+        sessionStore.readRefreshToken() === null
+      ) {
         return Promise.reject(error)
       }
 
@@ -104,4 +117,14 @@ function isUnauthorizedResponse(error: unknown): error is UnauthorizedResponse {
 
 function isRetriedRequest(config: AxiosRequestConfig | undefined): boolean {
   return (config as RetriedRequestConfig | undefined)?.isRetried === true
+}
+
+function isSessionEstablishmentRequest(
+  config: AxiosRequestConfig | undefined,
+): boolean {
+  const requestUrl = config?.url
+  if (typeof requestUrl !== 'string') {
+    return false
+  }
+  return sessionEstablishmentPaths.some((path) => requestUrl.includes(path))
 }

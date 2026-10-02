@@ -27,6 +27,25 @@ export function mapApiError(error: unknown): ApiError {
     const envelope = error.response?.data as APIResponseEnvelope | undefined
     const code = envelope?.error?.code
 
+    if (code === 'invalid_mfa_code') {
+      return { kind: 'validation', message: '验证码不正确，请重新输入', retryable: false }
+    }
+    if (code === 'mfa_challenge_expired') {
+      return { kind: 'unauthenticated', message: '验证已过期，请重新登录', retryable: false }
+    }
+    if (code === 'invalid_credentials') {
+      return { kind: 'validation', message: '邮箱或密码不正确', retryable: false }
+    }
+    if (code === 'mfa_not_configured') {
+      return {
+        kind: 'service_unavailable',
+        message: '管理员验证尚未设置，请联系维护人员',
+        retryable: false,
+      }
+    }
+    if (code === 'invalid_request') {
+      return { kind: 'validation', message: '请检查填写的内容', retryable: false }
+    }
     if (status === 401) {
       return { kind: 'unauthenticated', message: '登录已过期，请重新登录', retryable: false }
     }
@@ -36,7 +55,7 @@ export function mapApiError(error: unknown): ApiError {
     if (status === 404) {
       return { kind: 'not_found', message: '没有找到这条内容', retryable: false }
     }
-    if (status === 422 || code === 'invalid_request') {
+    if (status === 422) {
       return { kind: 'validation', message: '请检查填写的内容', retryable: false }
     }
     if (status === 429) {

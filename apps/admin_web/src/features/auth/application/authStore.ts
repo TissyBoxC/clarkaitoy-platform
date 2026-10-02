@@ -63,7 +63,11 @@ export const useAuthStore = defineStore('admin-auth', () => {
       }
       return false
     } catch (caught: unknown) {
-      error.value = mapApiError(caught)
+      const mappedError = mapApiError(caught)
+      error.value = mappedError
+      if (mappedError.kind === 'unauthenticated') {
+        mfaChallengeToken.value = null
+      }
       return false
     }
   }

@@ -21,6 +21,8 @@ async function submit(): Promise<void> {
     isSubmitting.value = false
     if (succeeded) {
       await router.replace('/')
+    } else if (!authStore.isMFARequired) {
+      verificationCode.value = ''
     }
     return
   }

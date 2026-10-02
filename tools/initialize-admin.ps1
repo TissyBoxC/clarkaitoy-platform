@@ -3,12 +3,21 @@ param(
     [Parameter(Mandatory)]
     [string]$Email,
 
-    [Parameter(Mandatory)]
     [string]$DisplayName,
 
     [Parameter(Mandatory)]
-    [string]$Password
+    [string]$Password,
+
+    [switch]$ResetPassword
 )
+
+if (-not $ResetPassword -and [string]::IsNullOrWhiteSpace($DisplayName)) {
+    throw "DisplayName is required unless -ResetPassword is used."
+}
+
+if ($ResetPassword -and -not [string]::IsNullOrWhiteSpace($DisplayName)) {
+    throw "DisplayName is only valid when creating the initial administrator."
+}
 
 $ErrorActionPreference = 'Stop'
 
@@ -48,6 +57,7 @@ $databaseDSN = Get-ServiceEnvironmentValue -Name 'DEVICE_PLATFORM_DATABASE_DSN'
 $mfaCredentialKey = Get-ServiceEnvironmentValue -Name 'DEVICE_PLATFORM_MFA_CREDENTIAL_KEY'
 $accessTokenSecret = Get-ServiceEnvironmentValue -Name 'DEVICE_PLATFORM_AUTH_ACCESS_TOKEN_SECRET'
 
+$command = if ($ResetPassword) { 'reset-password' } else { 'bootstrap' }
 $arguments = @(
     'exec',
     '--env', "DEVICE_PLATFORM_DATABASE_DSN=$databaseDSN",
@@ -56,14 +66,16 @@ $arguments = @(
     '--env', "DEVICE_PLATFORM_ADMIN_PASSWORD=$Password",
     $serviceName,
     '/device-platform-admin',
-    'bootstrap',
-    '--email', $Email,
-    '--display-name', $DisplayName
+    $command,
+    '--email', $Email
 )
+if (-not $ResetPassword) {
+    $arguments += @('--display-name', $DisplayName)
+}
 
 $output = & docker compose -f $composePath @arguments 2>&1
 if ($LASTEXITCODE -ne 0) {
-    throw "Administrator initialization failed: $($output -join [Environment]::NewLine)"
+    throw "Administrator maintenance failed: $($output -join [Environment]::NewLine)"
 }
 
 $output

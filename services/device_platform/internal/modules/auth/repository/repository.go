@@ -18,6 +18,7 @@ type Repository interface {
 	CreateParentAccount(ctx context.Context, account *domain.ParentAccount) error
 	GetParentAccountByEmail(ctx context.Context, email string) (*domain.ParentAccount, error)
 	GetParentAccountByID(ctx context.Context, accountID string) (*domain.ParentAccount, error)
+	UpdatePasswordHash(ctx context.Context, accountID string, passwordHash string) error
 	UpdateLastLogin(ctx context.Context, accountID string) error
 	CreateSession(ctx context.Context, session *domain.Session) error
 	GetSessionByRefreshTokenHash(
@@ -168,6 +169,49 @@ func (r *PostgresRepository) UpdateLastLogin(
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrAccountNotFound
+	}
+	return nil
+}
+
+// UpdatePasswordHash replaces one account's password hash and revokes every
+// active session so a reset cannot leave an old login usable.
+func (r *PostgresRepository) UpdatePasswordHash(
+	ctx context.Context,
+	accountID string,
+	passwordHash string,
+) error {
+	transaction, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin password reset: %w", err)
+	}
+	defer func() {
+		_ = transaction.Rollback(ctx)
+	}()
+
+	tag, err := transaction.Exec(ctx, `
+		UPDATE parent_accounts
+		SET password_hash = $2,
+		    updated_at = NOW()
+		WHERE id = $1
+	`, accountID, passwordHash)
+	if err != nil {
+		return fmt.Errorf("update parent password hash: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrAccountNotFound
+	}
+
+	if _, err := transaction.Exec(ctx, `
+		UPDATE auth_sessions
+		SET revoked_at = COALESCE(revoked_at, NOW())
+		WHERE parent_account_id = $1
+		  AND revoked_at IS NULL
+	`, accountID); err != nil {
+		return fmt.Errorf("revoke sessions after password reset: %w", err)
+	}
+
+	if err := transaction.Commit(ctx); err != nil {
+		return fmt.Errorf("commit password reset: %w", err)
 	}
 	return nil
 }
