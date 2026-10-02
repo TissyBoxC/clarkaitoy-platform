@@ -141,7 +141,7 @@ jobs:
         if: steps.detect.outputs.should_release == 'true'
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: '3.41.9'
           cache: true
 
       - name: Build parent app APK
