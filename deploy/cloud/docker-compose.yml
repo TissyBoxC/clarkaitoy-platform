@@ -80,6 +80,8 @@ services:
     image: ghcr.io/tissyboxc/sub2api:${SPROUT_SUB2API_VERSION}
     security_opt:
       - no-new-privileges:true
+    ports:
+      - "${SPROUT_SERVICE_BIND_ADDRESS}:${SPROUT_SUB2API_PORT}:8080"
     ulimits:
       nofile:
         soft: 100000

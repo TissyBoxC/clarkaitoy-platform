@@ -149,9 +149,30 @@ Sub2API 的 `TOTP_ENCRYPTION_KEY` 必须是 64 位十六进制字符串，不能
 | `admin.example.com` | `http://127.0.0.1:8083` | 管理端 |
 | `api.example.com` | `http://127.0.0.1:8081` | 家长端和设备 API |
 | `voice.example.com` | `http://127.0.0.1:8082` | 语音网关，需开启 WebSocket |
+| `sub2api.example.com` | `http://127.0.0.1:8084` | Sub2API 管理界面和网关 API |
 
-`sub2api` 不暴露公网，只允许 Compose 内网访问。管理端镜像已内置 `/api/`
-同源代理，不需要为管理端再单独配置 API 路径。
+Sub2API 仅绑定宿主机回环地址，公网访问必须经过 1Panel 反向代理并使用
+HTTPS。管理端和其他服务仍通过 Compose 内网域名调用 Sub2API，不经过公网。
+
+Sub2API 的管理界面和 API 共用同一站点：访问域名根路径进入管理界面，
+OpenAI 兼容接口继续使用 `/api/v1`。在 1Panel 中创建网站并设置反向代理后，
+为 Sub2API 站点开启 WebSocket 和长连接支持，并关闭响应缓冲，避免流式输出
+被整段缓存：
+
+```nginx
+proxy_buffering off;
+proxy_cache off;
+proxy_request_buffering off;
+proxy_read_timeout 3600s;
+proxy_send_timeout 3600s;
+send_timeout 3600s;
+```
+
+公网域名会同时暴露 Sub2API 的登录页和网关 API。必须使用强管理员密码、
+启用 MFA、限制接口密钥权限和调用额度，并定期检查登录与调用审计。若后续
+不再需要公网访问，删除该域名的反向代理即可，不影响 Compose 内部调用。
+
+管理端镜像已内置 `/api/` 同源代理，不需要为管理端再单独配置 API 路径。
 
 设备 MQTT 使用独立域名 `mqtt.example.com`，在 1Panel 或云防火墙中放行
 `8883/tcp`。不要对公网放行 `1883/tcp`。
@@ -221,6 +242,7 @@ docker compose --env-file .env up -d --force-recreate mqtt device_platform
 | `SPROUT_DEVICE_PLATFORM_PORT` | 设备平台宿主端口 | `8081` |
 | `SPROUT_VOICE_GATEWAY_PORT` | 语音网关宿主端口 | `8082` |
 | `SPROUT_ADMIN_WEB_PORT` | 管理端宿主端口 | `8083` |
+| `SPROUT_SUB2API_PORT` | Sub2API 宿主端口，仅用于 1Panel 反向代理 | `8084` |
 | `SPROUT_MQTT_PORT` | 明文 MQTT 端口 | 仅内网或其他服务使用 |
 | `SPROUT_MQTTS_PORT` | 双向 TLS MQTT 端口 | 设备连接的端口，放行 8883 |
 
@@ -289,7 +311,8 @@ PostgreSQL、Redis、MQTT 和 Sub2API 数据都在命名卷中，重建容器不
 ## 6. 安全清单
 
 - `.env` 权限设为 `600`，不提交 Git。
-- `sub2api` 和数据库端口不暴露公网。
+- Sub2API 只绑定 `127.0.0.1`，公网入口由 1Panel 终止 HTTPS 后转发；禁止
+  直接映射到 `0.0.0.0`。数据库端口始终不暴露公网。
 - 生产环境禁用手机号验证直通。
 - 生产环境替换 MQTT 证书，并启用域名匹配校验。
 - 迁移完成后删除服务器上的 `migration-data` 和本地导出包。
