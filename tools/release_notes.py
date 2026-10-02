@@ -99,6 +99,7 @@ DESCRIPTION_PHRASES = {
     "initialize local development services": "初始化本地开发服务",
     "localize release note fallback": "完善发行说明的中文回退文本",
     "localize fallback summary": "补充发行说明的中文摘要",
+    "localize release note descriptions": "统一发行说明的中文描述",
     "make avatar background transparent": "将品牌头像背景改为透明",
     "manage ai service access from client apps": "支持客户端管理 AI 服务权限",
     "reserve remote text modules": "预留远程文本模块",
@@ -117,6 +118,7 @@ DESCRIPTION_PHRASES = {
     "将中文说明设为默认首页": "将中文说明设为默认首页",
     "validate versioned base contracts": "校验带版本的基础契约",
     "verify contracts apps and services": "验证契约、应用与服务",
+    "apply 如此萌屋 brand assets": "应用如此萌屋品牌资源",
 }
 
 CONVENTIONAL_COMMIT = re.compile(
