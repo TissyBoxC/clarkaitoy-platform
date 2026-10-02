@@ -13,6 +13,8 @@ abstract interface class ApiClient {
   });
 
   Future<Map<String, Object?>> post(String path, {Object? body});
+
+  Future<Map<String, Object?>> delete(String path);
 }
 
 /// Configuration needed to construct the production API client.
@@ -89,6 +91,16 @@ class DioApiClient implements ApiClient {
   Future<Map<String, Object?>> post(String path, {Object? body}) async {
     try {
       final response = await _dio.post<Object?>(path, data: body);
+      return _requireResponseMap(response.data);
+    } on Object catch (error) {
+      throw mapApiError(error);
+    }
+  }
+
+  @override
+  Future<Map<String, Object?>> delete(String path) async {
+    try {
+      final response = await _dio.delete<Object?>(path);
       return _requireResponseMap(response.data);
     } on Object catch (error) {
       throw mapApiError(error);

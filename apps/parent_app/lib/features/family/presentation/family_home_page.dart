@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-/// Landing page for the parent's family and device workspace.
-class FamilyHomePage extends StatelessWidget {
+import '../../auth/application/auth_controller.dart';
+import '../../auth/data/auth_api.dart';
+import '../../device/application/device_binding_controller.dart';
+
+/// Parent workspace with account, AI usage, and device entry points.
+class FamilyHomePage extends ConsumerWidget {
   const FamilyHomePage({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final auth = ref.watch(authControllerProvider);
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -23,29 +29,241 @@ class FamilyHomePage extends StatelessWidget {
             const Text('如此萌屋'),
           ],
         ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text(
-            'Family workspace',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 12),
-          const Card(
-            child: ListTile(
-              leading: Icon(Icons.family_restroom_outlined),
-              title: Text('No family loaded'),
-              subtitle: Text('Connect the parent API to load family data.'),
-            ),
-          ),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: () => context.go('/devices'),
-            icon: const Icon(Icons.devices_outlined),
-            label: const Text('View devices'),
+        actions: [
+          IconButton(
+            tooltip: '退出登录',
+            onPressed: () =>
+                ref.read(authControllerProvider.notifier).logout().then((_) {
+                  if (context.mounted) {
+                    context.go('/login');
+                  }
+                }),
+            icon: const Icon(Icons.logout),
           ),
         ],
+      ),
+      body: auth.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, _) => _ErrorState(
+          message: authErrorMessage(error),
+          onRetry: () =>
+              ref.read(authControllerProvider.notifier).refreshAccount(),
+        ),
+        data: (state) {
+          final account = state.account;
+          if (account == null) {
+            return const _SignInPrompt();
+          }
+          final devices = ref.watch(deviceBindingControllerProvider);
+          return RefreshIndicator(
+            onRefresh: () async {
+              await ref.read(authControllerProvider.notifier).refreshAccount();
+              await ref
+                  .read(deviceBindingControllerProvider.notifier)
+                  .refresh();
+            },
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                Text(
+                  '你好，${account.displayName}',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: 6),
+                const Text('孩子今天想聊些什么？'),
+                const SizedBox(height: 20),
+                _AiAccountCard(aiAccount: state.aiAccount),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Text(
+                      '我的设备',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const Spacer(),
+                    TextButton.icon(
+                      onPressed: () => context.go('/devices'),
+                      icon: const Icon(Icons.add_circle_outline),
+                      label: const Text('添加设备'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                devices.when(
+                  loading: () => const Card(
+                    child: ListTile(
+                      leading: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      title: Text('正在读取设备…'),
+                    ),
+                  ),
+                  error: (error, _) => _InlineError(
+                    message: authErrorMessage(error),
+                    onRetry: () => ref
+                        .read(deviceBindingControllerProvider.notifier)
+                        .refresh(),
+                  ),
+                  data: (deviceState) {
+                    final bindings = deviceState.bindings;
+                    if (bindings.isEmpty) {
+                      return const Card(
+                        child: ListTile(
+                          leading: Icon(Icons.toys_outlined),
+                          title: Text('还没有绑定设备'),
+                          subtitle: Text('打开初芽的配网页，用手机扫描二维码或在附近设备中添加。'),
+                        ),
+                      );
+                    }
+                    return Column(
+                      children: bindings
+                          .map(
+                            (binding) => Card(
+                              child: ListTile(
+                                leading: const Icon(Icons.toys_outlined),
+                                title: Text(binding.deviceName),
+                                subtitle: Text(
+                                  binding.boundAt
+                                      .toLocal()
+                                      .toString()
+                                      .split(' ')
+                                      .first,
+                                ),
+                                trailing: const Icon(Icons.chevron_right),
+                                onTap: () => context.go('/devices'),
+                              ),
+                            ),
+                          )
+                          .toList(growable: false),
+                    );
+                  },
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _AiAccountCard extends StatelessWidget {
+  const _AiAccountCard({required this.aiAccount});
+
+  final AiAccount? aiAccount;
+
+  @override
+  Widget build(BuildContext context) {
+    final account = aiAccount;
+    if (account == null) {
+      return const Card(
+        child: ListTile(
+          leading: Icon(Icons.cloud_off_outlined),
+          title: Text('AI 服务正在准备'),
+          subtitle: Text('下次打开时会自动重试，不需要重新注册。'),
+        ),
+      );
+    }
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.auto_awesome_outlined),
+                const SizedBox(width: 10),
+                Text('AI 陪伴额度', style: Theme.of(context).textTheme.titleMedium),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text('可用余额', style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 4),
+            Text(
+              '\$${account.balanceUsd.toStringAsFixed(2)}',
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
+            const SizedBox(height: 12),
+            Text('同时对话：${account.concurrencyLimit} 台'),
+            const SizedBox(height: 4),
+            Text(
+              account.allowedModels.isEmpty
+                  ? '模型：由家长端统一安排'
+                  : '模型：${account.allowedModels.join('、')}',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SignInPrompt extends StatelessWidget {
+  const _SignInPrompt();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.lock_outline, size: 40),
+            const SizedBox(height: 12),
+            const Text('请先登录家长账号'),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () => context.go('/login'),
+              child: const Text('去登录'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InlineError extends StatelessWidget {
+  const _InlineError({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        leading: const Icon(Icons.error_outline),
+        title: Text(message),
+        trailing: TextButton(onPressed: onRetry, child: const Text('重试')),
+      ),
+    );
+  }
+}
+
+class _ErrorState extends StatelessWidget {
+  const _ErrorState({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(message),
+            const SizedBox(height: 12),
+            FilledButton(onPressed: onRetry, child: const Text('重试')),
+          ],
+        ),
       ),
     );
   }

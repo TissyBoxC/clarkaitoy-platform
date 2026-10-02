@@ -1,22 +1,223 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-/// Shows devices bound to the active family.
-class DeviceListPage extends StatelessWidget {
+import '../application/device_binding_controller.dart';
+
+/// Lists bound devices and starts QR or nearby-device provisioning.
+class DeviceListPage extends ConsumerWidget {
   const DeviceListPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final binding = ref.watch(deviceBindingControllerProvider);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Devices'),
+        title: const Text('我的设备'),
         leading: IconButton(
-          tooltip: 'Back',
+          tooltip: '返回首页',
           onPressed: () => context.go('/family'),
           icon: const Icon(Icons.arrow_back),
         ),
       ),
-      body: const Center(child: Text('No devices are bound yet.')),
+      body: binding.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, _) => Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('暂时无法读取设备'),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: () => ref
+                      .read(deviceBindingControllerProvider.notifier)
+                      .refresh(),
+                  child: const Text('重新加载'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        data: (state) {
+          return RefreshIndicator(
+            onRefresh: () =>
+                ref.read(deviceBindingControllerProvider.notifier).refresh(),
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          '添加新设备',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 6),
+                        const Text('带屏幕的初芽会显示二维码；没有屏幕时请在附近设备中选择。'),
+                        const SizedBox(height: 16),
+                        FilledButton.icon(
+                          onPressed: () => context.go('/devices/scan'),
+                          icon: const Icon(Icons.qr_code_scanner),
+                          label: const Text('扫描设备绑定码'),
+                        ),
+                        const SizedBox(height: 10),
+                        OutlinedButton.icon(
+                          onPressed: state.isScanning
+                              ? null
+                              : () => ref
+                                    .read(
+                                      deviceBindingControllerProvider.notifier,
+                                    )
+                                    .scanNearby(),
+                          icon: state.isScanning
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.bluetooth_searching),
+                          label: Text(
+                            state.isScanning ? '正在寻找设备…' : '在附近设备中添加',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (state.errorMessage != null) ...[
+                  const SizedBox(height: 12),
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.info_outline),
+                      title: Text(state.errorMessage!),
+                    ),
+                  ),
+                ],
+                if (state.devices.isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  Text('发现的设备', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  ...state.devices.map(
+                    (device) => Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.bluetooth),
+                        title: Text(device.name),
+                        subtitle: Text('信号 ${device.rssi} dBm'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () =>
+                            _showBluetoothInstructions(context, device.name),
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 24),
+                Text('已绑定设备', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                if (state.bindings.isEmpty)
+                  const Card(
+                    child: ListTile(
+                      leading: Icon(Icons.toys_outlined),
+                      title: Text('还没有绑定设备'),
+                      subtitle: Text('完成上面的步骤后，设备会显示在这里。'),
+                    ),
+                  )
+                else
+                  ...state.bindings.map(
+                    (device) => Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.toys_outlined),
+                        title: Text(device.deviceName),
+                        subtitle: Text(
+                          [
+                            if (device.hardwareModel.isNotEmpty)
+                              device.hardwareModel,
+                            if (device.firmwareVersion.isNotEmpty)
+                              device.firmwareVersion,
+                          ].join(' · '),
+                        ),
+                        trailing: IconButton(
+                          tooltip: '解除绑定',
+                          onPressed: () => _confirmRemove(
+                            context,
+                            ref,
+                            device.deviceId,
+                            device.deviceName,
+                          ),
+                          icon: const Icon(Icons.link_off),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
     );
+  }
+
+  Future<void> _showBluetoothInstructions(
+    BuildContext context,
+    String deviceName,
+  ) {
+    return showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              '连接 $deviceName',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 10),
+            const Text('请让初芽保持开机，并停留在配网页面。手机连接到设备热点后即可完成网络设置。'),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('我知道了'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmRemove(
+    BuildContext context,
+    WidgetRef ref,
+    String deviceId,
+    String deviceName,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('解除设备绑定'),
+        content: Text('解除后，这台设备将不再属于当前家长账号。确定解除“$deviceName”吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('保留绑定'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('解除绑定'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await ref.read(deviceBindingControllerProvider.notifier).remove(deviceId);
+    }
   }
 }
