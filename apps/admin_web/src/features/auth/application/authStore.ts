@@ -20,8 +20,10 @@ export const useAuthStore = defineStore('admin-auth', () => {
   const account = ref<AdminAccount | null>(null)
   const isRestoring = ref(true)
   const error = ref<ApiError | null>(null)
+  const mfaChallengeToken = ref<string | null>(null)
 
   const isSignedIn = computed(() => account.value !== null)
+  const isMFARequired = computed(() => mfaChallengeToken.value !== null)
 
   async function restoreSession(): Promise<void> {
     isRestoring.value = true
@@ -43,17 +45,47 @@ export const useAuthStore = defineStore('admin-auth', () => {
 
   async function login(email: string, password: string): Promise<boolean> {
     error.value = null
+    mfaChallengeToken.value = null
     try {
-      const response = await httpClient.post('/api/v1/auth/login', {
+      const response = await httpClient.post('/api/v1/admin/auth/login', {
         email,
         password,
       })
       const data = response.data.data
+      if (data.status === 'mfa_required' && typeof data.challenge_token === 'string') {
+        mfaChallengeToken.value = data.challenge_token
+        return true
+      }
+      error.value = {
+        kind: 'unexpected',
+        message: '登录没有完成，请稍后重试',
+        retryable: true,
+      }
+      return false
+    } catch (caught: unknown) {
+      error.value = mapApiError(caught)
+      return false
+    }
+  }
+
+  async function completeMFA(code: string): Promise<boolean> {
+    error.value = null
+    const challengeToken = mfaChallengeToken.value
+    if (challengeToken === null) {
+      return false
+    }
+    try {
+      const response = await httpClient.post('/api/v1/admin/auth/mfa', {
+        challenge_token: challengeToken,
+        code,
+      })
+      const data = response.data.data
       sessionStore.saveSession(data.access_token, data.refresh_token)
-      account.value = toAccount(data.account)
-      if (account.value.role !== 'admin') {
+      const signedInAccount = toAccount(data.account)
+      if (signedInAccount.role !== 'admin') {
         sessionStore.clearSession()
         account.value = null
+        mfaChallengeToken.value = null
         error.value = {
           kind: 'insufficient_permission',
           message: '你没有权限访问此页面',
@@ -61,11 +93,18 @@ export const useAuthStore = defineStore('admin-auth', () => {
         }
         return false
       }
+      account.value = signedInAccount
+      mfaChallengeToken.value = null
       return true
     } catch (caught: unknown) {
       error.value = mapApiError(caught)
       return false
     }
+  }
+
+  function cancelMFA(): void {
+    mfaChallengeToken.value = null
+    error.value = null
   }
 
   async function logout(): Promise<void> {
@@ -81,6 +120,7 @@ export const useAuthStore = defineStore('admin-auth', () => {
     } finally {
       sessionStore.clearSession()
       account.value = null
+      mfaChallengeToken.value = null
     }
   }
 
@@ -89,7 +129,11 @@ export const useAuthStore = defineStore('admin-auth', () => {
     error,
     isRestoring,
     isSignedIn,
+    isMFARequired,
+    mfaChallengeToken,
     login,
+    completeMFA,
+    cancelMFA,
     logout,
     restoreSession,
   }

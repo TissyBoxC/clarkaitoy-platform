@@ -179,6 +179,8 @@ func (handler authHandler) me(response http.ResponseWriter, request *http.Reques
 	writeSuccess(response, request, http.StatusOK, accountResponse(account, summary))
 }
 
+// updateAIModels lets a guardian select from the provider-approved models.
+// The provider remains authoritative; the client never receives a service key.
 func (handler authHandler) requireAuthentication(
 	next http.HandlerFunc,
 ) http.HandlerFunc {

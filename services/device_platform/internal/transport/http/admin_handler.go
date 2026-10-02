@@ -21,6 +21,10 @@ type updateAIAccountRequest struct {
 	Reason           string   `json:"reason"`
 }
 
+type updateAIModelsRequest struct {
+	AllowedModels []string `json:"allowed_models"`
+}
+
 func (handler adminHandler) listAIAccounts(
 	response http.ResponseWriter,
 	request *http.Request,
@@ -77,6 +81,52 @@ func (handler adminHandler) updateAIAccount(
 		return
 	}
 	writeSuccess(response, request, http.StatusOK, aiAccountAdminResponse(account))
+}
+
+// updateParentAIModels lets a guardian choose from provider-approved models.
+// The response is a parent-safe summary and never contains a provider key.
+func (handler adminHandler) updateParentAIModels(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	accountID, ok := authenticatedAccountID(request)
+	if !ok {
+		writeError(response, request, http.StatusUnauthorized, "unauthenticated", "请重新登录")
+		return
+	}
+	var payload updateAIModelsRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(response, request, http.StatusBadRequest, "invalid_request", "请检查选择的模型")
+		return
+	}
+	summary, err := handler.service.UpdateModelsForParent(
+		request.Context(),
+		accountID,
+		payload.AllowedModels,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, gatewaydomain.ErrModelNotAllowed):
+			writeError(response, request, http.StatusUnprocessableEntity, "model_not_available", "请选择当前可用的模型")
+		case errors.Is(err, gatewaydomain.ErrAccountNotFound):
+			writeError(response, request, http.StatusNotFound, "ai_account_not_found", "还没有可用的 AI 服务")
+		case errors.Is(err, gatewaydomain.ErrProviderUnavailable),
+			errors.Is(err, gatewaydomain.ErrProviderRejected):
+			writeError(response, request, http.StatusBadGateway, "ai_service_unavailable", "AI 服务暂时不可用，请稍后重试")
+		default:
+			writeError(response, request, http.StatusInternalServerError, "service_error", "操作没有完成，请稍后重试")
+		}
+		return
+	}
+	writeSuccess(response, request, http.StatusOK, map[string]any{
+		"ai_account": map[string]any{
+			"status":            summary.Status,
+			"balance_usd":       summary.BalanceUSD,
+			"concurrency_limit": summary.ConcurrencyLimit,
+			"allowed_models":    summary.AllowedModels,
+			"provider_ready":    summary.ProviderReady,
+		},
+	})
 }
 
 func aiAccountAdminResponse(account *gatewaydomain.Account) map[string]any {

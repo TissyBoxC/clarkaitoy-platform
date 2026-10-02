@@ -11,6 +11,7 @@ var (
 	ErrProviderRejected    = errors.New("AI provider rejected request")
 	ErrProviderUnavailable = errors.New("AI provider unavailable")
 	ErrCredentialInvalid   = errors.New("AI credential is invalid")
+	ErrModelNotAllowed     = errors.New("AI model is not allowed")
 )
 
 // Account mirrors the platform's view of one provider execution account.

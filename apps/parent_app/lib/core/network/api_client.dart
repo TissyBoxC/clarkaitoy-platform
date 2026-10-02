@@ -14,6 +14,8 @@ abstract interface class ApiClient {
 
   Future<Map<String, Object?>> post(String path, {Object? body});
 
+  Future<Map<String, Object?>> put(String path, {Object? body});
+
   Future<Map<String, Object?>> postWithBearerToken(
     String path, {
     Object? body,
@@ -97,6 +99,16 @@ class DioApiClient implements ApiClient {
   Future<Map<String, Object?>> post(String path, {Object? body}) async {
     try {
       final response = await _dio.post<Object?>(path, data: body);
+      return _requireResponseMap(response.data);
+    } on Object catch (error) {
+      throw mapApiError(error);
+    }
+  }
+
+  @override
+  Future<Map<String, Object?>> put(String path, {Object? body}) async {
+    try {
+      final response = await _dio.put<Object?>(path, data: body);
       return _requireResponseMap(response.data);
     } on Object catch (error) {
       throw mapApiError(error);

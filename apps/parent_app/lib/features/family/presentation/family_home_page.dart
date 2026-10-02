@@ -72,7 +72,15 @@ class FamilyHomePage extends ConsumerWidget {
                 const SizedBox(height: 6),
                 const Text('孩子今天想聊些什么？'),
                 const SizedBox(height: 20),
-                _AiAccountCard(aiAccount: state.aiAccount),
+                _AiAccountCard(
+                  aiAccount: state.aiAccount,
+                  onRetry: () => ref
+                      .read(authControllerProvider.notifier)
+                      .retryAIService(),
+                  onModelsChanged: (models) => ref
+                      .read(authControllerProvider.notifier)
+                      .updateAllowedModels(models),
+                ),
                 const SizedBox(height: 20),
                 Row(
                   children: [
@@ -150,19 +158,26 @@ class FamilyHomePage extends ConsumerWidget {
 }
 
 class _AiAccountCard extends StatelessWidget {
-  const _AiAccountCard({required this.aiAccount});
+  const _AiAccountCard({
+    required this.aiAccount,
+    required this.onRetry,
+    required this.onModelsChanged,
+  });
 
   final AiAccount? aiAccount;
+  final Future<void> Function() onRetry;
+  final Future<void> Function(List<String>) onModelsChanged;
 
   @override
   Widget build(BuildContext context) {
     final account = aiAccount;
     if (account == null) {
-      return const Card(
+      return Card(
         child: ListTile(
-          leading: Icon(Icons.cloud_off_outlined),
-          title: Text('AI 服务正在准备'),
-          subtitle: Text('下次打开时会自动重试，不需要重新注册。'),
+          leading: const Icon(Icons.cloud_off_outlined),
+          title: const Text('AI 服务正在准备'),
+          subtitle: const Text('完成前不会产生对话费用，也不需要重新注册。'),
+          trailing: TextButton(onPressed: onRetry, child: const Text('重新准备')),
         ),
       );
     }
@@ -194,10 +209,78 @@ class _AiAccountCard extends StatelessWidget {
                   ? '模型：由家长端统一安排'
                   : '模型：${account.allowedModels.join('、')}',
             ),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => _showModelPicker(context, account),
+                icon: const Icon(Icons.tune),
+                label: const Text('选择可用模型'),
+              ),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _showModelPicker(
+    BuildContext context,
+    AiAccount account,
+  ) async {
+    final selectedModels = <String>{...account.allowedModels};
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '选择对话模型',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 6),
+              const Text('只勾选允许孩子使用的模型。留空表示使用默认安排。'),
+              const SizedBox(height: 12),
+              if (account.allowedModels.isEmpty)
+                const ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.info_outline),
+                  title: Text('当前没有可选模型'),
+                  subtitle: Text('请稍后重新准备 AI 服务。'),
+                )
+              else
+                ...account.allowedModels.map(
+                  (model) => CheckboxListTile(
+                    value: selectedModels.contains(model),
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(model),
+                    onChanged: (isSelected) => setModalState(() {
+                      if (isSelected == true) {
+                        selectedModels.add(model);
+                      } else {
+                        selectedModels.remove(model);
+                      }
+                    }),
+                  ),
+                ),
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('保存模型选择'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (saved == true) {
+      await onModelsChanged(selectedModels.toList(growable: false));
+    }
   }
 }
 

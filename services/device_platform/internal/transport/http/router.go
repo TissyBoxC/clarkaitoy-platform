@@ -82,6 +82,10 @@ func NewRouter(options RouterOptions) http.Handler {
 		if options.AIService != nil {
 			adminHandler := adminHandler{service: options.AIService}
 			mux.HandleFunc(
+				"PUT /api/v1/auth/ai-models",
+				authHandler.requireAuthentication(adminHandler.updateParentAIModels),
+			)
+			mux.HandleFunc(
 				"GET /api/v1/admin/ai-accounts",
 				authHandler.requireAdmin(adminHandler.listAIAccounts),
 			)

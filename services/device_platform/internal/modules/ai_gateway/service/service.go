@@ -264,6 +264,54 @@ func (s *Service) UpdateForAdmin(
 	return account, nil
 }
 
+// UpdateModelsForParent lets a guardian choose from the provider-approved
+// model set. The provider remains the authority on which models are valid.
+func (s *Service) UpdateModelsForParent(
+	ctx context.Context,
+	parentAccountID string,
+	allowedModels []string,
+) (*authdomain.AIAccountSummary, error) {
+	account, err := s.repository.GetByParentAccountID(ctx, parentAccountID)
+	if err != nil {
+		return nil, err
+	}
+	normalizedModels, err := normalizeModelSelection(allowedModels)
+	if err != nil {
+		return nil, err
+	}
+	providerAccount, err := s.provider.GetAccount(ctx, account.ProviderAccountID)
+	if err != nil {
+		return nil, err
+	}
+	if !isModelSubset(normalizedModels, providerAccount.AllowedModels) {
+		return nil, domain.ErrModelNotAllowed
+	}
+	updatedProviderAccount, err := s.provider.UpdateAccount(
+		ctx,
+		account.ProviderAccountID,
+		domain.ProviderAccount{
+			ProviderAccountID: account.ProviderAccountID,
+			Status:            providerAccount.Status,
+			BalanceUSD:        providerAccount.BalanceUSD,
+			ConcurrencyLimit:  providerAccount.ConcurrencyLimit,
+			AllowedModels:     normalizedModels,
+		},
+		"parent model selection",
+	)
+	if err != nil {
+		return nil, err
+	}
+	account.Status = updatedProviderAccount.Status
+	account.BalanceUSD = updatedProviderAccount.BalanceUSD
+	account.ConcurrencyLimit = updatedProviderAccount.ConcurrencyLimit
+	account.AllowedModels = updatedProviderAccount.AllowedModels
+	account.UpdatedAt = s.timeSource.Now().UTC()
+	if err := s.repository.UpdateFromProvider(ctx, account); err != nil {
+		return nil, err
+	}
+	return s.summaryFromAccount(account), nil
+}
+
 // CredentialForDevice returns an internal credential for server-side relay use.
 // It must never be exposed through parent, admin, firmware, or public APIs.
 func (s *Service) CredentialForDevice(
@@ -308,6 +356,43 @@ func (s *Service) ensureKey(
 		existingKeyID,
 		request,
 	)
+}
+
+func normalizeModelSelection(models []string) ([]string, error) {
+	normalized := make([]string, 0, len(models))
+	seen := make(map[string]struct{}, len(models))
+	for _, model := range models {
+		model = strings.TrimSpace(model)
+		if model == "" || len(model) > 128 {
+			return nil, domain.ErrModelNotAllowed
+		}
+		key := strings.ToLower(model)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, model)
+	}
+	return normalized, nil
+}
+
+func isModelSubset(selectedModels []string, availableModels []string) bool {
+	if len(selectedModels) == 0 {
+		return true
+	}
+	available := make(map[string]struct{}, len(availableModels))
+	for _, model := range availableModels {
+		available[strings.ToLower(strings.TrimSpace(model))] = struct{}{}
+	}
+	if len(available) == 0 {
+		return true
+	}
+	for _, model := range selectedModels {
+		if _, exists := available[strings.ToLower(model)]; !exists {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Service) summaryFromAccount(

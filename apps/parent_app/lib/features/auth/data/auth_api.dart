@@ -160,6 +160,17 @@ class AuthApi {
       aiAccount: AiAccount.fromNullableJson(data['ai_account']),
     );
   }
+
+  Future<AiAccount> updateAllowedModels(List<String> allowedModels) async {
+    final response = await _apiClient.put(
+      '/api/v1/auth/ai-models',
+      body: {'allowed_models': allowedModels},
+    );
+    final data = response['data'] as Map<String, Object?>;
+    return AiAccount.fromJson(
+      _requiredMap(data['ai_account'], 'ai_account'),
+    );
+  }
 }
 
 Map<String, Object?> _requiredMap(Object? value, String field) {

@@ -134,6 +134,26 @@ class AuthController extends AsyncNotifier<AuthState> {
     );
   }
 
+  /// Retries AI account preparation without recreating the guardian account.
+  Future<void> retryAIService() async {
+    await refreshAccount();
+  }
+
+  Future<void> updateAllowedModels(List<String> allowedModels) async {
+    final account = state.value;
+    if (account == null || account.account == null) {
+      return;
+    }
+    final updatedAIAccount = await _authApi.updateAllowedModels(allowedModels);
+    state = AsyncData(
+      AuthState(
+        isLoading: false,
+        account: account.account,
+        aiAccount: updatedAIAccount,
+      ),
+    );
+  }
+
   Future<void> _saveSession(AuthResult session) async {
     await _secureStore.write(DioApiClient.accessTokenKey, session.accessToken);
     await _secureStore.write(
