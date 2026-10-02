@@ -114,6 +114,19 @@ func NewRouter(options RouterOptions) http.Handler {
 				),
 			)
 		}
+		if options.BindingService != nil && options.AIService != nil {
+			internalHandler := internalHandler{
+				bindingService: options.BindingService,
+				aiService:      options.AIService,
+			}
+			mux.Handle(
+				"GET /internal/v1/devices/{device_id}/ai-credential",
+				requireServiceToken(
+					options.InternalAPIConfig.AuthToken,
+					http.HandlerFunc(internalHandler.aiCredential),
+				),
+			)
+		}
 	}
 
 	return observability.WithRequestLabels(observability.WithRequestMetadata(

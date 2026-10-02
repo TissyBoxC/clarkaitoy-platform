@@ -396,6 +396,21 @@ func (s *Service) List(
 	return s.repository.ListByParentAccountID(ctx, parentAccountID)
 }
 
+// GetByDeviceID returns one durable binding for internal relay lookups.
+//
+// Unlike List, this is not scoped to a parent account. Callers must run on the
+// internal service surface, never on a guardian-facing request.
+func (s *Service) GetByDeviceID(
+	ctx context.Context,
+	deviceID string,
+) (*domain.Binding, error) {
+	deviceID = strings.TrimSpace(deviceID)
+	if !deviceIDPattern.MatchString(deviceID) {
+		return nil, domain.ErrInvalidDeviceID
+	}
+	return s.repository.GetByDeviceID(ctx, deviceID)
+}
+
 // Delete removes a device binding owned by the parent account.
 func (s *Service) Delete(
 	ctx context.Context,

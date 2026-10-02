@@ -12,6 +12,8 @@ import (
 
 	"github.com/TissyBoxC/sprout-platform/packages/go/httpapi"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/config"
+	gatewayservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/ai_gateway/service"
+	bindingservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_binding/service"
 )
 
 func TestHealthEndpoint(t *testing.T) {
@@ -105,6 +107,56 @@ func TestInternalAPIContractDocumentsRuntimeEndpoint(t *testing.T) {
 	}
 	if !bytes.Contains(contract, []byte("/internal/v1/runtime")) {
 		t.Fatal("expected runtime endpoint in internal API contract")
+	}
+}
+
+// The relay resolves AI credentials by device id, so the contract must keep the
+// device-scoped endpoint documented alongside the runtime probe.
+func TestInternalAPIContractDocumentsDeviceCredentialEndpoint(t *testing.T) {
+	contract, err := os.ReadFile("../../contracts/http/openapi.yaml")
+	if err != nil {
+		t.Fatalf("read internal API contract: %v", err)
+	}
+	expected := "/internal/v1/devices/{device_id}/ai-credential"
+	if !bytes.Contains(contract, []byte(expected)) {
+		t.Fatalf("expected %s in internal API contract", expected)
+	}
+}
+
+func TestInternalCredentialRouteIsHiddenWhenDisabled(t *testing.T) {
+	request := httptest.NewRequest(
+		stdhttp.MethodGet,
+		"/internal/v1/devices/device-0001/ai-credential",
+		nil,
+	)
+	recorder := httptest.NewRecorder()
+
+	NewRouter(newTestRouterOptions()).ServeHTTP(recorder, request)
+
+	if recorder.Code != stdhttp.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", stdhttp.StatusNotFound, recorder.Code)
+	}
+}
+
+func TestInternalCredentialRouteRequiresServiceToken(t *testing.T) {
+	options := newTestRouterOptions()
+	options.InternalAPIConfig = config.InternalAPIConfig{
+		Enabled:   true,
+		AuthToken: strings.Repeat("t", 32),
+	}
+	options.BindingService = &bindingservice.Service{}
+	options.AIService = &gatewayservice.Service{}
+
+	request := httptest.NewRequest(
+		stdhttp.MethodGet,
+		"/internal/v1/devices/device-0001/ai-credential",
+		nil,
+	)
+	recorder := httptest.NewRecorder()
+	NewRouter(options).ServeHTTP(recorder, request)
+
+	if recorder.Code != stdhttp.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", stdhttp.StatusUnauthorized, recorder.Code)
 	}
 }
 

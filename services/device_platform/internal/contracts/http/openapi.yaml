@@ -35,6 +35,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ResponseEnvelope"
+  /internal/v1/devices/{device_id}/ai-credential:
+    get:
+      summary: Resolve the AI credential for one bound device
+      description: >
+        Returns the decrypted provider key owned by the bound guardian. This
+        endpoint is restricted to the internal AI relay service token and must
+        never be exposed to guardians, administrators, or firmware clients.
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 8
+            maxLength: 128
+      responses:
+        "200":
+          description: Device AI credential
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseEnvelope"
+        "401":
+          description: Service authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseEnvelope"
+        "404":
+          description: Device or credential not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseEnvelope"
 components:
   securitySchemes:
     serviceToken:
