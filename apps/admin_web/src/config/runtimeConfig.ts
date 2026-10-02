@@ -4,10 +4,13 @@ export interface RuntimeConfig {
   requestTimeoutMs: number
 }
 
-/// Reads Vite environment values with safe local defaults.
+/// Reads Vite environment values with a same-origin default.
+///
+/// The production console is served behind an Nginx /api proxy. Keeping the
+/// default relative avoids CORS and makes the image portable across hosts.
 export function getRuntimeConfig(): RuntimeConfig {
   return {
-    apiBaseUrl: import.meta.env.VITE_API_BASE_URL ?? 'https://api.example.invalid',
+    apiBaseUrl: import.meta.env.VITE_API_BASE_URL ?? '',
     requestTimeoutMs: Number(import.meta.env.VITE_API_TIMEOUT_MS ?? 15000),
   }
 }

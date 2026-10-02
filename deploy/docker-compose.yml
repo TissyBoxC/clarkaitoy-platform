@@ -136,9 +136,9 @@ services:
       context: ..
       dockerfile: apps/admin_web/Dockerfile
       args:
-        # Vite inlines this origin at build time; point it at the browser-facing
-        # device platform address, never at an in-cluster service name.
-        VITE_API_BASE_URL: ${SPROUT_ADMIN_API_BASE_URL:-http://127.0.0.1:8081}
+        # The console uses same-origin /api through Nginx by default. Override
+        # only when deploying the static bundle behind an external API host.
+        VITE_API_BASE_URL: ${SPROUT_ADMIN_API_BASE_URL:-}
         VITE_API_TIMEOUT_MS: ${SPROUT_ADMIN_API_TIMEOUT_MS:-15000}
     image: sprout-local-admin_web:${SPROUT_PLATFORM_VERSION:-local}
     profiles:

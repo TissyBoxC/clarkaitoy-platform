@@ -115,7 +115,14 @@ $env:SPROUT_SUB2API_VERSION = $gatewayVersion
 $profileArguments = @('--profile', 'ai', '--profile', 'services')
 
 if (-not $SkipBuild) {
-    Invoke-DockerCompose -Arguments ($profileArguments + @('build', '--pull'))
+    Invoke-DockerCompose -Arguments (
+        $profileArguments + @(
+            'build',
+            '--pull',
+            '--build-arg:VITE_API_BASE_URL=',
+            'admin_web'
+        )
+    )
 }
 
 if (-not $NoRestart) {
