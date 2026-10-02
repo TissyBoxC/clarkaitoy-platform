@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sprout.example/contracts/schemas/audio_frame.schema.json",
+  "title": "Realtime audio frame contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "frame_id",
+    "device_id",
+    "stream_id",
+    "sequence",
+    "captured_at",
+    "sample_rate_hz",
+    "channel_count",
+    "duration_ms",
+    "encoding",
+    "payload_base64"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "frame_id": {
+      "$ref": "https://sprout.example/contracts/schemas/common.schema.json#/$defs/identifier"
+    },
+    "device_id": {
+      "$ref": "https://sprout.example/contracts/schemas/common.schema.json#/$defs/identifier"
+    },
+    "stream_id": {
+      "$ref": "https://sprout.example/contracts/schemas/common.schema.json#/$defs/identifier"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "captured_at": {
+      "$ref": "https://sprout.example/contracts/schemas/common.schema.json#/$defs/timestamp"
+    },
+    "sample_rate_hz": {
+      "type": "integer",
+      "const": 16000
+    },
+    "channel_count": {
+      "type": "integer",
+      "const": 1
+    },
+    "duration_ms": {
+      "type": "integer",
+      "const": 20
+    },
+    "encoding": {
+      "type": "string",
+      "const": "opus"
+    },
+    "payload_base64": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    }
+  }
+}

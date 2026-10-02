@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "frame_id": "audio_frame_demo_001",
+  "device_id": "device_demo_001",
+  "stream_id": "stream_demo_001",
+  "sequence": 42,
+  "captured_at": "2026-10-03T10:00:00Z",
+  "sample_rate_hz": 16000,
+  "channel_count": 1,
+  "duration_ms": 20,
+  "encoding": "opus",
+  "payload_base64": "T2dnUwACAAAAAAAAAABTUFJPVVQ="
+}
