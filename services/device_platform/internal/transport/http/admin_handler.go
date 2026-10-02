@@ -17,12 +17,12 @@ type updateAIAccountRequest struct {
 	Status           string   `json:"status"`
 	BalanceUSD       float64  `json:"balance_usd"`
 	ConcurrencyLimit int      `json:"concurrency_limit"`
-	AllowedModels    []string `json:"allowed_models"`
+	AvailableModels  []string `json:"available_models"`
 	Reason           string   `json:"reason"`
 }
 
 type updateAIModelsRequest struct {
-	AllowedModels []string `json:"allowed_models"`
+	SelectedModels []string `json:"selected_models"`
 }
 
 func (handler adminHandler) listAIAccounts(
@@ -69,7 +69,7 @@ func (handler adminHandler) updateAIAccount(
 		payload.Status,
 		payload.BalanceUSD,
 		payload.ConcurrencyLimit,
-		normalizeModels(payload.AllowedModels),
+		normalizeModels(payload.AvailableModels),
 		payload.Reason,
 	)
 	if err != nil {
@@ -102,7 +102,7 @@ func (handler adminHandler) updateParentAIModels(
 	summary, err := handler.service.UpdateModelsForParent(
 		request.Context(),
 		accountID,
-		payload.AllowedModels,
+		payload.SelectedModels,
 	)
 	if err != nil {
 		switch {
@@ -123,6 +123,8 @@ func (handler adminHandler) updateParentAIModels(
 			"status":            summary.Status,
 			"balance_usd":       summary.BalanceUSD,
 			"concurrency_limit": summary.ConcurrencyLimit,
+			"available_models":  summary.AvailableModels,
+			"selected_models":   summary.SelectedModels,
 			"allowed_models":    summary.AllowedModels,
 			"provider_ready":    summary.ProviderReady,
 		},
@@ -135,6 +137,8 @@ func aiAccountAdminResponse(account *gatewaydomain.Account) map[string]any {
 		"status":              account.Status,
 		"balance_usd":         account.BalanceUSD,
 		"concurrency_limit":   account.ConcurrencyLimit,
+		"available_models":    account.AvailableModels,
+		"selected_models":     account.SelectedModels,
 		"allowed_models":      account.AllowedModels,
 		"credential_ready":    len(account.APIKeyCiphertext) > 0,
 		"updated_at":          account.UpdatedAt,

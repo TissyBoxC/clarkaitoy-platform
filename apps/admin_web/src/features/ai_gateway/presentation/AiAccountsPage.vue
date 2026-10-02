@@ -17,7 +17,7 @@ onMounted(() => {
 
 function openEditor(account: AdminAiAccount): void {
   editing.value = { ...account }
-  modelsText.value = account.allowedModels.join(', ')
+  modelsText.value = account.availableModels.join(', ')
   saveMessage.value = ''
 }
 
@@ -25,7 +25,7 @@ async function save(): Promise<void> {
   if (editing.value === null) {
     return
   }
-  editing.value.allowedModels = modelsText.value
+  editing.value.availableModels = modelsText.value
     .split(',')
     .map((model) => model.trim())
     .filter(Boolean)
@@ -65,7 +65,8 @@ async function save(): Promise<void> {
             <th>状态</th>
             <th>余额</th>
             <th>同时对话</th>
-            <th>模型</th>
+            <th>可分配模型</th>
+            <th>家长已选</th>
             <th>凭证</th>
             <th></th>
           </tr>
@@ -80,7 +81,14 @@ async function save(): Promise<void> {
             </td>
             <td>${{ account.balanceUsd.toFixed(2) }}</td>
             <td>{{ account.concurrencyLimit }}</td>
-            <td>{{ account.allowedModels.join('、') || '使用默认模型' }}</td>
+            <td>{{ account.availableModels.join('、') || '使用默认模型' }}</td>
+            <td>
+              {{
+                account.selectedModels.length === 0
+                  ? '全部可用'
+                  : account.selectedModels.join('、')
+              }}
+            </td>
             <td>{{ account.credentialReady ? '已就绪' : '待修复' }}</td>
             <td>
               <button type="button" @click="openEditor(account)">管理</button>
@@ -110,7 +118,7 @@ async function save(): Promise<void> {
           <input v-model.number="editing.concurrencyLimit" type="number" min="1" />
         </label>
         <label>
-          <span>可用模型</span>
+          <span>可分配模型</span>
           <input v-model="modelsText" placeholder="用逗号分隔，留空使用默认模型" />
         </label>
         <div class="dialog-actions">

@@ -125,6 +125,11 @@ type AIAccountSummary struct {
 	Status           string
 	BalanceUSD       float64
 	ConcurrencyLimit int
+	// AvailableModels is the platform-approved pool guardians can choose from.
+	AvailableModels []string
+	// SelectedModels is the guardian's explicit choice; empty means all.
+	SelectedModels []string
+	// AllowedModels is the effective model allowlist pushed to the provider.
 	AllowedModels    []string
 	ProviderReady    bool
 }

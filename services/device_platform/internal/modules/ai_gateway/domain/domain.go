@@ -27,7 +27,12 @@ type Account struct {
 	Status               string
 	BalanceUSD           float64
 	ConcurrencyLimit     int
-	AllowedModels        []string
+	// AvailableModels is the platform-approved model pool shown to guardians.
+	AvailableModels []string
+	// SelectedModels is the guardian's choice. Empty means "all available".
+	SelectedModels []string
+	// AllowedModels is the effective allowlist sent to the provider.
+	AllowedModels []string
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
 }

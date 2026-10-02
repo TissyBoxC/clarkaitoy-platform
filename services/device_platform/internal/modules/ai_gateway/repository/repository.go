@@ -59,6 +59,8 @@ func (r *PostgresRepository) GetByParentAccountID(
 			status,
 			balance_usd,
 			concurrency_limit,
+			available_models,
+			selected_models,
 			allowed_models,
 			created_at,
 			updated_at
@@ -85,6 +87,8 @@ func (r *PostgresRepository) GetByProviderAccountID(
 			status,
 			balance_usd,
 			concurrency_limit,
+			available_models,
+			selected_models,
 			allowed_models,
 			created_at,
 			updated_at
@@ -108,6 +112,8 @@ func (r *PostgresRepository) List(ctx context.Context) ([]domain.Account, error)
 			status,
 			balance_usd,
 			concurrency_limit,
+			available_models,
+			selected_models,
 			allowed_models,
 			created_at,
 			updated_at
@@ -148,11 +154,13 @@ func (r *PostgresRepository) Create(ctx context.Context, account *domain.Account
 			status,
 			balance_usd,
 			concurrency_limit,
+			available_models,
+			selected_models,
 			allowed_models,
 			created_at,
 			updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 	`,
 		account.ID,
 		account.ParentAccountID,
@@ -165,6 +173,8 @@ func (r *PostgresRepository) Create(ctx context.Context, account *domain.Account
 		account.Status,
 		account.BalanceUSD,
 		account.ConcurrencyLimit,
+		account.AvailableModels,
+		account.SelectedModels,
 		account.AllowedModels,
 		account.CreatedAt,
 		account.UpdatedAt,
@@ -186,18 +196,22 @@ func (r *PostgresRepository) UpdateFromProvider(
 		SET status = $2,
 		    balance_usd = $3,
 		    concurrency_limit = $4,
-		    allowed_models = $5,
-		    credential_ciphertext = $6,
-		    credential_nonce = $7,
-		    provider_api_key_id = $8,
-		    credential_key_version = $9,
-		    updated_at = $10
+		    available_models = $5,
+		    selected_models = $6,
+		    allowed_models = $7,
+		    credential_ciphertext = $8,
+		    credential_nonce = $9,
+		    provider_api_key_id = $10,
+		    credential_key_version = $11,
+		    updated_at = $12
 		WHERE id = $1
 	`,
 		account.ID,
 		account.Status,
 		account.BalanceUSD,
 		account.ConcurrencyLimit,
+		account.AvailableModels,
+		account.SelectedModels,
 		account.AllowedModels,
 		account.APIKeyCiphertext,
 		account.APIKeyNonce,
@@ -256,6 +270,8 @@ func scanAccount(row accountScanner) (*domain.Account, error) {
 		&account.Status,
 		&account.BalanceUSD,
 		&account.ConcurrencyLimit,
+		&account.AvailableModels,
+		&account.SelectedModels,
 		&account.AllowedModels,
 		&account.CreatedAt,
 		&account.UpdatedAt,

@@ -173,6 +173,10 @@ func (s *Service) EnsureForParent(
 
 	now := s.timeSource.Now().UTC()
 	if existing == nil {
+		availableModels := append([]string(nil), providerAccount.AllowedModels...)
+		if len(availableModels) == 0 {
+			availableModels = append([]string(nil), s.defaultModels...)
+		}
 		existing = &domain.Account{
 			ID:                   uuid.NewString(),
 			ParentAccountID:      parentAccountID,
@@ -181,7 +185,11 @@ func (s *Service) EnsureForParent(
 			Status:               providerAccount.Status,
 			BalanceUSD:           providerAccount.BalanceUSD,
 			ConcurrencyLimit:     providerAccount.ConcurrencyLimit,
-			AllowedModels:        providerAccount.AllowedModels,
+			// A new account starts with the platform-approved pool available and
+			// no explicit guardian selection, which means "all available".
+			AvailableModels: availableModels,
+			SelectedModels:  nil,
+			AllowedModels:   availableModels,
 			CreatedAt:            now,
 			UpdatedAt:            now,
 		}
@@ -199,7 +207,20 @@ func (s *Service) EnsureForParent(
 	existing.Status = providerAccount.Status
 	existing.BalanceUSD = providerAccount.BalanceUSD
 	existing.ConcurrencyLimit = providerAccount.ConcurrencyLimit
-	existing.AllowedModels = providerAccount.AllowedModels
+	if len(existing.AvailableModels) == 0 {
+		existing.AvailableModels = append([]string(nil), providerAccount.AllowedModels...)
+	}
+	if len(existing.AvailableModels) == 0 {
+		existing.AvailableModels = append([]string(nil), s.defaultModels...)
+	}
+	existing.SelectedModels = intersectModels(
+		existing.SelectedModels,
+		existing.AvailableModels,
+	)
+	existing.AllowedModels = effectiveModels(
+		existing.SelectedModels,
+		existing.AvailableModels,
+	)
 	existing.UpdatedAt = now
 	if err := s.repository.UpdateFromProvider(ctx, existing); err != nil {
 		return nil, err
@@ -225,19 +246,26 @@ func (s *Service) ListForAdmin(ctx context.Context) ([]domain.Account, error) {
 }
 
 // UpdateForAdmin applies an explicit admin change to provider and platform.
+//
+// availableModels is the platform-approved pool shown to guardians. The
+// effective provider allowlist stays the guardian's selection restricted to
+// that pool, so an administrator edit never widens a guardian's restriction.
 func (s *Service) UpdateForAdmin(
 	ctx context.Context,
 	providerAccountID string,
 	status string,
 	balanceUSD float64,
 	concurrencyLimit int,
-	allowedModels []string,
+	availableModels []string,
 	reason string,
 ) (*domain.Account, error) {
 	account, err := s.repository.GetByProviderAccountID(ctx, providerAccountID)
 	if err != nil {
 		return nil, err
 	}
+	availableModels = append([]string(nil), availableModels...)
+	selectedModels := intersectModels(account.SelectedModels, availableModels)
+	allowedModels := effectiveModels(selectedModels, availableModels)
 	providerAccount, err := s.provider.UpdateAccount(
 		ctx,
 		providerAccountID,
@@ -256,6 +284,8 @@ func (s *Service) UpdateForAdmin(
 	account.Status = providerAccount.Status
 	account.BalanceUSD = providerAccount.BalanceUSD
 	account.ConcurrencyLimit = providerAccount.ConcurrencyLimit
+	account.AvailableModels = availableModels
+	account.SelectedModels = selectedModels
 	account.AllowedModels = providerAccount.AllowedModels
 	account.UpdatedAt = s.timeSource.Now().UTC()
 	if err := s.repository.UpdateFromProvider(ctx, account); err != nil {
@@ -264,27 +294,33 @@ func (s *Service) UpdateForAdmin(
 	return account, nil
 }
 
-// UpdateModelsForParent lets a guardian choose from the provider-approved
-// model set. The provider remains the authority on which models are valid.
+// UpdateModelsForParent lets a guardian choose from the platform-approved pool.
+// An empty selection means "all available models". The effective allowlist
+// pushed to the provider is always a subset of that pool.
 func (s *Service) UpdateModelsForParent(
 	ctx context.Context,
 	parentAccountID string,
-	allowedModels []string,
+	selectedModels []string,
 ) (*authdomain.AIAccountSummary, error) {
 	account, err := s.repository.GetByParentAccountID(ctx, parentAccountID)
 	if err != nil {
 		return nil, err
 	}
-	normalizedModels, err := normalizeModelSelection(allowedModels)
+	normalizedModels, err := normalizeModelSelection(selectedModels)
 	if err != nil {
 		return nil, err
 	}
+	availableModels := account.AvailableModels
+	if len(availableModels) == 0 {
+		availableModels = append([]string(nil), s.defaultModels...)
+	}
+	if !isModelSubset(normalizedModels, availableModels) {
+		return nil, domain.ErrModelNotAllowed
+	}
+	allowedModels := effectiveModels(normalizedModels, availableModels)
 	providerAccount, err := s.provider.GetAccount(ctx, account.ProviderAccountID)
 	if err != nil {
 		return nil, err
-	}
-	if !isModelSubset(normalizedModels, providerAccount.AllowedModels) {
-		return nil, domain.ErrModelNotAllowed
 	}
 	updatedProviderAccount, err := s.provider.UpdateAccount(
 		ctx,
@@ -294,7 +330,7 @@ func (s *Service) UpdateModelsForParent(
 			Status:            providerAccount.Status,
 			BalanceUSD:        providerAccount.BalanceUSD,
 			ConcurrencyLimit:  providerAccount.ConcurrencyLimit,
-			AllowedModels:     normalizedModels,
+			AllowedModels:     allowedModels,
 		},
 		"parent model selection",
 	)
@@ -304,6 +340,8 @@ func (s *Service) UpdateModelsForParent(
 	account.Status = updatedProviderAccount.Status
 	account.BalanceUSD = updatedProviderAccount.BalanceUSD
 	account.ConcurrencyLimit = updatedProviderAccount.ConcurrencyLimit
+	account.AvailableModels = availableModels
+	account.SelectedModels = normalizedModels
 	account.AllowedModels = updatedProviderAccount.AllowedModels
 	account.UpdatedAt = s.timeSource.Now().UTC()
 	if err := s.repository.UpdateFromProvider(ctx, account); err != nil {
@@ -395,6 +433,34 @@ func isModelSubset(selectedModels []string, availableModels []string) bool {
 	return true
 }
 
+// intersectModels keeps the guardian's explicit selection inside the pool.
+// An empty selection is preserved because it means "all available".
+func intersectModels(selectedModels []string, availableModels []string) []string {
+	if len(selectedModels) == 0 {
+		return nil
+	}
+	available := make(map[string]struct{}, len(availableModels))
+	for _, model := range availableModels {
+		available[strings.ToLower(strings.TrimSpace(model))] = struct{}{}
+	}
+	intersection := make([]string, 0, len(selectedModels))
+	for _, model := range selectedModels {
+		if _, exists := available[strings.ToLower(strings.TrimSpace(model))]; exists {
+			intersection = append(intersection, model)
+		}
+	}
+	return intersection
+}
+
+// effectiveModels resolves the allowlist pushed to the provider. An empty
+// selection means the guardian accepts every platform-approved model.
+func effectiveModels(selectedModels []string, availableModels []string) []string {
+	if len(selectedModels) == 0 {
+		return append([]string(nil), availableModels...)
+	}
+	return append([]string(nil), selectedModels...)
+}
+
 func (s *Service) summaryFromAccount(
 	account *domain.Account,
 ) *authdomain.AIAccountSummary {
@@ -402,6 +468,8 @@ func (s *Service) summaryFromAccount(
 		Status:           account.Status,
 		BalanceUSD:       account.BalanceUSD,
 		ConcurrencyLimit: account.ConcurrencyLimit,
+		AvailableModels:  append([]string(nil), account.AvailableModels...),
+		SelectedModels:   append([]string(nil), account.SelectedModels...),
 		AllowedModels:    append([]string(nil), account.AllowedModels...),
 		ProviderReady:    len(account.APIKeyCiphertext) > 0 && len(account.APIKeyNonce) > 0,
 	}

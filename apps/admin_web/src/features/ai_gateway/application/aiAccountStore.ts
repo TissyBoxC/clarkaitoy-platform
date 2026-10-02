@@ -10,6 +10,11 @@ export interface AdminAiAccount {
   status: string
   balanceUsd: number
   concurrencyLimit: number
+  /** Platform-approved pool the guardian may choose from. */
+  availableModels: string[]
+  /** Guardian's explicit selection; empty means all available models. */
+  selectedModels: string[]
+  /** Effective allowlist currently applied to the AI service. */
   allowedModels: string[]
   credentialReady: boolean
   updatedAt: string
@@ -44,7 +49,7 @@ export const useAiAccountStore = defineStore('admin-ai-accounts', () => {
           status: account.status,
           balance_usd: account.balanceUsd,
           concurrency_limit: account.concurrencyLimit,
-          allowed_models: account.allowedModels,
+          available_models: account.availableModels,
           reason: 'managed from admin console',
         },
       )
@@ -65,10 +70,16 @@ function toAccount(value: Record<string, unknown>): AdminAiAccount {
     status: String(value.status ?? ''),
     balanceUsd: Number(value.balance_usd ?? 0),
     concurrencyLimit: Number(value.concurrency_limit ?? 1),
+    availableModels: modelList(value.available_models),
+    selectedModels: modelList(value.selected_models),
     allowedModels: Array.isArray(value.allowed_models)
       ? value.allowed_models.map(String)
       : [],
     credentialReady: value.credential_ready === true,
     updatedAt: String(value.updated_at ?? ''),
   }
+}
+
+function modelList(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(String) : []
 }

@@ -58,6 +58,8 @@ class AiAccount {
     required this.status,
     required this.balanceUsd,
     required this.concurrencyLimit,
+    required this.availableModels,
+    required this.selectedModels,
     required this.allowedModels,
     required this.providerReady,
   });
@@ -65,6 +67,14 @@ class AiAccount {
   final String status;
   final double balanceUsd;
   final int concurrencyLimit;
+
+  /// Platform-approved models a guardian may choose from.
+  final List<String> availableModels;
+
+  /// Guardian's explicit selection. Empty means all available models.
+  final List<String> selectedModels;
+
+  /// Effective allowlist currently applied to the AI service.
   final List<String> allowedModels;
   final bool providerReady;
 
@@ -83,6 +93,8 @@ class AiAccount {
         json['concurrency_limit'],
         'concurrency_limit',
       ),
+      availableModels: _stringList(json['available_models']),
+      selectedModels: _stringList(json['selected_models']),
       allowedModels: _stringList(json['allowed_models']),
       providerReady: json['provider_ready'] == true,
     );
@@ -161,10 +173,10 @@ class AuthApi {
     );
   }
 
-  Future<AiAccount> updateAllowedModels(List<String> allowedModels) async {
+  Future<AiAccount> updateSelectedModels(List<String> selectedModels) async {
     final response = await _apiClient.put(
       '/api/v1/auth/ai-models',
-      body: {'allowed_models': allowedModels},
+      body: {'selected_models': selectedModels},
     );
     final data = response['data'] as Map<String, Object?>;
     return AiAccount.fromJson(

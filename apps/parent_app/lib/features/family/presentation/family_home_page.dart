@@ -79,7 +79,7 @@ class FamilyHomePage extends ConsumerWidget {
                       .retryAIService(),
                   onModelsChanged: (models) => ref
                       .read(authControllerProvider.notifier)
-                      .updateAllowedModels(models),
+                      .updateSelectedModels(models),
                 ),
                 const SizedBox(height: 20),
                 Row(
@@ -205,9 +205,9 @@ class _AiAccountCard extends StatelessWidget {
             Text('同时对话：${account.concurrencyLimit} 台'),
             const SizedBox(height: 4),
             Text(
-              account.allowedModels.isEmpty
+              account.selectedModels.isEmpty
                   ? '模型：由家长端统一安排'
-                  : '模型：${account.allowedModels.join('、')}',
+                  : '模型：${account.selectedModels.join('、')}',
             ),
             const SizedBox(height: 10),
             Align(
@@ -228,7 +228,14 @@ class _AiAccountCard extends StatelessWidget {
     BuildContext context,
     AiAccount account,
   ) async {
-    final selectedModels = <String>{...account.allowedModels};
+    // An empty saved selection means "all available", so the picker opens with
+    // every approved model checked instead of showing a misleading empty state.
+    final selectedModels = <String>{
+      if (account.selectedModels.isEmpty)
+        ...account.availableModels
+      else
+        ...account.selectedModels,
+    };
     final saved = await showModalBottomSheet<bool>(
       context: context,
       showDragHandle: true,
@@ -244,9 +251,9 @@ class _AiAccountCard extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 6),
-              const Text('只勾选允许孩子使用的模型。留空表示使用默认安排。'),
+              const Text('只勾选允许孩子使用的模型，至少要保留一个。'),
               const SizedBox(height: 12),
-              if (account.allowedModels.isEmpty)
+              if (account.availableModels.isEmpty)
                 const ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(Icons.info_outline),
@@ -254,7 +261,7 @@ class _AiAccountCard extends StatelessWidget {
                   subtitle: Text('请稍后重新准备 AI 服务。'),
                 )
               else
-                ...account.allowedModels.map(
+                ...account.availableModels.map(
                   (model) => CheckboxListTile(
                     value: selectedModels.contains(model),
                     contentPadding: EdgeInsets.zero,
@@ -270,7 +277,9 @@ class _AiAccountCard extends StatelessWidget {
                 ),
               const SizedBox(height: 12),
               FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
+                onPressed: selectedModels.isEmpty
+                    ? null
+                    : () => Navigator.of(context).pop(true),
                 child: const Text('保存模型选择'),
               ),
             ],

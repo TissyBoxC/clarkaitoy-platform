@@ -139,12 +139,12 @@ class AuthController extends AsyncNotifier<AuthState> {
     await refreshAccount();
   }
 
-  Future<void> updateAllowedModels(List<String> allowedModels) async {
+  Future<void> updateSelectedModels(List<String> selectedModels) async {
     final account = state.value;
     if (account == null || account.account == null) {
       return;
     }
-    final updatedAIAccount = await _authApi.updateAllowedModels(allowedModels);
+    final updatedAIAccount = await _authApi.updateSelectedModels(selectedModels);
     state = AsyncData(
       AuthState(
         isLoading: false,

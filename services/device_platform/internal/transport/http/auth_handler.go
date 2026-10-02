@@ -254,6 +254,8 @@ func accountResponse(
 			"status":            summary.Status,
 			"balance_usd":       summary.BalanceUSD,
 			"concurrency_limit": summary.ConcurrencyLimit,
+			"available_models":  summary.AvailableModels,
+			"selected_models":   summary.SelectedModels,
 			"allowed_models":    summary.AllowedModels,
 			"provider_ready":    summary.ProviderReady,
 		}
