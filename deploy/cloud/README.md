@@ -18,6 +18,7 @@ deploy/cloud/
     ├── generate-mqtt-certs.sh
     ├── export-local-data.ps1
     ├── import-cloud-data.sh
+    ├── diagnose-sub2api.sh
     └── check-stack.sh
 ```
 
@@ -121,6 +122,14 @@ docker compose -f docker-compose.yml up -d --no-deps postgres redis mqtt
 docker compose -f docker-compose.yml up -d
 ./scripts/check-stack.sh
 ```
+
+如果 Sub2API 反复重启，执行诊断脚本并把输出发回：
+
+```bash
+./scripts/diagnose-sub2api.sh
+```
+
+脚本只读取状态、日志和数据卷目录，不会停止容器或修改数据。
 
 ## 3. 反向代理
 
