@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
   InputData,
@@ -97,18 +98,36 @@ async function writeGeneratedFile(relativePath, contents) {
   await writeFile(outputPath, contents, 'utf8');
 }
 
+function formatDartFile(filePath) {
+  const result = spawnSync('dart', ['format', filePath], {
+    encoding: 'utf8',
+    stdio: 'pipe',
+    // Windows resolves the Dart launcher through a batch file.
+    shell: process.platform === 'win32',
+  });
+  if (result.error !== undefined) {
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    throw new Error(result.stderr.trim() || result.stdout.trim());
+  }
+}
+
 await writeGeneratedFile(
   'typescript/envelope.ts',
   await generateTypes('typescript'),
 );
+const dartOutputPath = resolve(outputRoot, 'dart', 'envelope.dart');
 await writeGeneratedFile(
   'dart/envelope.dart',
   await generateTypes('dart'),
 );
+// Dart is the only generated language with a stable official formatter.
+formatDartFile(dartOutputPath);
 await mkdir(parentAppContractRoot, { recursive: true });
 await writeFile(
   resolve(parentAppContractRoot, 'envelope.dart'),
-  await readFile(resolve(outputRoot, 'dart', 'envelope.dart'), 'utf8'),
+  await readFile(dartOutputPath, 'utf8'),
   'utf8',
 );
 
