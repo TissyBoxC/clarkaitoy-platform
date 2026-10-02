@@ -13,6 +13,13 @@ var (
 	ErrAccountDisabled       = errors.New("parent account is disabled")
 	ErrSessionNotFound       = errors.New("session not found")
 	ErrSessionExpired        = errors.New("session expired")
+	ErrMFARequired           = errors.New("administrator MFA is required")
+	ErrMFAChallengeNotFound  = errors.New("MFA challenge not found")
+	ErrMFAChallengeExpired   = errors.New("MFA challenge expired")
+	ErrMFAChallengeConsumed  = errors.New("MFA challenge already used")
+	ErrInvalidMFACode        = errors.New("invalid MFA code")
+	ErrMFANotConfigured      = errors.New("administrator MFA is not configured")
+	ErrTOTPAlreadyConfigured = errors.New("administrator TOTP is already configured")
 	ErrGuardianConsent       = errors.New("guardian consent is required")
 	ErrInvalidEmail          = errors.New("invalid email")
 	ErrWeakPassword          = errors.New("password does not meet requirements")
@@ -73,6 +80,35 @@ type RegisterInput struct {
 type LoginInput struct {
 	Email    string
 	Password string
+}
+
+// AdminMFALoginInput completes an administrator login after password
+// verification by validating a short-lived challenge and TOTP code.
+type AdminMFALoginInput struct {
+	ChallengeToken string
+	Code           string
+}
+
+// MFAChallenge is one short-lived administrator second-factor challenge.
+// Only the hash of the challenge token is persisted.
+type MFAChallenge struct {
+	ID              string
+	ParentAccountID string
+	ChallengeHash   string
+	ExpiresAt       time.Time
+	ConsumedAt      *time.Time
+	CreatedAt       time.Time
+}
+
+// TOTPCredential is the encrypted TOTP secret enrolled for one administrator.
+type TOTPCredential struct {
+	ParentAccountID string
+	EncryptedSecret []byte
+	SecretNonce     []byte
+	KeyVersion      int
+	EnabledAt       *time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // AuthenticatedParent is returned to authorized platform modules.

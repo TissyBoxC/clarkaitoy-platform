@@ -29,6 +29,11 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
+type adminMFALoginRequest struct {
+	ChallengeToken string `json:"challenge_token"`
+	Code           string `json:"code"`
+}
+
 type refreshRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }
@@ -63,6 +68,65 @@ func (handler authHandler) login(response http.ResponseWriter, request *http.Req
 		Email:    payload.Email,
 		Password: payload.Password,
 	})
+	if err != nil {
+		writeAuthServiceError(response, request, err)
+		return
+	}
+	writeSuccess(response, request, http.StatusOK, authResponse(account, pair, nil))
+}
+
+// startAdminLogin validates the password and returns a short-lived MFA
+// challenge. It never returns a session token before TOTP succeeds.
+func (handler authHandler) startAdminLogin(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	var payload loginRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(response, request, http.StatusBadRequest, "invalid_request", "请检查填写的内容")
+		return
+	}
+	challengeToken, account, err := handler.service.StartAdminLogin(
+		request.Context(),
+		authdomain.LoginInput{
+			Email:    payload.Email,
+			Password: payload.Password,
+		},
+	)
+	if err != nil {
+		writeAuthServiceError(response, request, err)
+		return
+	}
+	writeSuccess(response, request, http.StatusOK, map[string]any{
+		"status":          "mfa_required",
+		"challenge_token": challengeToken,
+		"account": map[string]any{
+			"id":           account.ID,
+			"email":        account.Email,
+			"display_name": account.DisplayName,
+			"role":         account.Role,
+			"status":       account.Status,
+		},
+	})
+}
+
+// completeAdminLogin consumes the challenge and returns a regular session.
+func (handler authHandler) completeAdminLogin(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	var payload adminMFALoginRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(response, request, http.StatusBadRequest, "invalid_request", "请检查填写的内容")
+		return
+	}
+	account, pair, err := handler.service.CompleteAdminLogin(
+		request.Context(),
+		authdomain.AdminMFALoginInput{
+			ChallengeToken: payload.ChallengeToken,
+			Code:           payload.Code,
+		},
+	)
 	if err != nil {
 		writeAuthServiceError(response, request, err)
 		return
@@ -141,7 +205,7 @@ func (handler authHandler) requireAdmin(next http.HandlerFunc) http.HandlerFunc 
 		request *http.Request,
 	) {
 		accountID, _ := authenticatedAccountID(request)
-		account, _, err := handler.service.GetAccount(request.Context(), accountID)
+		account, err := handler.service.GetIdentity(request.Context(), accountID)
 		if err != nil || account.Role != authdomain.RoleAdmin {
 			writeError(response, request, http.StatusForbidden, "insufficient_permission", "你没有权限访问此页面")
 			return
@@ -213,6 +277,16 @@ func writeAuthServiceError(
 		writeError(response, request, http.StatusUnauthorized, "invalid_credentials", "邮箱或密码不正确")
 	case errors.Is(err, authdomain.ErrAccountDisabled):
 		writeError(response, request, http.StatusForbidden, "account_disabled", "这个账号当前无法登录")
+	case errors.Is(err, authdomain.ErrMFANotConfigured):
+		writeError(response, request, http.StatusServiceUnavailable, "mfa_not_configured", "管理员验证尚未设置，请联系维护人员")
+	case errors.Is(err, authdomain.ErrInvalidMFACode):
+		writeError(response, request, http.StatusUnauthorized, "invalid_mfa_code", "验证码不正确，请重新输入")
+	case errors.Is(err, authdomain.ErrMFAChallengeNotFound),
+		errors.Is(err, authdomain.ErrMFAChallengeExpired),
+		errors.Is(err, authdomain.ErrMFAChallengeConsumed):
+		writeError(response, request, http.StatusUnauthorized, "mfa_challenge_expired", "验证已过期，请重新登录")
+	case errors.Is(err, authdomain.ErrInsufficientPrivilege):
+		writeError(response, request, http.StatusForbidden, "insufficient_permission", "你没有权限访问此页面")
 	case errors.Is(err, authdomain.ErrSessionNotFound),
 		errors.Is(err, authdomain.ErrSessionExpired):
 		writeError(response, request, http.StatusUnauthorized, "session_expired", "登录已过期，请重新登录")

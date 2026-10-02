@@ -3,6 +3,8 @@ package service
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,12 +18,16 @@ import (
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/platform/clock"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/platform/security"
 	"github.com/google/uuid"
+	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/bcrypt"
 )
 
 const (
-	accountStatusActive = "active"
-	defaultConsent      = "2026-01"
+	accountStatusActive      = "active"
+	defaultConsent           = "2026-01"
+	defaultMFAChallengeTTL   = 5 * time.Minute
+	defaultTOTPKeyVersion    = 1
+	defaultTOTPPeriodSeconds = 30
 )
 
 // AIAccountProvisioner creates or repairs the parent's AI execution account.
@@ -40,22 +46,32 @@ type AIAccountProvisioner interface {
 
 // Service owns parent registration, login, token rotation, and account reads.
 type Service struct {
-	repository    repository.Repository
-	tokenIssuer   security.TokenIssuer
-	aiProvisioner AIAccountProvisioner
-	timeSource    clock.Clock
-	accessTTL     time.Duration
-	refreshTTL    time.Duration
+	repository      repository.Repository
+	tokenIssuer     security.TokenIssuer
+	aiProvisioner   AIAccountProvisioner
+	mfaCipher       MFACipher
+	timeSource      clock.Clock
+	accessTTL       time.Duration
+	refreshTTL      time.Duration
+	mfaChallengeTTL time.Duration
+}
+
+// MFACipher encrypts administrator TOTP secrets before persistence.
+type MFACipher interface {
+	Encrypt(plaintext []byte) (ciphertext []byte, nonce []byte, err error)
+	Decrypt(ciphertext []byte, nonce []byte) ([]byte, error)
 }
 
 // Options contains authentication service dependencies and policies.
 type Options struct {
-	Repository    repository.Repository
-	TokenIssuer   security.TokenIssuer
-	AIProvisioner AIAccountProvisioner
-	Clock         clock.Clock
-	AccessTTL     time.Duration
-	RefreshTTL    time.Duration
+	Repository      repository.Repository
+	TokenIssuer     security.TokenIssuer
+	AIProvisioner   AIAccountProvisioner
+	MFACipher       MFACipher
+	MFAChallengeTTL time.Duration
+	Clock           clock.Clock
+	AccessTTL       time.Duration
+	RefreshTTL      time.Duration
 }
 
 // New creates the parent authentication service.
@@ -69,17 +85,23 @@ func New(options Options) (*Service, error) {
 	if options.AccessTTL <= 0 || options.RefreshTTL <= 0 {
 		return nil, errors.New("authentication token TTLs must be positive")
 	}
+	mfaChallengeTTL := options.MFAChallengeTTL
+	if mfaChallengeTTL <= 0 {
+		mfaChallengeTTL = defaultMFAChallengeTTL
+	}
 	timeSource := options.Clock
 	if timeSource == nil {
 		timeSource = clock.SystemClock{}
 	}
 	return &Service{
-		repository:    options.Repository,
-		tokenIssuer:   options.TokenIssuer,
-		aiProvisioner: options.AIProvisioner,
-		timeSource:    timeSource,
-		accessTTL:     options.AccessTTL,
-		refreshTTL:    options.RefreshTTL,
+		repository:      options.Repository,
+		tokenIssuer:     options.TokenIssuer,
+		aiProvisioner:   options.AIProvisioner,
+		mfaCipher:       options.MFACipher,
+		timeSource:      timeSource,
+		accessTTL:       options.AccessTTL,
+		refreshTTL:      options.RefreshTTL,
+		mfaChallengeTTL: mfaChallengeTTL,
 	}, nil
 }
 
@@ -178,6 +200,187 @@ func (s *Service) Login(
 	return account, tokenPair, nil
 }
 
+// StartAdminLogin validates an administrator password and creates a
+// short-lived MFA challenge. No access token is issued before TOTP succeeds.
+func (s *Service) StartAdminLogin(
+	ctx context.Context,
+	input domain.LoginInput,
+) (string, *domain.ParentAccount, error) {
+	email := normalizeEmail(input.Email)
+	if email == "" || input.Password == "" {
+		return "", nil, domain.ErrInvalidCredentials
+	}
+	account, err := s.repository.GetParentAccountByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, domain.ErrAccountNotFound) {
+			return "", nil, domain.ErrInvalidCredentials
+		}
+		return "", nil, err
+	}
+	if account.Role != domain.RoleAdmin {
+		return "", nil, domain.ErrInsufficientPrivilege
+	}
+	if account.Status != accountStatusActive {
+		return "", nil, domain.ErrAccountDisabled
+	}
+	if err := bcrypt.CompareHashAndPassword(
+		[]byte(account.PasswordHash),
+		[]byte(input.Password),
+	); err != nil {
+		return "", nil, domain.ErrInvalidCredentials
+	}
+	if _, err := s.repository.GetTOTPCredential(ctx, account.ID); err != nil {
+		return "", nil, domain.ErrMFANotConfigured
+	}
+
+	challengeToken, err := randomToken()
+	if err != nil {
+		return "", nil, fmt.Errorf("generate MFA challenge: %w", err)
+	}
+	now := s.timeSource.Now().UTC()
+	challenge := &domain.MFAChallenge{
+		ID:              uuid.NewString(),
+		ParentAccountID: account.ID,
+		ChallengeHash:   hashRefreshToken(challengeToken),
+		ExpiresAt:       now.Add(s.mfaChallengeTTL),
+		CreatedAt:       now,
+	}
+	if err := s.repository.CreateMFAChallenge(ctx, challenge); err != nil {
+		return "", nil, err
+	}
+	return challengeToken, account, nil
+}
+
+// CompleteAdminLogin validates a TOTP code and consumes the challenge exactly
+// once before issuing a normal administrator session.
+func (s *Service) CompleteAdminLogin(
+	ctx context.Context,
+	input domain.AdminMFALoginInput,
+) (*domain.ParentAccount, *domain.TokenPair, error) {
+	input.ChallengeToken = strings.TrimSpace(input.ChallengeToken)
+	input.Code = strings.TrimSpace(input.Code)
+	if input.ChallengeToken == "" || len(input.Code) != 6 {
+		return nil, nil, domain.ErrInvalidMFACode
+	}
+	challenge, err := s.repository.GetMFAChallengeByHash(
+		ctx,
+		hashRefreshToken(input.ChallengeToken),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	now := s.timeSource.Now().UTC()
+	if challenge.ConsumedAt != nil {
+		return nil, nil, domain.ErrMFAChallengeConsumed
+	}
+	if !challenge.ExpiresAt.After(now) {
+		return nil, nil, domain.ErrMFAChallengeExpired
+	}
+	account, err := s.repository.GetParentAccountByID(
+		ctx,
+		challenge.ParentAccountID,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	if account.Role != domain.RoleAdmin || account.Status != accountStatusActive {
+		return nil, nil, domain.ErrInsufficientPrivilege
+	}
+	if s.mfaCipher == nil {
+		return nil, nil, domain.ErrMFANotConfigured
+	}
+	credential, err := s.repository.GetTOTPCredential(ctx, account.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	secret, err := s.mfaCipher.Decrypt(
+		credential.EncryptedSecret,
+		credential.SecretNonce,
+	)
+	if err != nil {
+		return nil, nil, domain.ErrInvalidMFACode
+	}
+	if !totp.Validate(input.Code, string(secret)) {
+		return nil, nil, domain.ErrInvalidMFACode
+	}
+	if err := s.repository.ConsumeMFAChallenge(ctx, challenge.ID); err != nil {
+		return nil, nil, err
+	}
+	if err := s.repository.UpdateLastLogin(ctx, account.ID); err != nil {
+		return nil, nil, err
+	}
+	tokenPair, err := s.issueSession(ctx, account.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return account, tokenPair, nil
+}
+
+// EnrollAdminTOTP creates and encrypts a TOTP secret for one administrator.
+// The plaintext secret and otpauth URI are returned only to the controlled CLI
+// bootstrap flow and are never stored in plaintext.
+func (s *Service) EnrollAdminTOTP(
+	ctx context.Context,
+	accountID string,
+) (string, error) {
+	account, err := s.repository.GetParentAccountByID(ctx, accountID)
+	if err != nil {
+		return "", err
+	}
+	if account.Role != domain.RoleAdmin {
+		return "", domain.ErrInsufficientPrivilege
+	}
+	if _, err := s.repository.GetTOTPCredential(ctx, account.ID); err == nil {
+		return "", domain.ErrTOTPAlreadyConfigured
+	} else if !errors.Is(err, domain.ErrMFANotConfigured) {
+		return "", err
+	}
+	if s.mfaCipher == nil {
+		return "", domain.ErrMFANotConfigured
+	}
+	key, err := totp.Generate(totp.GenerateOpts{
+		Issuer:      "如此萌屋",
+		AccountName: account.Email,
+		Period:      defaultTOTPPeriodSeconds,
+	})
+	if err != nil {
+		return "", fmt.Errorf("generate administrator TOTP secret: %w", err)
+	}
+	encryptedSecret, nonce, err := s.mfaCipher.Encrypt([]byte(key.Secret()))
+	if err != nil {
+		return "", fmt.Errorf("encrypt administrator TOTP secret: %w", err)
+	}
+	now := s.timeSource.Now().UTC()
+	if err := s.repository.UpsertTOTPCredential(ctx, &domain.TOTPCredential{
+		ParentAccountID: account.ID,
+		EncryptedSecret: encryptedSecret,
+		SecretNonce:     nonce,
+		KeyVersion:      defaultTOTPKeyVersion,
+		EnabledAt:       &now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}); err != nil {
+		return "", err
+	}
+	return key.URL(), nil
+}
+
+// GetIdentity returns the authenticated account without provisioning AI state.
+// Authorization checks must use this method to avoid side effects.
+func (s *Service) GetIdentity(
+	ctx context.Context,
+	accountID string,
+) (*domain.ParentAccount, error) {
+	account, err := s.repository.GetParentAccountByID(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if account.Status != accountStatusActive {
+		return nil, domain.ErrAccountDisabled
+	}
+	return account, nil
+}
+
 // Refresh rotates a refresh token and returns a fresh access token.
 func (s *Service) Refresh(
 	ctx context.Context,
@@ -253,12 +456,9 @@ func (s *Service) GetAccount(
 	ctx context.Context,
 	accountID string,
 ) (*domain.ParentAccount, *domain.AIAccountSummary, error) {
-	account, err := s.repository.GetParentAccountByID(ctx, accountID)
+	account, err := s.GetIdentity(ctx, accountID)
 	if err != nil {
 		return nil, nil, err
-	}
-	if account.Status != accountStatusActive {
-		return nil, nil, domain.ErrAccountDisabled
 	}
 	if s.aiProvisioner == nil {
 		return account, nil, nil
@@ -371,4 +571,54 @@ func randomToken() (string, error) {
 func hashRefreshToken(value string) string {
 	hash := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(hash[:])
+}
+
+// AESGCMTOTPCipher encrypts administrator TOTP secrets with an authenticated
+// key derived from the configured credential material.
+type AESGCMTOTPCipher struct {
+	aead cipher.AEAD
+}
+
+// NewAESGCMTOTPCipher derives a 256-bit key from secret material.
+func NewAESGCMTOTPCipher(secret string) (*AESGCMTOTPCipher, error) {
+	if len(strings.TrimSpace(secret)) < 32 {
+		return nil, errors.New("MFA credential key must contain at least 32 characters")
+	}
+	derivedKey := sha256.Sum256([]byte(secret))
+	block, err := aes.NewCipher(derivedKey[:])
+	if err != nil {
+		return nil, fmt.Errorf("create MFA cipher: %w", err)
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("create MFA AEAD: %w", err)
+	}
+	return &AESGCMTOTPCipher{aead: aead}, nil
+}
+
+// Encrypt returns ciphertext and a unique nonce.
+func (c *AESGCMTOTPCipher) Encrypt(plaintext []byte) ([]byte, []byte, error) {
+	if c == nil || c.aead == nil {
+		return nil, nil, errors.New("MFA cipher is not configured")
+	}
+	nonce := make([]byte, c.aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, nil, fmt.Errorf("generate MFA nonce: %w", err)
+	}
+	return c.aead.Seal(nil, nonce, plaintext, nil), nonce, nil
+}
+
+// Decrypt authenticates and decrypts stored TOTP secret material.
+func (c *AESGCMTOTPCipher) Decrypt(ciphertext []byte, nonce []byte) ([]byte, error) {
+	if c == nil || c.aead == nil {
+		return nil, errors.New("MFA cipher is not configured")
+	}
+	if len(nonce) != c.aead.NonceSize() {
+		return nil, errors.New("MFA nonce has an invalid length")
+	}
+	plaintext, err := c.aead.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return nil, errors.New("MFA credential authentication failed")
+	}
+	return plaintext, nil
 }

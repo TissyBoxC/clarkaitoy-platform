@@ -40,6 +40,8 @@ func NewRouter(options RouterOptions) http.Handler {
 		authHandler := authHandler{service: options.AuthService}
 		mux.HandleFunc("POST /api/v1/auth/register", authHandler.register)
 		mux.HandleFunc("POST /api/v1/auth/login", authHandler.login)
+		mux.HandleFunc("POST /api/v1/admin/auth/login", authHandler.startAdminLogin)
+		mux.HandleFunc("POST /api/v1/admin/auth/mfa", authHandler.completeAdminLogin)
 		mux.HandleFunc("POST /api/v1/auth/refresh", authHandler.refresh)
 		mux.HandleFunc("POST /api/v1/auth/logout", authHandler.logout)
 		mux.HandleFunc(

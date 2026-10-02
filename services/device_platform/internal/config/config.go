@@ -46,6 +46,8 @@ type AuthConfig struct {
 	RefreshTokenTTL   time.Duration
 	CredentialKey     string
 	CredentialKeyID   int
+	MFACredentialKey  string
+	MFAChallengeTTL   time.Duration
 }
 
 // AIConfig contains the internal sub2api account provisioning settings.
@@ -117,6 +119,8 @@ func Load() (Config, error) {
 			RefreshTokenTTL:   envDuration("DEVICE_PLATFORM_AUTH_REFRESH_TOKEN_TTL", 30*24*time.Hour),
 			CredentialKey:     env("DEVICE_PLATFORM_AI_CREDENTIAL_KEY", ""),
 			CredentialKeyID:   envInt("DEVICE_PLATFORM_AI_CREDENTIAL_KEY_ID", 1),
+			MFACredentialKey:  env("DEVICE_PLATFORM_MFA_CREDENTIAL_KEY", ""),
+			MFAChallengeTTL:   envDuration("DEVICE_PLATFORM_MFA_CHALLENGE_TTL", 5*time.Minute),
 		},
 		AI: AIConfig{
 			BaseURL:            env("DEVICE_PLATFORM_SUB2API_BASE_URL", "http://127.0.0.1:8080"),
@@ -159,6 +163,12 @@ func Load() (Config, error) {
 	}
 	if len(strings.TrimSpace(cfg.Auth.CredentialKey)) < 32 {
 		return Config{}, fmt.Errorf("DEVICE_PLATFORM_AI_CREDENTIAL_KEY must contain at least 32 characters")
+	}
+	if len(strings.TrimSpace(cfg.Auth.MFACredentialKey)) < 32 {
+		return Config{}, fmt.Errorf("DEVICE_PLATFORM_MFA_CREDENTIAL_KEY must contain at least 32 characters")
+	}
+	if cfg.Auth.MFAChallengeTTL <= 0 {
+		return Config{}, fmt.Errorf("DEVICE_PLATFORM_MFA_CHALLENGE_TTL must be positive")
 	}
 	if cfg.AI.DefaultConcurrency < 1 {
 		return Config{}, fmt.Errorf("DEVICE_PLATFORM_AI_DEFAULT_CONCURRENCY must be greater than zero")

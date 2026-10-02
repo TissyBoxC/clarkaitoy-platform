@@ -72,6 +72,10 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("create AI credential cipher: %w", err)
 	}
+	mfaCipher, err := authService.NewAESGCMTOTPCipher(cfg.Auth.MFACredentialKey)
+	if err != nil {
+		return fmt.Errorf("create MFA credential cipher: %w", err)
+	}
 	aiClient, err := aiProvider.New(cfg.AI.BaseURL, cfg.AI.ServiceToken, nil)
 	if err != nil {
 		return fmt.Errorf("create AI provider client: %w", err)
@@ -88,11 +92,13 @@ func Run() error {
 		return fmt.Errorf("create AI account service: %w", err)
 	}
 	parentAuthService, err := authService.New(authService.Options{
-		Repository:    authRepository.NewPostgresRepository(databaseStore.Pool()),
-		TokenIssuer:   tokenIssuer,
-		AIProvisioner: aiAccountService,
-		AccessTTL:     cfg.Auth.AccessTokenTTL,
-		RefreshTTL:    cfg.Auth.RefreshTokenTTL,
+		Repository:      authRepository.NewPostgresRepository(databaseStore.Pool()),
+		TokenIssuer:     tokenIssuer,
+		AIProvisioner:   aiAccountService,
+		MFACipher:       mfaCipher,
+		MFAChallengeTTL: cfg.Auth.MFAChallengeTTL,
+		AccessTTL:       cfg.Auth.AccessTokenTTL,
+		RefreshTTL:      cfg.Auth.RefreshTokenTTL,
 	})
 	if err != nil {
 		return fmt.Errorf("create authentication service: %w", err)

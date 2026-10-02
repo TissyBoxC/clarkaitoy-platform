@@ -32,6 +32,17 @@ type Repository interface {
 	) error
 	RevokeSession(ctx context.Context, sessionID string) error
 	RevokeAllSessions(ctx context.Context, parentAccountID string) error
+	CreateMFAChallenge(ctx context.Context, challenge *domain.MFAChallenge) error
+	GetMFAChallengeByHash(
+		ctx context.Context,
+		challengeHash string,
+	) (*domain.MFAChallenge, error)
+	ConsumeMFAChallenge(ctx context.Context, challengeID string) error
+	GetTOTPCredential(
+		ctx context.Context,
+		parentAccountID string,
+	) (*domain.TOTPCredential, error)
+	UpsertTOTPCredential(ctx context.Context, credential *domain.TOTPCredential) error
 }
 
 // PostgresRepository is the PostgreSQL-backed authentication repository.
@@ -279,6 +290,163 @@ func (r *PostgresRepository) RevokeAllSessions(
 	`, parentAccountID)
 	if err != nil {
 		return fmt.Errorf("revoke parent sessions: %w", err)
+	}
+	return nil
+}
+
+// CreateMFAChallenge stores one hashed, short-lived administrator challenge.
+func (r *PostgresRepository) CreateMFAChallenge(
+	ctx context.Context,
+	challenge *domain.MFAChallenge,
+) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO admin_mfa_challenges (
+			id,
+			parent_account_id,
+			challenge_hash,
+			expires_at,
+			created_at
+		)
+		VALUES ($1, $2, $3, $4, $5)
+	`,
+		challenge.ID,
+		challenge.ParentAccountID,
+		challenge.ChallengeHash,
+		challenge.ExpiresAt,
+		challenge.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("insert administrator MFA challenge: %w", err)
+	}
+	return nil
+}
+
+// GetMFAChallengeByHash loads one administrator MFA challenge by token hash.
+func (r *PostgresRepository) GetMFAChallengeByHash(
+	ctx context.Context,
+	challengeHash string,
+) (*domain.MFAChallenge, error) {
+	row := r.pool.QueryRow(ctx, `
+		SELECT
+			id,
+			parent_account_id,
+			challenge_hash,
+			expires_at,
+			consumed_at,
+			created_at
+		FROM admin_mfa_challenges
+		WHERE challenge_hash = $1
+	`, challengeHash)
+
+	var challenge domain.MFAChallenge
+	err := row.Scan(
+		&challenge.ID,
+		&challenge.ParentAccountID,
+		&challenge.ChallengeHash,
+		&challenge.ExpiresAt,
+		&challenge.ConsumedAt,
+		&challenge.CreatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrMFAChallengeNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get administrator MFA challenge: %w", err)
+	}
+	return &challenge, nil
+}
+
+// ConsumeMFAChallenge atomically prevents replay of an administrator challenge.
+func (r *PostgresRepository) ConsumeMFAChallenge(
+	ctx context.Context,
+	challengeID string,
+) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE admin_mfa_challenges
+		SET consumed_at = NOW()
+		WHERE id = $1
+		  AND consumed_at IS NULL
+		  AND expires_at > NOW()
+	`, challengeID)
+	if err != nil {
+		return fmt.Errorf("consume administrator MFA challenge: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrMFAChallengeConsumed
+	}
+	return nil
+}
+
+// GetTOTPCredential loads the encrypted TOTP enrollment for one administrator.
+func (r *PostgresRepository) GetTOTPCredential(
+	ctx context.Context,
+	parentAccountID string,
+) (*domain.TOTPCredential, error) {
+	row := r.pool.QueryRow(ctx, `
+		SELECT
+			parent_account_id,
+			encrypted_secret,
+			secret_nonce,
+			key_version,
+			enabled_at,
+			created_at,
+			updated_at
+		FROM admin_totp_credentials
+		WHERE parent_account_id = $1
+	`, parentAccountID)
+
+	var credential domain.TOTPCredential
+	err := row.Scan(
+		&credential.ParentAccountID,
+		&credential.EncryptedSecret,
+		&credential.SecretNonce,
+		&credential.KeyVersion,
+		&credential.EnabledAt,
+		&credential.CreatedAt,
+		&credential.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrMFANotConfigured
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get administrator TOTP credential: %w", err)
+	}
+	return &credential, nil
+}
+
+// UpsertTOTPCredential stores or replaces an administrator TOTP enrollment.
+func (r *PostgresRepository) UpsertTOTPCredential(
+	ctx context.Context,
+	credential *domain.TOTPCredential,
+) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO admin_totp_credentials (
+			parent_account_id,
+			encrypted_secret,
+			secret_nonce,
+			key_version,
+			enabled_at,
+			created_at,
+			updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (parent_account_id) DO UPDATE
+		SET encrypted_secret = EXCLUDED.encrypted_secret,
+		    secret_nonce = EXCLUDED.secret_nonce,
+		    key_version = EXCLUDED.key_version,
+		    enabled_at = EXCLUDED.enabled_at,
+		    updated_at = EXCLUDED.updated_at
+	`,
+		credential.ParentAccountID,
+		credential.EncryptedSecret,
+		credential.SecretNonce,
+		credential.KeyVersion,
+		credential.EnabledAt,
+		credential.CreatedAt,
+		credential.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert administrator TOTP credential: %w", err)
 	}
 	return nil
 }

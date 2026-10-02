@@ -59,4 +59,8 @@ func setAuthenticationTestSecrets(t *testing.T) {
 		"DEVICE_PLATFORM_AI_CREDENTIAL_KEY",
 		"test-ai-credential-key-at-least-32-characters",
 	)
+	t.Setenv(
+		"DEVICE_PLATFORM_MFA_CREDENTIAL_KEY",
+		"test-mfa-credential-key-at-least-32-characters",
+	)
 }
