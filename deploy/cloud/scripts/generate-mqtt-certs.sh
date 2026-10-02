@@ -5,12 +5,18 @@
 # stage. Each production device must use a unique certificate before release.
 set -eu
 
-if [ "$#" -ne 1 ]; then
-  echo "usage: $0 <mqtt-hostname-or-public-ip>" >&2
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+  echo "usage: $0 <mqtt-hostname-or-public-ip> [--rotate-ca]" >&2
   exit 1
 fi
 
 mqtt_host="$1"
+rotate_ca="${2:-}"
+if [ -n "$rotate_ca" ] && [ "$rotate_ca" != "--rotate-ca" ]; then
+  echo "unknown option: $rotate_ca" >&2
+  exit 1
+fi
+
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 cert_root="$script_dir/../mosquitto/certs"
 broker_cert_dir="$cert_root/broker"
@@ -40,18 +46,32 @@ case "$mqtt_host" in
 esac
 
 mkdir -p "$broker_cert_dir" "$device_cert_dir"
+
+if [ "$rotate_ca" = "--rotate-ca" ]; then
+  rm -f "$broker_cert_dir/ca.crt" "$broker_cert_dir/ca.key"
+fi
+
+# Keep the existing trust root across permission-only migrations. Replacing it
+# would invalidate every device that already trusts the current CA.
+if [ ! -f "$broker_cert_dir/ca.crt" ] || [ ! -f "$broker_cert_dir/ca.key" ]; then
+  if [ -f "$cert_root/ca.crt" ] && [ -f "$cert_root/ca.key" ]; then
+    cp "$cert_root/ca.crt" "$broker_cert_dir/ca.crt"
+    cp "$cert_root/ca.key" "$broker_cert_dir/ca.key"
+  else
+    openssl genrsa -out "$broker_cert_dir/ca.key" 4096
+    openssl req -x509 -new -nodes -key "$broker_cert_dir/ca.key" \
+      -sha256 -days 3650 -subj "/CN=Sprout Cloud MQTT CA" \
+      -out "$broker_cert_dir/ca.crt"
+  fi
+fi
+
 rm -f \
-  "$broker_cert_dir/ca.crt" "$broker_cert_dir/ca.key" \
   "$broker_cert_dir/server.crt" "$broker_cert_dir/server.key" "$broker_cert_dir/server.csr" \
   "$broker_cert_dir/healthcheck.crt" "$broker_cert_dir/healthcheck.key" \
   "$broker_cert_dir/healthcheck.csr" \
   "$device_cert_dir/ca.crt" "$device_cert_dir/device.crt" \
   "$device_cert_dir/device.key" "$device_cert_dir/device.csr"
 
-openssl genrsa -out "$broker_cert_dir/ca.key" 4096
-openssl req -x509 -new -nodes -key "$broker_cert_dir/ca.key" \
-  -sha256 -days 3650 -subj "/CN=Sprout Cloud MQTT CA" \
-  -out "$broker_cert_dir/ca.crt"
 cp "$broker_cert_dir/ca.crt" "$device_cert_dir/ca.crt"
 
 openssl genrsa -out "$broker_cert_dir/server.key" 2048

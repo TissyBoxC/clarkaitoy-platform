@@ -161,8 +161,15 @@ docker logs --tail=100 sprout-mqtt-1
 docker compose --env-file .env up -d --force-recreate mqtt device_platform
 ```
 
-证书目录中的私钥不应进入 Git。重新签发后，已经安装旧 CA 的设备必须同步
-更新 `ca.crt`，否则设备会拒绝新证书。
+脚本默认复用已有的 CA，只重新签发服务端和设备证书，因此不会改变设备
+信任根。只有明确需要轮换整个信任链时才执行：
+
+```bash
+./scripts/generate-mqtt-certs.sh mqtt.example.com --rotate-ca
+```
+
+轮换后，已经安装旧 CA 的设备必须同步更新 `ca.crt`，否则设备会拒绝新证书。
+证书目录中的私钥不应进入 Git。
 
 ## 4. 环境变量逐行说明
 
