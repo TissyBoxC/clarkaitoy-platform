@@ -14,8 +14,16 @@ import (
 
 	"github.com/TissyBoxC/sprout-platform/packages/go/observability"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/config"
+	aiProvider "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/ai_gateway/provider"
+	aiRepository "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/ai_gateway/repository"
+	aiService "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/ai_gateway/service"
+	authRepository "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/repository"
+	authService "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/service"
+	bindingRepository "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_binding/repository"
+	bindingService "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_binding/service"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/platform/cache"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/platform/database"
+	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/platform/security"
 	platformhttp "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/transport/http"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/transport/mqtt"
 )
@@ -56,11 +64,55 @@ func Run() error {
 	}
 	defer mqttClient.Close()
 
+	tokenIssuer, err := security.NewHMACTokenIssuer(cfg.Auth.AccessTokenSecret)
+	if err != nil {
+		return fmt.Errorf("create token issuer: %w", err)
+	}
+	credentialCipher, err := aiService.NewAESGCMCipher(cfg.Auth.CredentialKey)
+	if err != nil {
+		return fmt.Errorf("create AI credential cipher: %w", err)
+	}
+	aiClient, err := aiProvider.New(cfg.AI.BaseURL, cfg.AI.ServiceToken, nil)
+	if err != nil {
+		return fmt.Errorf("create AI provider client: %w", err)
+	}
+	aiAccountService, err := aiService.New(aiService.Options{
+		Repository:         aiRepository.NewPostgresRepository(databaseStore.Pool()),
+		Provider:           aiClient,
+		Cipher:             credentialCipher,
+		DefaultBalanceUSD:  cfg.AI.DefaultBalanceUSD,
+		DefaultModels:      cfg.AI.DefaultModels,
+		DefaultConcurrency: cfg.AI.DefaultConcurrency,
+	})
+	if err != nil {
+		return fmt.Errorf("create AI account service: %w", err)
+	}
+	parentAuthService, err := authService.New(authService.Options{
+		Repository:    authRepository.NewPostgresRepository(databaseStore.Pool()),
+		TokenIssuer:   tokenIssuer,
+		AIProvisioner: aiAccountService,
+		AccessTTL:     cfg.Auth.AccessTokenTTL,
+		RefreshTTL:    cfg.Auth.RefreshTokenTTL,
+	})
+	if err != nil {
+		return fmt.Errorf("create authentication service: %w", err)
+	}
+	deviceBindingService, err := bindingService.New(bindingService.Options{
+		Repository: bindingRepository.NewPostgresRepository(databaseStore.Pool()),
+		TokenTTL:   15 * time.Minute,
+	})
+	if err != nil {
+		return fmt.Errorf("create device binding service: %w", err)
+	}
+
 	server := &http.Server{
 		Addr: cfg.HTTP.Address(),
 		Handler: platformhttp.NewRouter(platformhttp.RouterOptions{
 			Logger:            logger,
 			InternalAPIConfig: cfg.Internal,
+			AuthService:       parentAuthService,
+			AIService:         aiAccountService,
+			BindingService:    deviceBindingService,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}

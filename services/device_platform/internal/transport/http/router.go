@@ -11,12 +11,18 @@ import (
 	"github.com/TissyBoxC/sprout-platform/packages/go/httpapi"
 	"github.com/TissyBoxC/sprout-platform/packages/go/observability"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/config"
+	gatewayservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/ai_gateway/service"
+	authservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/service"
+	bindingservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_binding/service"
 )
 
 // RouterOptions contains dependencies for the device platform HTTP transport.
 type RouterOptions struct {
 	Logger            *slog.Logger
 	InternalAPIConfig config.InternalAPIConfig
+	AuthService       *authservice.Service
+	AIService         *gatewayservice.Service
+	BindingService    *bindingservice.Service
 }
 
 // NewRouter returns the HTTP router for the device platform.
@@ -29,6 +35,48 @@ func NewRouter(options RouterOptions) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthHandler)
 	mux.HandleFunc("GET /readyz", readyHandler)
+
+	if options.AuthService != nil {
+		authHandler := authHandler{service: options.AuthService}
+		mux.HandleFunc("POST /api/v1/auth/register", authHandler.register)
+		mux.HandleFunc("POST /api/v1/auth/login", authHandler.login)
+		mux.HandleFunc("POST /api/v1/auth/refresh", authHandler.refresh)
+		mux.HandleFunc("POST /api/v1/auth/logout", authHandler.logout)
+		mux.HandleFunc(
+			"GET /api/v1/auth/me",
+			authHandler.requireAuthentication(authHandler.me),
+		)
+		if options.BindingService != nil {
+			bindingHandler := deviceBindingHandler{service: options.BindingService}
+			mux.HandleFunc(
+				"POST /api/v1/devices/binding-tokens",
+				authHandler.requireAuthentication(bindingHandler.createToken),
+			)
+			mux.HandleFunc(
+				"POST /api/v1/devices/bind",
+				authHandler.requireAuthentication(bindingHandler.bind),
+			)
+			mux.HandleFunc(
+				"GET /api/v1/devices",
+				authHandler.requireAuthentication(bindingHandler.list),
+			)
+			mux.HandleFunc(
+				"DELETE /api/v1/devices/{device_id}",
+				authHandler.requireAuthentication(bindingHandler.remove),
+			)
+		}
+		if options.AIService != nil {
+			adminHandler := adminHandler{service: options.AIService}
+			mux.HandleFunc(
+				"GET /api/v1/admin/ai-accounts",
+				authHandler.requireAdmin(adminHandler.listAIAccounts),
+			)
+			mux.HandleFunc(
+				"PUT /api/v1/admin/ai-accounts/{provider_account_id}",
+				authHandler.requireAdmin(adminHandler.updateAIAccount),
+			)
+		}
+	}
 
 	if options.InternalAPIConfig.Enabled {
 		mux.Handle(

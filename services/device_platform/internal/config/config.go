@@ -7,12 +7,15 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config contains runtime settings for the device platform service.
 type Config struct {
 	HTTP     HTTPConfig
 	Internal InternalAPIConfig
+	Auth     AuthConfig
+	AI       AIConfig
 	Log      LogConfig
 	Database DatabaseConfig
 	Redis    RedisConfig
@@ -34,6 +37,24 @@ func (c HTTPConfig) Address() string {
 type InternalAPIConfig struct {
 	Enabled   bool
 	AuthToken string
+}
+
+// AuthConfig contains parent authentication settings.
+type AuthConfig struct {
+	AccessTokenSecret string
+	AccessTokenTTL    time.Duration
+	RefreshTokenTTL   time.Duration
+	CredentialKey     string
+	CredentialKeyID   int
+}
+
+// AIConfig contains the internal sub2api account provisioning settings.
+type AIConfig struct {
+	BaseURL            string
+	ServiceToken       string
+	DefaultBalanceUSD  float64
+	DefaultConcurrency int
+	DefaultModels      []string
 }
 
 // LogConfig contains logging settings.
@@ -90,6 +111,20 @@ func Load() (Config, error) {
 			Enabled:   envBool("DEVICE_PLATFORM_INTERNAL_API_ENABLED", false),
 			AuthToken: env("DEVICE_PLATFORM_INTERNAL_API_TOKEN", ""),
 		},
+		Auth: AuthConfig{
+			AccessTokenSecret: env("DEVICE_PLATFORM_AUTH_ACCESS_TOKEN_SECRET", ""),
+			AccessTokenTTL:    envDuration("DEVICE_PLATFORM_AUTH_ACCESS_TOKEN_TTL", 15*time.Minute),
+			RefreshTokenTTL:   envDuration("DEVICE_PLATFORM_AUTH_REFRESH_TOKEN_TTL", 30*24*time.Hour),
+			CredentialKey:     env("DEVICE_PLATFORM_AI_CREDENTIAL_KEY", ""),
+			CredentialKeyID:   envInt("DEVICE_PLATFORM_AI_CREDENTIAL_KEY_ID", 1),
+		},
+		AI: AIConfig{
+			BaseURL:            env("DEVICE_PLATFORM_SUB2API_BASE_URL", "http://127.0.0.1:8080"),
+			ServiceToken:       env("DEVICE_PLATFORM_SUB2API_SERVICE_TOKEN", ""),
+			DefaultBalanceUSD:  envFloat("DEVICE_PLATFORM_AI_DEFAULT_BALANCE_USD", 0),
+			DefaultConcurrency: envInt("DEVICE_PLATFORM_AI_DEFAULT_CONCURRENCY", 1),
+			DefaultModels:      envList("DEVICE_PLATFORM_AI_DEFAULT_MODELS", []string{}),
+		},
 		Log: LogConfig{
 			Level: env("DEVICE_PLATFORM_LOG_LEVEL", "info"),
 		},
@@ -118,6 +153,15 @@ func Load() (Config, error) {
 	}
 	if cfg.MQTT.InsecureSkipVerify {
 		return Config{}, fmt.Errorf("DEVICE_PLATFORM_MQTT_INSECURE_SKIP_VERIFY must remain false")
+	}
+	if len(strings.TrimSpace(cfg.Auth.AccessTokenSecret)) < 32 {
+		return Config{}, fmt.Errorf("DEVICE_PLATFORM_AUTH_ACCESS_TOKEN_SECRET must contain at least 32 characters")
+	}
+	if len(strings.TrimSpace(cfg.Auth.CredentialKey)) < 32 {
+		return Config{}, fmt.Errorf("DEVICE_PLATFORM_AI_CREDENTIAL_KEY must contain at least 32 characters")
+	}
+	if cfg.AI.DefaultConcurrency < 1 {
+		return Config{}, fmt.Errorf("DEVICE_PLATFORM_AI_DEFAULT_CONCURRENCY must be greater than zero")
 	}
 
 	return cfg, nil
@@ -152,4 +196,43 @@ func envBool(key string, fallback bool) bool {
 		return fallback
 	}
 	return parsed
+}
+
+func envFloat(key string, fallback float64) float64 {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func envDuration(key string, fallback time.Duration) time.Duration {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func envList(key string, fallback []string) []string {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if item := strings.TrimSpace(part); item != "" {
+			result = append(result, item)
+		}
+	}
+	return result
 }

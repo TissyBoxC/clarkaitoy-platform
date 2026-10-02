@@ -4,9 +4,12 @@ package database
 import (
 	"context"
 	"fmt"
+	"io/fs"
+	"sort"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/TissyBoxC/sprout-platform/services/device_platform/migrations"
 )
 
 // Store owns the PostgreSQL connection pool shared by database-backed
@@ -44,7 +47,12 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
 
-	return &Store{pool: pool}, nil
+	store := &Store{pool: pool}
+	if err := store.Migrate(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("migrate database: %w", err)
+	}
+	return store, nil
 }
 
 // Pool returns the initialized PostgreSQL pool.
@@ -60,4 +68,98 @@ func (s *Store) Close(_ context.Context) error {
 	s.pool.Close()
 	s.pool = nil
 	return nil
+}
+
+// Migrate applies ordered, idempotent schema migrations owned by
+// device_platform. The advisory lock prevents two replicas from racing during
+// a rollout.
+func (s *Store) Migrate(ctx context.Context) error {
+	if s == nil || s.pool == nil {
+		return fmt.Errorf("database pool is not initialized")
+	}
+
+	connection, err := s.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire migration connection: %w", err)
+	}
+	defer connection.Release()
+
+	const migrationLockID int64 = 0x5350524f55544d31 // "SPROUTM1"
+	if _, err := connection.Exec(ctx, "SELECT pg_advisory_lock($1)", migrationLockID); err != nil {
+		return fmt.Errorf("acquire migration lock: %w", err)
+	}
+	defer func() {
+		_, _ = connection.Exec(context.Background(), "SELECT pg_advisory_unlock($1)", migrationLockID)
+	}()
+
+	if _, err := connection.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version TEXT PRIMARY KEY,
+			applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)
+	`); err != nil {
+		return fmt.Errorf("create migration ledger: %w", err)
+	}
+
+	entries, err := fs.ReadDir(migrations.Files, ".")
+	if err != nil {
+		return fmt.Errorf("read embedded migrations: %w", err)
+	}
+	sort.Slice(entries, func(left, right int) bool {
+		return entries[left].Name() < entries[right].Name()
+	})
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		applied, err := migrationApplied(ctx, connection, entry.Name())
+		if err != nil {
+			return err
+		}
+		if applied {
+			continue
+		}
+		contents, err := migrations.Files.ReadFile(entry.Name())
+		if err != nil {
+			return fmt.Errorf("read migration %s: %w", entry.Name(), err)
+		}
+		transaction, err := connection.Begin(ctx)
+		if err != nil {
+			return fmt.Errorf("begin migration %s: %w", entry.Name(), err)
+		}
+		if _, err := transaction.Exec(ctx, string(contents)); err != nil {
+			_ = transaction.Rollback(ctx)
+			return fmt.Errorf("apply migration %s: %w", entry.Name(), err)
+		}
+		if _, err := transaction.Exec(
+			ctx,
+			"INSERT INTO schema_migrations (version) VALUES ($1)",
+			entry.Name(),
+		); err != nil {
+			_ = transaction.Rollback(ctx)
+			return fmt.Errorf("record migration %s: %w", entry.Name(), err)
+		}
+		if err := transaction.Commit(ctx); err != nil {
+			return fmt.Errorf("commit migration %s: %w", entry.Name(), err)
+		}
+	}
+
+	return nil
+}
+
+func migrationApplied(
+	ctx context.Context,
+	connection *pgxpool.Conn,
+	version string,
+) (bool, error) {
+	var exists bool
+	if err := connection.QueryRow(
+		ctx,
+		"SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version = $1)",
+		version,
+	).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check migration %s: %w", version, err)
+	}
+	return exists, nil
 }
