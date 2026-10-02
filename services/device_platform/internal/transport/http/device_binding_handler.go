@@ -1,6 +1,7 @@
 package http
 
 import (
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"strings"
@@ -13,28 +14,179 @@ type deviceBindingHandler struct {
 	service *bindingservice.Service
 }
 
-type createBindingTokenRequest struct {
+type createRegistrationTokenRequest struct {
 	DeviceID string `json:"device_id"`
 }
 
-type bindDeviceRequest struct {
-	Token           string   `json:"token"`
-	DeviceName      string   `json:"device_name"`
-	HardwareModel   string   `json:"hardware_model"`
-	FirmwareVersion string   `json:"firmware_version"`
-	Capabilities    []string `json:"capabilities"`
+type registerDeviceRequest struct {
+	RegistrationToken string   `json:"registration_token"`
+	DeviceID          string   `json:"device_id"`
+	HardwareModel     string   `json:"hardware_model"`
+	FirmwareVersion   string   `json:"firmware_version"`
+	Capabilities      []string `json:"capabilities"`
+	PublicKey         string   `json:"public_key"`
 }
 
-func (handler deviceBindingHandler) createToken(
+type startDeviceAuthenticationRequest struct {
+	DeviceID string `json:"device_id"`
+}
+
+type completeDeviceAuthenticationRequest struct {
+	DeviceID  string `json:"device_id"`
+	Nonce     string `json:"nonce"`
+	Signature string `json:"signature"`
+}
+
+type bindDeviceRequest struct {
+	Token      string `json:"token"`
+	DeviceName string `json:"device_name"`
+}
+
+// createRegistrationToken is an operator/manufacturing endpoint protected by
+// the internal service token, never by a parent session.
+func (handler deviceBindingHandler) createRegistrationToken(
 	response http.ResponseWriter,
 	request *http.Request,
 ) {
-	var payload createBindingTokenRequest
+	var payload createRegistrationTokenRequest
 	if err := decodeJSON(request, &payload); err != nil {
 		writeError(response, request, http.StatusBadRequest, "invalid_request", "请检查设备信息")
 		return
 	}
-	token, details, err := handler.service.CreateToken(request.Context(), payload.DeviceID)
+	token, details, err := handler.service.CreateRegistrationToken(
+		request.Context(),
+		payload.DeviceID,
+	)
+	if err != nil {
+		writeDeviceBindingError(response, request, err)
+		return
+	}
+	writeSuccess(response, request, http.StatusCreated, map[string]any{
+		"registration_token": token,
+		"device_id":          details.DeviceID,
+		"expires_at":         details.ExpiresAt,
+	})
+}
+
+// registerDevice consumes a manufacturing registration grant and stores the
+// device public key. It is deliberately not authenticated by a parent session.
+func (handler deviceBindingHandler) registerDevice(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	var payload registerDeviceRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(response, request, http.StatusBadRequest, "invalid_request", "请检查设备信息")
+		return
+	}
+	credential, err := handler.service.RegisterDevice(
+		request.Context(),
+		payload.RegistrationToken,
+		bindingdomain.DeviceRegistrationInput{
+			DeviceID:        payload.DeviceID,
+			HardwareModel:   payload.HardwareModel,
+			FirmwareVersion: payload.FirmwareVersion,
+			Capabilities:    payload.Capabilities,
+			PublicKey:       payload.PublicKey,
+		},
+	)
+	if err != nil {
+		writeDeviceBindingError(response, request, err)
+		return
+	}
+	writeSuccess(response, request, http.StatusCreated, map[string]any{
+		"device_id":        credential.DeviceID,
+		"hardware_model":   credential.HardwareModel,
+		"firmware_version": credential.FirmwareVersion,
+		"capabilities":     credential.CapabilitySet,
+		"registered_at":    credential.RegisteredAt,
+	})
+}
+
+// startDeviceAuthentication issues a short-lived nonce to a registered device.
+func (handler deviceBindingHandler) startDeviceAuthentication(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	var payload startDeviceAuthenticationRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(response, request, http.StatusBadRequest, "invalid_request", "请检查设备信息")
+		return
+	}
+	nonce, challenge, err := handler.service.StartDeviceAuthentication(
+		request.Context(),
+		payload.DeviceID,
+	)
+	if err != nil {
+		writeDeviceBindingError(response, request, err)
+		return
+	}
+	writeSuccess(response, request, http.StatusOK, map[string]any{
+		"nonce":      nonce,
+		"expires_at": challenge.ExpiresAt,
+	})
+}
+
+// completeDeviceAuthentication verifies the device signature and returns a
+// short-lived device session token. The token is never logged or persisted raw.
+func (handler deviceBindingHandler) completeDeviceAuthentication(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	var payload completeDeviceAuthenticationRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(response, request, http.StatusBadRequest, "invalid_request", "请检查设备信息")
+		return
+	}
+	signature, err := decodeDeviceSignature(payload.Signature)
+	if err != nil {
+		writeDeviceBindingError(
+			response,
+			request,
+			bindingdomain.ErrInvalidDeviceProof,
+		)
+		return
+	}
+	sessionToken, err := handler.service.CompleteDeviceAuthentication(
+		request.Context(),
+		payload.DeviceID,
+		payload.Nonce,
+		signature,
+	)
+	if err != nil {
+		writeDeviceBindingError(response, request, err)
+		return
+	}
+	writeSuccess(response, request, http.StatusOK, map[string]any{
+		"device_session_token": sessionToken,
+	})
+}
+
+func decodeDeviceSignature(value string) ([]byte, error) {
+	decoded, err := base64.StdEncoding.DecodeString(value)
+	if err == nil {
+		return decoded, nil
+	}
+	return base64.RawURLEncoding.DecodeString(value)
+}
+
+// createDeviceProvisioningToken is called by an authenticated device to put a
+// single-use binding token into its QR code or BLE advertisement.
+func (handler deviceBindingHandler) createDeviceProvisioningToken(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	deviceID := strings.TrimSpace(request.PathValue("device_id"))
+	sessionToken, ok := bearerToken(request)
+	if !ok {
+		writeError(response, request, http.StatusUnauthorized, "device_session_expired", "设备登录已过期，请重新连接")
+		return
+	}
+	token, details, err := handler.service.CreateDeviceProvisioningToken(
+		request.Context(),
+		deviceID,
+		sessionToken,
+	)
 	if err != nil {
 		writeDeviceBindingError(response, request, err)
 		return
@@ -65,9 +217,6 @@ func (handler deviceBindingHandler) bind(
 		accountID,
 		payload.Token,
 		payload.DeviceName,
-		payload.HardwareModel,
-		payload.FirmwareVersion,
-		payload.Capabilities,
 	)
 	if err != nil {
 		writeDeviceBindingError(response, request, err)
@@ -142,6 +291,23 @@ func writeDeviceBindingError(
 		writeError(response, request, http.StatusConflict, "token_used", "这个绑定码已经使用，请在设备上重新生成")
 	case errors.Is(err, bindingdomain.ErrDeviceNotFound):
 		writeError(response, request, http.StatusNotFound, "device_not_found", "没有找到这台设备")
+	case errors.Is(err, bindingdomain.ErrDeviceDisabled):
+		writeError(response, request, http.StatusForbidden, "device_disabled", "这台设备当前无法连接")
+	case errors.Is(err, bindingdomain.ErrRegistrationTokenNotFound):
+		writeError(response, request, http.StatusNotFound, "registration_not_found", "设备注册信息无效")
+	case errors.Is(err, bindingdomain.ErrRegistrationTokenExpired):
+		writeError(response, request, http.StatusGone, "registration_expired", "设备注册已过期，请重新获取")
+	case errors.Is(err, bindingdomain.ErrRegistrationTokenConsumed):
+		writeError(response, request, http.StatusConflict, "registration_used", "设备已经完成注册")
+	case errors.Is(err, bindingdomain.ErrDeviceChallengeNotFound),
+		errors.Is(err, bindingdomain.ErrDeviceChallengeExpired),
+		errors.Is(err, bindingdomain.ErrDeviceChallengeConsumed):
+		writeError(response, request, http.StatusUnauthorized, "device_auth_expired", "设备验证已过期，请重新连接")
+	case errors.Is(err, bindingdomain.ErrInvalidDeviceProof):
+		writeError(response, request, http.StatusUnauthorized, "device_auth_failed", "设备验证没有通过")
+	case errors.Is(err, bindingdomain.ErrDeviceSessionNotFound),
+		errors.Is(err, bindingdomain.ErrDeviceSessionExpired):
+		writeError(response, request, http.StatusUnauthorized, "device_session_expired", "设备登录已过期，请重新连接")
 	default:
 		writeError(response, request, http.StatusInternalServerError, "service_error", "操作没有完成，请稍后重试")
 	}

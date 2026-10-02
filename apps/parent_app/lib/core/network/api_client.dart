@@ -14,6 +14,12 @@ abstract interface class ApiClient {
 
   Future<Map<String, Object?>> post(String path, {Object? body});
 
+  Future<Map<String, Object?>> postWithBearerToken(
+    String path, {
+    Object? body,
+    required String bearerToken,
+  });
+
   Future<Map<String, Object?>> delete(String path);
 }
 
@@ -98,6 +104,27 @@ class DioApiClient implements ApiClient {
   }
 
   @override
+  Future<Map<String, Object?>> postWithBearerToken(
+    String path, {
+    Object? body,
+    required String bearerToken,
+  }) async {
+    try {
+      final response = await _dio.post<Object?>(
+        path,
+        data: body,
+        options: Options(
+          headers: {'Authorization': 'Bearer $bearerToken'},
+          extra: const {'skip_auth': true},
+        ),
+      );
+      return _requireResponseMap(response.data);
+    } on Object catch (error) {
+      throw mapApiError(error);
+    }
+  }
+
+  @override
   Future<Map<String, Object?>> delete(String path) async {
     try {
       final response = await _dio.delete<Object?>(path);
@@ -111,6 +138,10 @@ class DioApiClient implements ApiClient {
     RequestOptions request,
     RequestInterceptorHandler handler,
   ) async {
+    if (request.extra['skip_auth'] == true) {
+      handler.next(request);
+      return;
+    }
     final accessToken = await _secureStore.read(accessTokenKey);
     if (accessToken != null) {
       request.headers['Authorization'] = 'Bearer $accessToken';
@@ -124,6 +155,7 @@ class DioApiClient implements ApiClient {
   ) async {
     final request = error.requestOptions;
     if (error.response?.statusCode != 401 ||
+        request.extra['skip_auth'] == true ||
         request.extra['auth_retried'] == true) {
       handler.next(error);
       return;

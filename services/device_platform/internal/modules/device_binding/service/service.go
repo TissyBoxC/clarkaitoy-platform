@@ -19,18 +19,33 @@ import (
 
 var deviceIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$`)
 
+// DeviceProofVerifier validates a device signature over a platform nonce.
+// Implementations must reject malformed keys and never trust device metadata.
+type DeviceProofVerifier interface {
+	ValidatePublicKey(publicKey string) error
+	Verify(publicKey string, message []byte, signature []byte) error
+}
+
 // Service creates, consumes, and revokes device provisioning state.
 type Service struct {
-	repository repository.Repository
-	timeSource clock.Clock
-	tokenTTL   time.Duration
+	repository           repository.Repository
+	proofVerifier        DeviceProofVerifier
+	timeSource           clock.Clock
+	tokenTTL             time.Duration
+	challengeTTL         time.Duration
+	registrationTokenTTL time.Duration
+	sessionTTL           time.Duration
 }
 
 // Options contains device binding service dependencies and policy.
 type Options struct {
-	Repository repository.Repository
-	Clock      clock.Clock
-	TokenTTL   time.Duration
+	Repository           repository.Repository
+	ProofVerifier        DeviceProofVerifier
+	Clock                clock.Clock
+	TokenTTL             time.Duration
+	ChallengeTTL         time.Duration
+	RegistrationTokenTTL time.Duration
+	SessionTTL           time.Duration
 }
 
 // New creates the device binding service.
@@ -41,14 +56,33 @@ func New(options Options) (*Service, error) {
 	if options.TokenTTL <= 0 {
 		return nil, errors.New("device binding token TTL must be positive")
 	}
+	if options.ProofVerifier == nil {
+		return nil, errors.New("device proof verifier is required")
+	}
+	challengeTTL := options.ChallengeTTL
+	if challengeTTL <= 0 {
+		challengeTTL = 2 * time.Minute
+	}
+	registrationTokenTTL := options.RegistrationTokenTTL
+	if registrationTokenTTL <= 0 {
+		registrationTokenTTL = 15 * time.Minute
+	}
+	sessionTTL := options.SessionTTL
+	if sessionTTL <= 0 {
+		sessionTTL = 30 * time.Minute
+	}
 	timeSource := options.Clock
 	if timeSource == nil {
 		timeSource = clock.SystemClock{}
 	}
 	return &Service{
-		repository: options.Repository,
-		timeSource: timeSource,
-		tokenTTL:   options.TokenTTL,
+		repository:           options.Repository,
+		proofVerifier:        options.ProofVerifier,
+		timeSource:           timeSource,
+		tokenTTL:             options.TokenTTL,
+		challengeTTL:         challengeTTL,
+		registrationTokenTTL: registrationTokenTTL,
+		sessionTTL:           sessionTTL,
 	}, nil
 }
 
@@ -80,15 +114,228 @@ func (s *Service) CreateToken(
 	return plainToken, token, nil
 }
 
+// CreateRegistrationToken creates a short-lived registration grant during a
+// controlled manufacturing or support flow. The device consumes it once.
+func (s *Service) CreateRegistrationToken(
+	ctx context.Context,
+	deviceID string,
+) (string, *domain.RegistrationToken, error) {
+	deviceID = strings.TrimSpace(deviceID)
+	if !deviceIDPattern.MatchString(deviceID) {
+		return "", nil, domain.ErrInvalidDeviceID
+	}
+	plainToken, err := randomToken()
+	if err != nil {
+		return "", nil, err
+	}
+	now := s.timeSource.Now().UTC()
+	token := &domain.RegistrationToken{
+		ID:        uuid.NewString(),
+		DeviceID:  deviceID,
+		TokenHash: hashToken(plainToken),
+		ExpiresAt: now.Add(s.registrationTokenTTL),
+		CreatedAt: now,
+	}
+	if err := s.repository.CreateRegistrationToken(ctx, token); err != nil {
+		return "", nil, err
+	}
+	return plainToken, token, nil
+}
+
+// RegisterDevice consumes a registration grant and stores the device public
+// identity. Metadata is copied from the device but never trusted for auth.
+func (s *Service) RegisterDevice(
+	ctx context.Context,
+	registrationToken string,
+	input domain.DeviceRegistrationInput,
+) (*domain.DeviceCredential, error) {
+	registrationToken = strings.TrimSpace(registrationToken)
+	if registrationToken == "" {
+		return nil, domain.ErrRegistrationTokenNotFound
+	}
+	token, err := s.repository.GetRegistrationTokenByHash(
+		ctx,
+		hashToken(registrationToken),
+	)
+	if err != nil {
+		return nil, err
+	}
+	now := s.timeSource.Now().UTC()
+	if token.ConsumedAt != nil {
+		return nil, domain.ErrRegistrationTokenConsumed
+	}
+	if !token.ExpiresAt.After(now) {
+		return nil, domain.ErrRegistrationTokenExpired
+	}
+	if !deviceIDPattern.MatchString(strings.TrimSpace(input.DeviceID)) ||
+		strings.TrimSpace(input.PublicKey) == "" {
+		return nil, domain.ErrInvalidDeviceID
+	}
+	if token.DeviceID != strings.TrimSpace(input.DeviceID) {
+		return nil, domain.ErrInvalidDeviceProof
+	}
+	credential := &domain.DeviceCredential{
+		DeviceID:        token.DeviceID,
+		HardwareModel:   strings.TrimSpace(input.HardwareModel),
+		FirmwareVersion: strings.TrimSpace(input.FirmwareVersion),
+		CapabilitySet:   normalizeCapabilities(input.Capabilities),
+		PublicKey:       strings.TrimSpace(input.PublicKey),
+		Status:          "active",
+		RegisteredAt:    now,
+		UpdatedAt:       now,
+	}
+	if len([]rune(credential.HardwareModel)) > 64 ||
+		len([]rune(credential.FirmwareVersion)) > 64 ||
+		len(credential.PublicKey) > 4096 {
+		return nil, domain.ErrInvalidDeviceID
+	}
+	if err := s.proofVerifier.ValidatePublicKey(credential.PublicKey); err != nil {
+		return nil, domain.ErrInvalidDeviceProof
+	}
+	if err := s.repository.ConsumeRegistrationTokenAndUpsertCredential(
+		ctx,
+		token.ID,
+		credential,
+	); err != nil {
+		return nil, err
+	}
+	return credential, nil
+}
+
+// StartDeviceAuthentication creates a short-lived nonce for one device.
+func (s *Service) StartDeviceAuthentication(
+	ctx context.Context,
+	deviceID string,
+) (string, *domain.DeviceChallenge, error) {
+	deviceID = strings.TrimSpace(deviceID)
+	credential, err := s.repository.GetDeviceCredential(ctx, deviceID)
+	if err != nil {
+		return "", nil, err
+	}
+	if credential.Status != "active" {
+		return "", nil, domain.ErrDeviceDisabled
+	}
+	nonce, err := randomToken()
+	if err != nil {
+		return "", nil, err
+	}
+	now := s.timeSource.Now().UTC()
+	challenge := &domain.DeviceChallenge{
+		ID:        uuid.NewString(),
+		DeviceID:  deviceID,
+		NonceHash: hashToken(nonce),
+		ExpiresAt: now.Add(s.challengeTTL),
+		CreatedAt: now,
+	}
+	if err := s.repository.CreateDeviceChallenge(ctx, challenge); err != nil {
+		return "", nil, err
+	}
+	return nonce, challenge, nil
+}
+
+// CompleteDeviceAuthentication verifies the device signature and consumes the
+// challenge. The returned token is a short-lived opaque device session token.
+func (s *Service) CompleteDeviceAuthentication(
+	ctx context.Context,
+	deviceID string,
+	nonce string,
+	signature []byte,
+) (string, error) {
+	deviceID = strings.TrimSpace(deviceID)
+	nonce = strings.TrimSpace(nonce)
+	if deviceID == "" || nonce == "" || len(signature) == 0 {
+		return "", domain.ErrInvalidDeviceProof
+	}
+	credential, err := s.repository.GetDeviceCredential(ctx, deviceID)
+	if err != nil {
+		return "", err
+	}
+	if credential.Status != "active" {
+		return "", domain.ErrDeviceDisabled
+	}
+	challenge, err := s.repository.GetDeviceChallengeByNonceHash(
+		ctx,
+		hashToken(nonce),
+	)
+	if err != nil {
+		return "", err
+	}
+	if challenge.DeviceID != deviceID {
+		return "", domain.ErrInvalidDeviceProof
+	}
+	now := s.timeSource.Now().UTC()
+	if challenge.ConsumedAt != nil {
+		return "", domain.ErrDeviceChallengeConsumed
+	}
+	if !challenge.ExpiresAt.After(now) {
+		return "", domain.ErrDeviceChallengeExpired
+	}
+	if err := s.proofVerifier.Verify(
+		credential.PublicKey,
+		[]byte(deviceID+"."+nonce),
+		signature,
+	); err != nil {
+		return "", domain.ErrInvalidDeviceProof
+	}
+	sessionToken, err := randomToken()
+	if err != nil {
+		return "", err
+	}
+	now = s.timeSource.Now().UTC()
+	if err := s.repository.CompleteDeviceAuthentication(
+		ctx,
+		challenge.ID,
+		deviceID,
+		&domain.DeviceSession{
+			ID:         uuid.NewString(),
+			DeviceID:   deviceID,
+			TokenHash:  hashToken(sessionToken),
+			ExpiresAt:  now.Add(s.sessionTTL),
+			CreatedAt:  now,
+			LastUsedAt: now,
+		},
+	); err != nil {
+		return "", err
+	}
+	return sessionToken, nil
+}
+
+// CreateDeviceProvisioningToken creates a single-use binding token after a
+// device has authenticated. The token is the only value placed in QR or BLE
+// payloads; it is not the device identity or an AI credential.
+func (s *Service) CreateDeviceProvisioningToken(
+	ctx context.Context,
+	deviceID string,
+	deviceSessionToken string,
+) (string, *domain.BindingToken, error) {
+	deviceID = strings.TrimSpace(deviceID)
+	deviceSessionToken = strings.TrimSpace(deviceSessionToken)
+	if deviceID == "" || deviceSessionToken == "" {
+		return "", nil, domain.ErrDeviceSessionNotFound
+	}
+	session, err := s.repository.GetDeviceSessionByTokenHash(
+		ctx,
+		hashToken(deviceSessionToken),
+	)
+	if err != nil {
+		return "", nil, err
+	}
+	if session.DeviceID != deviceID ||
+		!session.ExpiresAt.After(s.timeSource.Now().UTC()) {
+		return "", nil, domain.ErrDeviceSessionExpired
+	}
+	if _, err := s.repository.GetDeviceCredential(ctx, deviceID); err != nil {
+		return "", nil, err
+	}
+	return s.CreateToken(ctx, deviceID)
+}
+
 // Bind consumes a provisioning token and binds the device to the parent.
 func (s *Service) Bind(
 	ctx context.Context,
 	parentAccountID string,
 	plainToken string,
 	deviceName string,
-	hardwareModel string,
-	firmwareVersion string,
-	capabilities []string,
 ) (*domain.Binding, error) {
 	plainToken = strings.TrimSpace(plainToken)
 	if plainToken == "" {
@@ -105,32 +352,37 @@ func (s *Service) Bind(
 	if !token.ExpiresAt.After(now) {
 		return nil, domain.ErrTokenExpired
 	}
+	credential, err := s.repository.GetDeviceCredential(ctx, token.DeviceID)
+	if err != nil {
+		return nil, err
+	}
+	if credential.Status != "active" {
+		return nil, domain.ErrDeviceDisabled
+	}
 	deviceName = strings.TrimSpace(deviceName)
-	hardwareModel = strings.TrimSpace(hardwareModel)
-	firmwareVersion = strings.TrimSpace(firmwareVersion)
 	if deviceName == "" {
 		deviceName = "初芽"
 	}
-	if len([]rune(deviceName)) > 40 || len([]rune(hardwareModel)) > 64 ||
-		len([]rune(firmwareVersion)) > 64 {
+	if len([]rune(deviceName)) > 40 {
 		return nil, domain.ErrInvalidDeviceID
 	}
 
-	if err := s.repository.ConsumeToken(ctx, token.ID); err != nil {
-		return nil, err
-	}
 	binding := &domain.Binding{
 		ID:              uuid.NewString(),
 		ParentAccountID: parentAccountID,
 		DeviceID:        token.DeviceID,
 		DeviceName:      deviceName,
-		HardwareModel:   hardwareModel,
-		FirmwareVersion: firmwareVersion,
-		Capabilities:    normalizeCapabilities(capabilities),
+		HardwareModel:   credential.HardwareModel,
+		FirmwareVersion: credential.FirmwareVersion,
+		Capabilities:    append([]string(nil), credential.CapabilitySet...),
 		BoundAt:         now,
 		UpdatedAt:       now,
 	}
-	if err := s.repository.UpsertBinding(ctx, binding); err != nil {
+	if err := s.repository.ConsumeTokenAndUpsertBinding(
+		ctx,
+		token.ID,
+		binding,
+	); err != nil {
 		return nil, err
 	}
 	return binding, nil

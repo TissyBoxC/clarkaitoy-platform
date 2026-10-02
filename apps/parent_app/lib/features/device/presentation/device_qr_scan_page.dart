@@ -51,7 +51,6 @@ class _DeviceQrScanPageState extends ConsumerState<DeviceQrScanPage> {
           .bindToken(
             token: payload.token,
             deviceName: payload.deviceName,
-            hardwareModel: payload.hardwareModel,
           );
       if (mounted) {
         context.go('/devices');
@@ -125,12 +124,10 @@ class _ProvisioningPayload {
   const _ProvisioningPayload({
     required this.token,
     required this.deviceName,
-    required this.hardwareModel,
   });
 
   final String token;
   final String deviceName;
-  final String hardwareModel;
 }
 
 _ProvisioningPayload? _parsePayload(String rawValue) {
@@ -149,6 +146,5 @@ _ProvisioningPayload? _parsePayload(String rawValue) {
   return _ProvisioningPayload(
     token: token,
     deviceName: uri.queryParameters['name'] ?? '初芽',
-    hardwareModel: uri.queryParameters['hardware'] ?? '',
   );
 }

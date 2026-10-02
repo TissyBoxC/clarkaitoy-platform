@@ -104,8 +104,9 @@ func Run() error {
 		return fmt.Errorf("create authentication service: %w", err)
 	}
 	deviceBindingService, err := bindingService.New(bindingService.Options{
-		Repository: bindingRepository.NewPostgresRepository(databaseStore.Pool()),
-		TokenTTL:   15 * time.Minute,
+		Repository:    bindingRepository.NewPostgresRepository(databaseStore.Pool()),
+		TokenTTL:      15 * time.Minute,
+		ProofVerifier: security.Ed25519ProofVerifier{},
 	})
 	if err != nil {
 		return fmt.Errorf("create device binding service: %w", err)

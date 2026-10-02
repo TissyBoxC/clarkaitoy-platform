@@ -51,8 +51,20 @@ func NewRouter(options RouterOptions) http.Handler {
 		if options.BindingService != nil {
 			bindingHandler := deviceBindingHandler{service: options.BindingService}
 			mux.HandleFunc(
-				"POST /api/v1/devices/binding-tokens",
-				authHandler.requireAuthentication(bindingHandler.createToken),
+				"POST /api/v1/devices/register",
+				bindingHandler.registerDevice,
+			)
+			mux.HandleFunc(
+				"POST /api/v1/devices/auth/challenge",
+				bindingHandler.startDeviceAuthentication,
+			)
+			mux.HandleFunc(
+				"POST /api/v1/devices/auth/complete",
+				bindingHandler.completeDeviceAuthentication,
+			)
+			mux.HandleFunc(
+				"POST /api/v1/devices/{device_id}/provisioning-token",
+				bindingHandler.createDeviceProvisioningToken,
 			)
 			mux.HandleFunc(
 				"POST /api/v1/devices/bind",
@@ -88,6 +100,16 @@ func NewRouter(options RouterOptions) http.Handler {
 				http.HandlerFunc(runtimeHandler),
 			),
 		)
+		if options.BindingService != nil {
+			bindingHandler := deviceBindingHandler{service: options.BindingService}
+			mux.Handle(
+				"POST /internal/v1/device-registration-tokens",
+				requireServiceToken(
+					options.InternalAPIConfig.AuthToken,
+					http.HandlerFunc(bindingHandler.createRegistrationToken),
+				),
+			)
+		}
 	}
 
 	return observability.WithRequestLabels(observability.WithRequestMetadata(

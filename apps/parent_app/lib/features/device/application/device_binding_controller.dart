@@ -120,19 +120,20 @@ class DeviceBindingController extends AsyncNotifier<DeviceBindingState> {
   Future<BoundDevice> bindToken({
     required String token,
     required String deviceName,
-    String hardwareModel = '',
-    String firmwareVersion = '',
-    List<String> capabilities = const [],
   }) async {
     final binding = await _api.bind(
       token: token,
       deviceName: deviceName,
-      hardwareModel: hardwareModel,
-      firmwareVersion: firmwareVersion,
-      capabilities: capabilities,
     );
     await refresh();
     return binding;
+  }
+
+  Future<DeviceProvisioningTicket> requestProvisioningTicket({
+    required String deviceId,
+    required String deviceSessionToken,
+  }) {
+    return _api.requestProvisioningTicket(deviceId, deviceSessionToken);
   }
 
   Future<void> remove(String deviceId) async {

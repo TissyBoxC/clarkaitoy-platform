@@ -52,21 +52,30 @@ class DeviceBindingApi {
         .toList(growable: false);
   }
 
+  /// Requests a one-time binding code from a device that has authenticated
+  /// over its local BLE or Wi-Fi provisioning channel.
+  Future<DeviceProvisioningTicket> requestProvisioningTicket(
+    String deviceId,
+    String deviceSessionToken,
+  ) async {
+    final response = await _apiClient.postWithBearerToken(
+      '/api/v1/devices/$deviceId/provisioning-token',
+      bearerToken: deviceSessionToken,
+    );
+    return DeviceProvisioningTicket.fromJson(
+      response['data'] as Map<String, Object?>,
+    );
+  }
+
   Future<BoundDevice> bind({
     required String token,
     required String deviceName,
-    required String hardwareModel,
-    required String firmwareVersion,
-    required List<String> capabilities,
   }) async {
     final response = await _apiClient.post(
       '/api/v1/devices/bind',
       body: {
         'token': token,
         'device_name': deviceName,
-        'hardware_model': hardwareModel,
-        'firmware_version': firmwareVersion,
-        'capabilities': capabilities,
       },
     );
     return BoundDevice.fromJson(response['data'] as Map<String, Object?>);
@@ -74,6 +83,30 @@ class DeviceBindingApi {
 
   Future<void> remove(String deviceId) async {
     await _apiClient.delete('/api/v1/devices/$deviceId');
+  }
+}
+
+/// One-time code and expiry issued by an authenticated device.
+class DeviceProvisioningTicket {
+  const DeviceProvisioningTicket({
+    required this.token,
+    required this.deviceId,
+    required this.expiresAt,
+  });
+
+  final String token;
+  final String deviceId;
+  final DateTime expiresAt;
+
+  factory DeviceProvisioningTicket.fromJson(Map<String, Object?> json) {
+    final expiresAtValue = json['expires_at'];
+    return DeviceProvisioningTicket(
+      token: _requiredString(json['token'], 'token'),
+      deviceId: _requiredString(json['device_id'], 'device_id'),
+      expiresAt: expiresAtValue is String
+          ? DateTime.tryParse(expiresAtValue) ?? DateTime.now()
+          : DateTime.now(),
+    );
   }
 }
 
