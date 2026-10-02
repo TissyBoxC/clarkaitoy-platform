@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
-	"crypto/ed25519"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"testing"
@@ -18,17 +20,22 @@ func TestDeviceRegistrationAndAuthenticationFlow(t *testing.T) {
 	repository := newMemoryRepository()
 	service, err := New(Options{
 		Repository:    repository,
-		ProofVerifier: security.Ed25519ProofVerifier{},
+		ProofVerifier: security.ECDSAProofVerifier{},
 		TokenTTL:      time.Minute,
 	})
 	if err != nil {
 		t.Fatalf("create service: %v", err)
 	}
 
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("generate device key: %v", err)
 	}
+	publicKey := elliptic.Marshal(
+		privateKey.Curve,
+		privateKey.X,
+		privateKey.Y,
+	)
 	registrationToken, _, err := service.CreateRegistrationToken(
 		context.Background(),
 		"device_test_001",
@@ -68,11 +75,19 @@ func TestDeviceRegistrationAndAuthenticationFlow(t *testing.T) {
 		t.Fatalf("start device authentication: %v", err)
 	}
 	message := []byte("device_test_001." + nonce)
+	digest := sha256.Sum256(message)
+	signatureR, signatureS, err := ecdsa.Sign(rand.Reader, privateKey, digest[:])
+	if err != nil {
+		t.Fatalf("sign device challenge: %v", err)
+	}
+	signature := make([]byte, 64)
+	signatureR.FillBytes(signature[:32])
+	signatureS.FillBytes(signature[32:])
 	sessionToken, err := service.CompleteDeviceAuthentication(
 		context.Background(),
 		"device_test_001",
 		nonce,
-		ed25519.Sign(privateKey, message),
+		signature,
 	)
 	if err != nil {
 		t.Fatalf("complete device authentication: %v", err)
