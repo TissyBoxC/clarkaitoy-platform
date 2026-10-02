@@ -10,6 +10,62 @@ AppException mapApiError(Object error) {
     final status = error.response?.statusCode;
     final errorCode = _readErrorCode(error.response?.data);
 
+    if (errorCode == 'invalid_credentials') {
+      return AppException(
+        kind: AppErrorKind.unauthenticated,
+        message: '手机号、邮箱或密码不正确',
+        retryable: false,
+        cause: error,
+      );
+    }
+    if (errorCode == 'invalid_verification_code') {
+      return AppException(
+        kind: AppErrorKind.validation,
+        message: '验证码不正确，请重新输入',
+        retryable: false,
+        cause: error,
+      );
+    }
+    if (errorCode == 'phone_exists') {
+      return AppException(
+        kind: AppErrorKind.validation,
+        message: '这个手机号已经注册过',
+        retryable: false,
+        cause: error,
+      );
+    }
+    if (errorCode == 'email_exists') {
+      return AppException(
+        kind: AppErrorKind.validation,
+        message: '这个邮箱已经注册过',
+        retryable: false,
+        cause: error,
+      );
+    }
+    if (errorCode == 'invalid_guardian_name') {
+      return AppException(
+        kind: AppErrorKind.validation,
+        message: '家长姓氏不能超过 40 个字',
+        retryable: false,
+        cause: error,
+      );
+    }
+    if (errorCode == 'invalid_child_nickname') {
+      return AppException(
+        kind: AppErrorKind.validation,
+        message: '宝贝姓名不能超过 40 个字',
+        retryable: false,
+        cause: error,
+      );
+    }
+    if (errorCode == 'invalid_child_birthday') {
+      return AppException(
+        kind: AppErrorKind.validation,
+        message: '请输入有效日期，例如 2021-06-01',
+        retryable: false,
+        cause: error,
+      );
+    }
     if (status == 401) {
       return AppException(
         kind: AppErrorKind.unauthenticated,
@@ -35,10 +91,19 @@ AppException mapApiError(Object error) {
       );
     }
     if (status == 422 || errorCode == 'invalid_request') {
+      final message = _readErrorMessage(error.response?.data);
       return AppException(
         kind: AppErrorKind.validation,
-        message: '请检查填写的内容',
+        message: message ?? '请检查填写的内容',
         retryable: false,
+        cause: error,
+      );
+    }
+    if (errorCode == 'phone_verification_unavailable') {
+      return AppException(
+        kind: AppErrorKind.serviceUnavailable,
+        message: '短信验证暂时不可用，请稍后重试',
+        retryable: true,
         cause: error,
       );
     }
@@ -85,6 +150,11 @@ String? _readErrorCode(Object? responseData) {
     return null;
   }
   return error.code;
+}
+
+String? _readErrorMessage(Object? responseData) {
+  final error = _readError(responseData);
+  return error?.message;
 }
 
 ErrorResponseSchema? _readError(Object? responseData) {

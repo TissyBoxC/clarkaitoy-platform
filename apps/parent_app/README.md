@@ -34,8 +34,12 @@
 
 ```powershell
 flutter pub get
-flutter run -d android
+flutter run -d android --dart-define=API_BASE_URL=http://10.0.2.2:8081
 ```
+
+Android 模拟器访问本机服务使用 `10.0.2.2`；真机请改为电脑在局域网中的地址。
+Android 模拟器未传入 `API_BASE_URL` 时默认连接 `http://10.0.2.2:8081`。
+其他平台或真机必须传入实际服务地址。
 
 构建可安装的 Android 包：
 

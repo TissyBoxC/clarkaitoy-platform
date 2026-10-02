@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/auth/application/auth_controller.dart';
+import '../../features/auth/presentation/bind_email_page.dart';
 import '../../features/auth/presentation/login_page.dart';
 import '../../features/auth/presentation/register_page.dart';
 import '../../features/device/presentation/device_list_page.dart';
@@ -41,6 +42,10 @@ GoRouter createAppRouter(ProviderContainer container) {
       GoRoute(
         path: '/family',
         builder: (context, state) => const FamilyHomePage(),
+      ),
+      GoRoute(
+        path: '/account/email',
+        builder: (context, state) => const BindEmailPage(),
       ),
       GoRoute(
         path: '/devices',

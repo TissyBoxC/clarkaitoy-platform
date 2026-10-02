@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/error/app_exception.dart';
 import '../../../providers.dart';
+import '../../auth/application/auth_controller.dart';
 import '../data/device_binding_api.dart';
 import '../domain/device_payload.dart';
 
@@ -65,12 +66,23 @@ class DeviceBindingController extends AsyncNotifier<DeviceBindingState> {
   @override
   Future<DeviceBindingState> build() async {
     _api = ref.read(deviceBindingApiProvider);
-    final bindings = await _api.list();
-    return DeviceBindingState(
-      isScanning: false,
-      devices: const [],
-      bindings: bindings,
-    );
+    try {
+      final bindings = await _api.list();
+      return DeviceBindingState(
+        isScanning: false,
+        devices: const [],
+        bindings: bindings,
+      );
+    } on Object catch (error) {
+      // A device API outage must not invalidate an otherwise valid parent
+      // session. The family page renders this as an inline retry state.
+      return DeviceBindingState(
+        isScanning: false,
+        devices: const [],
+        bindings: const [],
+        errorMessage: authErrorMessage(error),
+      );
+    }
   }
 
   Future<void> refresh() async {

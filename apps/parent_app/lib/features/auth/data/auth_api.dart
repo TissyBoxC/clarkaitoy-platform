@@ -30,22 +30,34 @@ class ParentAccount {
   const ParentAccount({
     required this.id,
     required this.email,
+    required this.phone,
     required this.displayName,
+    required this.guardianFamilyName,
+    required this.childNickname,
+    required this.childBirthday,
     required this.role,
     required this.status,
   });
 
   final String id;
   final String email;
+  final String phone;
   final String displayName;
+  final String guardianFamilyName;
+  final String childNickname;
+  final String childBirthday;
   final String role;
   final String status;
 
   factory ParentAccount.fromJson(Map<String, Object?> json) {
     return ParentAccount(
       id: _requiredString(json['id'], 'id'),
-      email: _requiredString(json['email'], 'email'),
+      email: _optionalString(json['email']),
+      phone: _requiredString(json['phone'], 'phone'),
       displayName: _requiredString(json['display_name'], 'display_name'),
+      guardianFamilyName: _optionalString(json['guardian_family_name']),
+      childNickname: _optionalString(json['child_nickname']),
+      childBirthday: _optionalString(json['child_birthday']),
       role: _requiredString(json['role'], 'role'),
       status: _requiredString(json['status'], 'status'),
     );
@@ -108,30 +120,46 @@ class AuthApi {
   final ApiClient _apiClient;
 
   Future<AuthResult> register({
-    required String email,
+    required String phone,
+    required String phoneVerificationCode,
     required String password,
-    required String displayName,
+    required String guardianFamilyName,
+    required String childNickname,
+    required String childBirthday,
     required String guardianConsentVersion,
   }) async {
     final response = await _apiClient.post(
       '/api/v1/auth/register',
       body: {
-        'email': email,
+        'phone': phone,
+        'phone_verification_code': phoneVerificationCode,
         'password': password,
-        'display_name': displayName,
+        'guardian_family_name': guardianFamilyName,
+        'child_nickname': childNickname,
+        'child_birthday': childBirthday,
         'guardian_consent_version': guardianConsentVersion,
       },
     );
     return AuthResult.fromResponse(response['data'] as Map<String, Object?>);
   }
 
+  Future<void> sendPhoneVerification({
+    required String phone,
+    required String purpose,
+  }) async {
+    await _apiClient.post(
+      '/api/v1/auth/phone-verification',
+      body: {'phone': phone, 'purpose': purpose},
+    );
+  }
+
   Future<AuthResult> login({
-    required String email,
+    required String identifier,
     required String password,
   }) async {
     final response = await _apiClient.post(
       '/api/v1/auth/login',
-      body: {'email': email, 'password': password},
+      body: {'identifier': identifier, 'password': password},
     );
     return AuthResult.fromResponse(response['data'] as Map<String, Object?>);
   }
@@ -148,7 +176,11 @@ class AuthApi {
       account: const ParentAccount(
         id: '',
         email: '',
+        phone: '',
         displayName: '',
+        guardianFamilyName: '',
+        childNickname: '',
+        childBirthday: '',
         role: 'parent',
         status: 'active',
       ),
@@ -173,15 +205,25 @@ class AuthApi {
     );
   }
 
+  Future<ParentAccount> bindEmail({
+    required String email,
+    required String password,
+  }) async {
+    final response = await _apiClient.put(
+      '/api/v1/auth/email',
+      body: {'email': email, 'password': password},
+    );
+    final data = response['data'] as Map<String, Object?>;
+    return ParentAccount.fromJson(_requiredMap(data['account'], 'account'));
+  }
+
   Future<AiAccount> updateSelectedModels(List<String> selectedModels) async {
     final response = await _apiClient.put(
       '/api/v1/auth/ai-models',
       body: {'selected_models': selectedModels},
     );
     final data = response['data'] as Map<String, Object?>;
-    return AiAccount.fromJson(
-      _requiredMap(data['ai_account'], 'ai_account'),
-    );
+    return AiAccount.fromJson(_requiredMap(data['ai_account'], 'ai_account'));
   }
 }
 
@@ -197,6 +239,10 @@ String _requiredString(Object? value, String field) {
     return value;
   }
   throw FormatException('missing $field');
+}
+
+String _optionalString(Object? value) {
+  return value is String ? value : '';
 }
 
 double _requiredDouble(Object? value, String field) {

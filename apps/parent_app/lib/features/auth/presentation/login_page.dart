@@ -16,14 +16,14 @@ class LoginPage extends ConsumerStatefulWidget {
 
 class _LoginPageState extends ConsumerState<LoginPage> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  final _identifierController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isSubmitting = false;
   String? _errorMessage;
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _identifierController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -37,15 +37,24 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       _errorMessage = null;
     });
     try {
-      await ref
+      final succeeded = await ref
           .read(authControllerProvider.notifier)
           .login(
-            email: _emailController.text.trim(),
+            identifier: _identifierController.text.trim(),
             password: _passwordController.text,
           );
-      if (mounted) {
-        context.go('/family');
+      if (!mounted) {
+        return;
       }
+      if (succeeded) {
+        context.go('/family');
+        return;
+      }
+      setState(() {
+        _errorMessage = authErrorMessage(
+          ref.read(authControllerProvider).error,
+        );
+      });
     } on Object catch (error) {
       if (mounted) {
         setState(() => _errorMessage = authErrorMessage(error));
@@ -75,13 +84,18 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       const _AuthBrandHeader(),
                       const SizedBox(height: 28),
                       TextFormField(
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
+                        controller: _identifierController,
+                        keyboardType: TextInputType.text,
                         autofillHints: const [AutofillHints.username],
-                        decoration: const InputDecoration(labelText: '邮箱'),
+                        decoration: const InputDecoration(labelText: '手机号或邮箱'),
                         validator: (value) {
                           if (value == null || value.trim().isEmpty) {
-                            return '请输入邮箱';
+                            return '请输入手机号或邮箱';
+                          }
+                          final identifier = value.trim();
+                          if (!_isValidPhone(identifier) &&
+                              !_isValidEmail(identifier)) {
+                            return '请输入有效的手机号或邮箱';
                           }
                           return null;
                         },
@@ -140,6 +154,15 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       ),
     );
   }
+}
+
+bool _isValidPhone(String value) {
+  final normalized = value.replaceAll(RegExp(r'[\s\-()]'), '');
+  return RegExp(r'^1\d{10}$').hasMatch(normalized);
+}
+
+bool _isValidEmail(String value) {
+  return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value.trim());
 }
 
 class _AuthBrandHeader extends StatelessWidget {

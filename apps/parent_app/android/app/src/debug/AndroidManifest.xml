@@ -4,4 +4,7 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Debug builds may connect to a local HTTP service. Release builds keep
+         Android's default cleartext rejection so production traffic is TLS. -->
+    <application android:usesCleartextTraffic="true" />
 </manifest>

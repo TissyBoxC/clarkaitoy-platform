@@ -109,6 +109,11 @@ class FamilyHomePage extends ConsumerWidget {
                   const SizedBox(height: 20),
                   AppReveal(
                     delay: const Duration(milliseconds: 130),
+                    child: _AccountSecurityCard(account: account),
+                  ),
+                  const SizedBox(height: 20),
+                  AppReveal(
+                    delay: const Duration(milliseconds: 180),
                     child: Row(
                       children: [
                         Text(
@@ -154,6 +159,15 @@ class FamilyHomePage extends ConsumerWidget {
                       ),
                       data: (deviceState) {
                         final bindings = deviceState.bindings;
+                        if (deviceState.errorMessage != null) {
+                          return _InlineError(
+                            key: const ValueKey<String>('devices-error'),
+                            message: deviceState.errorMessage!,
+                            onRetry: () => ref
+                                .read(deviceBindingControllerProvider.notifier)
+                                .refresh(),
+                          );
+                        }
                         if (bindings.isEmpty) {
                           return const Card(
                             key: ValueKey<String>('devices-empty'),
@@ -201,6 +215,28 @@ class FamilyHomePage extends ConsumerWidget {
               ),
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _AccountSecurityCard extends StatelessWidget {
+  const _AccountSecurityCard({required this.account});
+
+  final ParentAccount account;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasEmail = account.email.isNotEmpty;
+    return Card(
+      child: ListTile(
+        leading: const Icon(Icons.mark_email_read_outlined),
+        title: Text(hasEmail ? account.email : '未绑定登录邮箱'),
+        subtitle: Text(hasEmail ? '可以使用手机号或邮箱登录' : '绑定后可以用邮箱登录，也方便找回账号'),
+        trailing: TextButton(
+          onPressed: () => context.go('/account/email'),
+          child: Text(hasEmail ? '更换邮箱' : '绑定邮箱'),
         ),
       ),
     );

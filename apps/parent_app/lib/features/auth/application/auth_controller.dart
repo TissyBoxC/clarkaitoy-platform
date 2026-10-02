@@ -74,17 +74,23 @@ class AuthController extends AsyncNotifier<AuthState> {
     }
   }
 
-  Future<void> register({
-    required String email,
+  Future<bool> register({
+    required String phone,
+    required String phoneVerificationCode,
     required String password,
-    required String displayName,
+    required String guardianFamilyName,
+    required String childNickname,
+    required String childBirthday,
   }) async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
+    final nextState = await AsyncValue.guard(() async {
       final session = await _authApi.register(
-        email: email,
+        phone: phone,
+        phoneVerificationCode: phoneVerificationCode,
         password: password,
-        displayName: displayName,
+        guardianFamilyName: guardianFamilyName,
+        childNickname: childNickname,
+        childBirthday: childBirthday,
         guardianConsentVersion: guardianConsentVersion,
       );
       await _saveSession(session);
@@ -94,12 +100,20 @@ class AuthController extends AsyncNotifier<AuthState> {
         aiAccount: session.aiAccount,
       );
     });
+    state = nextState;
+    return nextState.hasValue && nextState.value?.isSignedIn == true;
   }
 
-  Future<void> login({required String email, required String password}) async {
+  Future<bool> login({
+    required String identifier,
+    required String password,
+  }) async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
-      final session = await _authApi.login(email: email, password: password);
+    final nextState = await AsyncValue.guard(() async {
+      final session = await _authApi.login(
+        identifier: identifier,
+        password: password,
+      );
       await _saveSession(session);
       return AuthState(
         isLoading: false,
@@ -107,6 +121,30 @@ class AuthController extends AsyncNotifier<AuthState> {
         aiAccount: session.aiAccount,
       );
     });
+    state = nextState;
+    return nextState.hasValue && nextState.value?.isSignedIn == true;
+  }
+
+  Future<void> sendPhoneVerification({
+    required String phone,
+    String purpose = 'register',
+  }) async {
+    await _authApi.sendPhoneVerification(phone: phone, purpose: purpose);
+  }
+
+  Future<void> bindEmail({
+    required String email,
+    required String password,
+  }) async {
+    final current = state.value;
+    final account = await _authApi.bindEmail(email: email, password: password);
+    state = AsyncData(
+      AuthState(
+        isLoading: false,
+        account: account,
+        aiAccount: current?.aiAccount,
+      ),
+    );
   }
 
   Future<void> logout() async {
@@ -144,7 +182,9 @@ class AuthController extends AsyncNotifier<AuthState> {
     if (account == null || account.account == null) {
       return;
     }
-    final updatedAIAccount = await _authApi.updateSelectedModels(selectedModels);
+    final updatedAIAccount = await _authApi.updateSelectedModels(
+      selectedModels,
+    );
     state = AsyncData(
       AuthState(
         isLoading: false,

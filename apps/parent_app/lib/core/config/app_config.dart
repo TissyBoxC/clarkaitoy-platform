@@ -9,7 +9,7 @@ class AppConfig {
   factory AppConfig.fromEnvironment() {
     const apiBaseUrl = String.fromEnvironment(
       'API_BASE_URL',
-      defaultValue: 'https://api.example.invalid',
+      defaultValue: 'http://10.0.2.2:8081',
     );
     const timeoutSeconds = int.fromEnvironment(
       'API_TIMEOUT_SECONDS',

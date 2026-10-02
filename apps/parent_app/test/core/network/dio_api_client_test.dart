@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:parent_app/core/config/app_config.dart';
+import 'package:parent_app/core/error/app_exception.dart';
 import 'package:parent_app/core/network/api_client.dart';
 import 'package:parent_app/core/storage/secure_store.dart';
 
@@ -40,6 +41,46 @@ void main() {
     expect(response, isNotEmpty);
     expect(refreshCount, 1);
     expect(await secureStore.read(DioApiClient.accessTokenKey), 'renewed');
+  });
+
+  test('does not refresh a public login failure', () async {
+    final secureStore = InMemorySecureStore();
+    final dio = Dio(BaseOptions(baseUrl: 'https://api.example.test'));
+    dio.httpClientAdapter = _InvalidCredentialsAdapter();
+
+    var refreshCount = 0;
+    final client = DioApiClient(
+      config: ApiClientConfig(
+        appConfig: AppConfig(
+          apiBaseUrl: Uri.parse('https://api.example.test'),
+          requestTimeout: const Duration(seconds: 1),
+        ),
+      ),
+      secureStore: secureStore,
+      refreshSession: (refreshToken) async {
+        refreshCount += 1;
+        return const AuthSession(
+          accessToken: 'renewed',
+          refreshToken: 'refresh-2',
+        );
+      },
+      dio: dio,
+    );
+
+    await expectLater(
+      client.post(
+        '/api/v1/auth/login',
+        body: {'identifier': '13800138000', 'password': 'wrong-password'},
+      ),
+      throwsA(
+        isA<AppException>().having(
+          (error) => error.message,
+          'message',
+          '手机号、邮箱或密码不正确',
+        ),
+      ),
+    );
+    expect(refreshCount, 0);
   });
 }
 
@@ -94,6 +135,35 @@ class _SequenceAdapter implements HttpClientAdapter {
     return ResponseBody.fromString(
       jsonEncode(<String, Object?>{'data': <String, Object?>{}}),
       200,
+      headers: <String, List<String>>{
+        Headers.contentTypeHeader: <String>[Headers.jsonContentType],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+class _InvalidCredentialsAdapter implements HttpClientAdapter {
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    return ResponseBody.fromString(
+      jsonEncode(<String, Object?>{
+        'schema_version': '1.0.0',
+        'request_id': 'request-002',
+        'data': null,
+        'error': <String, Object?>{
+          'code': 'invalid_credentials',
+          'message': '手机号、邮箱或密码不正确',
+          'retryable': false,
+        },
+      }),
+      401,
       headers: <String, List<String>>{
         Headers.contentTypeHeader: <String>[Headers.jsonContentType],
       },

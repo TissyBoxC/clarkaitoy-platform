@@ -16,19 +16,58 @@ class RegisterPage extends ConsumerStatefulWidget {
 
 class _RegisterPageState extends ConsumerState<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
-  final _displayNameController = TextEditingController();
-  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _phoneVerificationCodeController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _guardianFamilyNameController = TextEditingController();
+  final _childNicknameController = TextEditingController();
+  final _childBirthdayController = TextEditingController();
   bool _hasGuardianConsent = false;
   bool _isSubmitting = false;
+  bool _isSendingVerificationCode = false;
   String? _errorMessage;
+  String? _verificationStatusMessage;
 
   @override
   void dispose() {
-    _displayNameController.dispose();
-    _emailController.dispose();
+    _phoneController.dispose();
+    _phoneVerificationCodeController.dispose();
     _passwordController.dispose();
+    _guardianFamilyNameController.dispose();
+    _childNicknameController.dispose();
+    _childBirthdayController.dispose();
     super.dispose();
+  }
+
+  Future<void> _sendVerificationCode() async {
+    final phone = _phoneController.text.trim();
+    if (!_isValidPhone(phone)) {
+      setState(() => _errorMessage = '请输入有效的手机号');
+      return;
+    }
+    setState(() {
+      _isSendingVerificationCode = true;
+      _errorMessage = null;
+      _verificationStatusMessage = null;
+    });
+    try {
+      await ref
+          .read(authControllerProvider.notifier)
+          .sendPhoneVerification(phone: phone);
+      if (mounted) {
+        setState(() {
+          _verificationStatusMessage = '验证码已发送，请查看手机短信';
+        });
+      }
+    } on Object catch (error) {
+      if (mounted) {
+        setState(() => _errorMessage = authErrorMessage(error));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSendingVerificationCode = false);
+      }
+    }
   }
 
   Future<void> _submit() async {
@@ -44,16 +83,28 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       _errorMessage = null;
     });
     try {
-      await ref
+      final succeeded = await ref
           .read(authControllerProvider.notifier)
           .register(
-            email: _emailController.text.trim(),
+            phone: _phoneController.text.trim(),
+            phoneVerificationCode: _phoneVerificationCodeController.text.trim(),
             password: _passwordController.text,
-            displayName: _displayNameController.text.trim(),
+            guardianFamilyName: _guardianFamilyNameController.text.trim(),
+            childNickname: _childNicknameController.text.trim(),
+            childBirthday: _childBirthdayController.text.trim(),
           );
-      if (mounted) {
-        context.go('/family');
+      if (!mounted) {
+        return;
       }
+      if (succeeded) {
+        context.go('/family');
+        return;
+      }
+      setState(() {
+        _errorMessage = authErrorMessage(
+          ref.read(authControllerProvider).error,
+        );
+      });
     } on Object catch (error) {
       if (mounted) {
         setState(() => _errorMessage = authErrorMessage(error));
@@ -89,31 +140,73 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       TextFormField(
-                        controller: _displayNameController,
-                        decoration: const InputDecoration(labelText: '家长称呼'),
+                        controller: _phoneController,
+                        keyboardType: TextInputType.phone,
+                        autofillHints: const [AutofillHints.telephoneNumber],
+                        decoration: const InputDecoration(labelText: '手机号'),
                         validator: (value) {
                           if (value == null || value.trim().isEmpty) {
-                            return '请输入家长称呼';
+                            return '请输入手机号';
+                          }
+                          if (!_isValidPhone(value)) {
+                            return '请输入有效的手机号';
                           }
                           return null;
                         },
                       ),
                       const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                        autofillHints: const [AutofillHints.newUsername],
-                        decoration: const InputDecoration(labelText: '邮箱'),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return '请输入邮箱';
-                          }
-                          if (!value.contains('@')) {
-                            return '请输入有效的邮箱';
-                          }
-                          return null;
-                        },
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _phoneVerificationCodeController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: '短信验证码',
+                              ),
+                              validator: (value) {
+                                final code = value?.trim() ?? '';
+                                if (code.isNotEmpty &&
+                                    !RegExp(r'^\d{6}$').hasMatch(code)) {
+                                  return '请输入 6 位验证码';
+                                }
+                                return null;
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              minWidth: 112,
+                              maxWidth: 132,
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: OutlinedButton(
+                                onPressed: _isSendingVerificationCode
+                                    ? null
+                                    : _sendVerificationCode,
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    _isSendingVerificationCode
+                                        ? '正在发送…'
+                                        : '获取验证码',
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
+                      if (_verificationStatusMessage != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          _verificationStatusMessage!,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       TextFormField(
                         controller: _passwordController,
@@ -130,6 +223,53 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                           if (!RegExp(r'[A-Za-z]').hasMatch(value) ||
                               !RegExp(r'[0-9]').hasMatch(value)) {
                             return '密码需要同时包含字母和数字';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _guardianFamilyNameController,
+                        decoration: const InputDecoration(
+                          labelText: '家长姓氏（可选）',
+                        ),
+                        validator: (value) {
+                          if ((value?.trim().length ?? 0) > 40) {
+                            return '家长姓氏不能超过 40 个字';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _childNicknameController,
+                        decoration: const InputDecoration(
+                          labelText: '宝贝姓名（可选）',
+                        ),
+                        validator: (value) {
+                          if ((value?.trim().length ?? 0) > 40) {
+                            return '宝贝姓名不能超过 40 个字';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _childBirthdayController,
+                        keyboardType: TextInputType.datetime,
+                        decoration: const InputDecoration(
+                          labelText: '宝贝生日（可选）',
+                          hintText: '例如 2021-06-01',
+                        ),
+                        validator: (value) {
+                          final birthday = value?.trim() ?? '';
+                          if (birthday.isEmpty) {
+                            return null;
+                          }
+                          final parsed = DateTime.tryParse(birthday);
+                          if (parsed == null ||
+                              parsed.isAfter(DateTime.now())) {
+                            return '请输入有效日期，例如 2021-06-01';
                           }
                           return null;
                         },
@@ -178,4 +318,9 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       ),
     );
   }
+}
+
+bool _isValidPhone(String value) {
+  final normalized = value.replaceAll(RegExp(r'[\s\-()]'), '');
+  return RegExp(r'^1\d{10}$').hasMatch(normalized);
 }

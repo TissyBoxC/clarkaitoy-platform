@@ -73,6 +73,7 @@ class DioApiClient implements ApiClient {
 
   static const accessTokenKey = 'auth_access_token';
   static const refreshTokenKey = 'auth_refresh_token';
+  static const _skipSessionRefreshExtra = 'skip_session_refresh';
 
   final Dio _dio;
   final SecureStore _secureStore;
@@ -98,7 +99,11 @@ class DioApiClient implements ApiClient {
   @override
   Future<Map<String, Object?>> post(String path, {Object? body}) async {
     try {
-      final response = await _dio.post<Object?>(path, data: body);
+      final response = await _dio.post<Object?>(
+        path,
+        data: body,
+        options: _publicAuthOptions(path),
+      );
       return _requireResponseMap(response.data);
     } on Object catch (error) {
       throw mapApiError(error);
@@ -168,6 +173,7 @@ class DioApiClient implements ApiClient {
     final request = error.requestOptions;
     if (error.response?.statusCode != 401 ||
         request.extra['skip_auth'] == true ||
+        request.extra[_skipSessionRefreshExtra] == true ||
         request.extra['auth_retried'] == true) {
       handler.next(error);
       return;
@@ -236,5 +242,18 @@ class DioApiClient implements ApiClient {
       message: '操作没有完成，请稍后重试',
       retryable: true,
     );
+  }
+
+  // Public authentication endpoints use their 401 responses as domain
+  // outcomes, not as an expired session signal. Refreshing here would replace
+  // "invalid password" or "invalid code" with a misleading session error.
+  Options _publicAuthOptions(String path) {
+    if (path == '/api/v1/auth/login' ||
+        path == '/api/v1/auth/register' ||
+        path == '/api/v1/auth/refresh' ||
+        path == '/api/v1/auth/phone-verification') {
+      return Options(extra: const {_skipSessionRefreshExtra: true});
+    }
+    return Options();
   }
 }
