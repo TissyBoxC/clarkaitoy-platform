@@ -112,7 +112,7 @@ class DeviceListPage extends ConsumerWidget {
                         subtitle: Text('信号 ${device.rssi} dBm'),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () =>
-                            _showBluetoothInstructions(context, device.name),
+                            _openDiscoveredDevice(context, device.name),
                       ),
                     ),
                   ),
@@ -163,11 +163,11 @@ class DeviceListPage extends ConsumerWidget {
     );
   }
 
-  Future<void> _showBluetoothInstructions(
+  Future<void> _openDiscoveredDevice(
     BuildContext context,
     String deviceName,
-  ) {
-    return showModalBottomSheet<void>(
+  ) async {
+    await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (context) => Padding(
@@ -181,11 +181,14 @@ class DeviceListPage extends ConsumerWidget {
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 10),
-            const Text('请让初芽保持开机，并停留在配网页面。手机连接到设备热点后即可完成网络设置。'),
+            const Text('请扫描设备屏幕上显示的二维码继续连接。'),
             const SizedBox(height: 16),
             FilledButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('我知道了'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                context.go('/devices/scan');
+              },
+              child: const Text('扫描设备二维码'),
             ),
           ],
         ),

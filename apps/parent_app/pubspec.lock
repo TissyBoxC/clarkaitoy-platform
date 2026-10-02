@@ -41,6 +41,22 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "2.13.1"
+  bloc:
+    dependency: transitive
+    description:
+      name: bloc
+      sha256: e03b235924e4f509c27b5d6b2f949200e0a91149a9818b4f65eeb56662b75413
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "9.2.1"
+  bloc_concurrency:
+    dependency: transitive
+    description:
+      name: bloc_concurrency
+      sha256: "86b7b17a0a78f77fca0d7c030632b59b593b22acea2d96972588f40d4ef53a94"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "0.3.0"
   bluez:
     dependency: transitive
     description:
@@ -225,6 +241,22 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "2.2.2"
+  equatable:
+    dependency: transitive
+    description:
+      name: equatable
+      sha256: "3bce007a596ff8b3119c45d68aaef631272537c03d30e5d4534dd24bf4c5eaa2"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "2.1.0"
+  esp_provisioning_wifi:
+    dependency: "direct main"
+    description:
+      name: esp_provisioning_wifi
+      sha256: b254a8b72f6a9810020f7fbb31855bbed9ebd02c3cf31e103c17d9e0891b9b4c
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "0.3.1"
   fake_async:
     dependency: transitive
     description:
@@ -270,6 +302,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  flutter_bloc:
+    dependency: transitive
+    description:
+      name: flutter_bloc
+      sha256: cf51747952201a455a1c840f8171d273be009b932c75093020f9af64f2123e38
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "9.1.1"
   flutter_blue_plus:
     dependency: "direct main"
     description:
@@ -592,6 +632,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "7.4.2"
+  nested:
+    dependency: transitive
+    description:
+      name: nested
+      sha256: "03bac4c528c64c95c722ec99280375a6f2fc708eec17c7b3f07253b626cd2a20"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "1.0.0"
   node_preamble:
     dependency: transitive
     description:
@@ -760,6 +808,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "6.5.2"
+  provider:
+    dependency: transitive
+    description:
+      name: provider
+      sha256: "4e82183fa20e5ca25703ead7e05de9e4cceed1fbd1eadc1ac3cb6f565a09f272"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "6.1.5+1"
   pub_semver:
     dependency: transitive
     description:

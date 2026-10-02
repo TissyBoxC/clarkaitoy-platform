@@ -73,10 +73,7 @@ class DeviceBindingApi {
   }) async {
     final response = await _apiClient.post(
       '/api/v1/devices/bind',
-      body: {
-        'token': token,
-        'device_name': deviceName,
-      },
+      body: {'token': token, 'device_name': deviceName},
     );
     return BoundDevice.fromJson(response['data'] as Map<String, Object?>);
   }

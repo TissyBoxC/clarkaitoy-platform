@@ -1,9 +1,11 @@
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:esp_provisioning_wifi/esp_provisioning_wifi.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/error/app_exception.dart';
 import '../../../providers.dart';
 import '../data/device_binding_api.dart';
+import '../domain/device_payload.dart';
 
 /// State for the nearby-device and scanned-token binding flow.
 class DeviceBindingState {
@@ -58,6 +60,7 @@ class DiscoveredDevice {
 /// Owns discovery, scanned-token binding, and bound-device refresh.
 class DeviceBindingController extends AsyncNotifier<DeviceBindingState> {
   late final DeviceBindingApi _api;
+  final _provisioningService = EspProvisioningService();
 
   @override
   Future<DeviceBindingState> build() async {
@@ -121,10 +124,7 @@ class DeviceBindingController extends AsyncNotifier<DeviceBindingState> {
     required String token,
     required String deviceName,
   }) async {
-    final binding = await _api.bind(
-      token: token,
-      deviceName: deviceName,
-    );
+    final binding = await _api.bind(token: token, deviceName: deviceName);
     await refresh();
     return binding;
   }
@@ -134,6 +134,117 @@ class DeviceBindingController extends AsyncNotifier<DeviceBindingState> {
     required String deviceSessionToken,
   }) {
     return _api.requestProvisioningTicket(deviceId, deviceSessionToken);
+  }
+
+  /// Scans for first-run devices advertising the configured local prefix.
+  Future<List<String>> scanProvisioningDevices() async {
+    try {
+      await _provisioningService.cancelOperations();
+      return await _provisioningService.scanBleDevices('SPROUT-');
+    } on Object catch (error) {
+      throw AppException(
+        kind: AppErrorKind.unexpected,
+        message: _provisioningMessage(error),
+        retryable: true,
+      );
+    }
+  }
+
+  /// Scans Wi-Fi networks visible to the selected nearby device.
+  Future<List<EspWifiNetwork>> scanWifiNetworks(
+    DeviceSetupPayload setup,
+  ) async {
+    try {
+      return await _provisioningService.scanWifiNetworks(
+        setup.serviceName,
+        setup.proofOfPossession,
+        security: EspSecurityScheme.security2,
+        username: setup.username,
+      );
+    } on Object catch (error) {
+      throw AppException(
+        kind: AppErrorKind.unexpected,
+        message: _provisioningMessage(error),
+        retryable: true,
+      );
+    }
+  }
+
+  /// Sends the selected Wi-Fi credentials to the nearby device.
+  Future<void> provisionWifi({
+    required DeviceSetupPayload setup,
+    required String ssid,
+    required String password,
+  }) async {
+    try {
+      final isProvisioned = await _provisioningService.provisionWifi(
+        setup.serviceName,
+        setup.proofOfPossession,
+        ssid,
+        password,
+        security: EspSecurityScheme.security2,
+        username: setup.username,
+      );
+      if (!isProvisioned) {
+        throw const AppException(
+          kind: AppErrorKind.unexpected,
+          message: '网络设置没有完成，请确认密码后重试',
+          retryable: true,
+        );
+      }
+    } on AppException {
+      rethrow;
+    } on Object catch (error) {
+      throw AppException(
+        kind: AppErrorKind.unexpected,
+        message: _provisioningMessage(error),
+        retryable: true,
+      );
+    }
+  }
+
+  /// Reads the final one-time binding payload after Wi-Fi setup succeeds.
+  Future<DeviceBindingPayload> readBindingPayload(
+    DeviceSetupPayload setup, {
+    int maxAttempts = 8,
+    Duration retryInterval = const Duration(seconds: 2),
+  }) async {
+    Object? lastError;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        final rawPayload = await _provisioningService.fetchCustomData(
+          setup.serviceName,
+          setup.proofOfPossession,
+          security: EspSecurityScheme.security2,
+          username: setup.username,
+        );
+        final payload = rawPayload == null
+            ? null
+            : DevicePayload.tryParse(rawPayload);
+        if (payload is DeviceBindingPayload) {
+          return payload;
+        }
+        lastError = const AppException(
+          kind: AppErrorKind.unexpected,
+          message: '设备还没有准备好，请让初芽保持开机后重试',
+          retryable: true,
+        );
+      } on Object catch (error) {
+        lastError = error;
+      }
+      if (attempt < maxAttempts) {
+        await Future<void>.delayed(retryInterval);
+      }
+    }
+    throw AppException(
+      kind: AppErrorKind.unexpected,
+      message: _provisioningMessage(lastError ?? '设备还没有准备好'),
+      retryable: true,
+    );
+  }
+
+  Future<void> cancelProvisioning() async {
+    await _provisioningService.cancelOperations();
   }
 
   Future<void> remove(String deviceId) async {
@@ -147,6 +258,13 @@ String _messageFor(Object error) {
     return error.message;
   }
   return '没有找到附近设备，请确认初芽已开机并处于配网状态';
+}
+
+String _provisioningMessage(Object error) {
+  if (error is AppException) {
+    return error.message;
+  }
+  return '没有完成连接，请让初芽保持开机并靠近手机后重试';
 }
 
 final deviceBindingControllerProvider =

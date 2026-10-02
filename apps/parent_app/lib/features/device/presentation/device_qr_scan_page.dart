@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../application/device_binding_controller.dart';
+import '../domain/device_payload.dart';
 
 /// Scans the one-time provisioning QR shown by a display-equipped device.
 class DeviceQrScanPage extends ConsumerStatefulWidget {
@@ -38,7 +39,7 @@ class _DeviceQrScanPageState extends ConsumerState<DeviceQrScanPage> {
     _isHandlingResult = true;
     await _controller.stop();
 
-    final payload = _parsePayload(rawValue);
+    final payload = DevicePayload.tryParse(rawValue);
     if (payload == null) {
       setState(() => _errorMessage = '这不是初芽设备上的绑定码，请重新扫描');
       _isHandlingResult = false;
@@ -46,11 +47,22 @@ class _DeviceQrScanPageState extends ConsumerState<DeviceQrScanPage> {
       return;
     }
     try {
+      if (payload is DeviceSetupPayload) {
+        if (mounted) {
+          await context.push('/devices/provision', extra: payload);
+        }
+        _isHandlingResult = false;
+        if (mounted) {
+          await _controller.start();
+        }
+        return;
+      }
+      final bindingPayload = payload as DeviceBindingPayload;
       await ref
           .read(deviceBindingControllerProvider.notifier)
           .bindToken(
-            token: payload.token,
-            deviceName: payload.deviceName,
+            token: bindingPayload.bindingToken,
+            deviceName: bindingPayload.deviceName,
           );
       if (mounted) {
         context.go('/devices');
@@ -118,33 +130,4 @@ class _ScannerFrame extends StatelessWidget {
       ),
     );
   }
-}
-
-class _ProvisioningPayload {
-  const _ProvisioningPayload({
-    required this.token,
-    required this.deviceName,
-  });
-
-  final String token;
-  final String deviceName;
-}
-
-_ProvisioningPayload? _parsePayload(String rawValue) {
-  final uri = Uri.tryParse(rawValue);
-  if (uri == null || uri.scheme != 'sprout') {
-    return null;
-  }
-  if (uri.host != 'device' && uri.path != '/device') {
-    return null;
-  }
-  final token = uri.queryParameters['token'] ?? '';
-  final deviceID = uri.queryParameters['device_id'] ?? '';
-  if (token.isEmpty || deviceID.isEmpty) {
-    return null;
-  }
-  return _ProvisioningPayload(
-    token: token,
-    deviceName: uri.queryParameters['name'] ?? '初芽',
-  );
 }

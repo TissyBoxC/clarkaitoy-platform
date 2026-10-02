@@ -6,6 +6,8 @@ import '../../features/auth/application/auth_controller.dart';
 import '../../features/auth/presentation/login_page.dart';
 import '../../features/auth/presentation/register_page.dart';
 import '../../features/device/presentation/device_list_page.dart';
+import '../../features/device/domain/device_payload.dart';
+import '../../features/device/presentation/device_provisioning_page.dart';
 import '../../features/device/presentation/device_qr_scan_page.dart';
 import '../../features/family/presentation/family_home_page.dart';
 
@@ -47,6 +49,16 @@ GoRouter createAppRouter(ProviderContainer container) {
       GoRoute(
         path: '/devices/scan',
         builder: (context, state) => const DeviceQrScanPage(),
+      ),
+      GoRoute(
+        path: '/devices/provision',
+        builder: (context, state) {
+          final setup = state.extra;
+          if (setup is! DeviceSetupPayload) {
+            return const _RouteNotFoundPage();
+          }
+          return DeviceProvisioningPage(setup: setup);
+        },
       ),
     ],
     errorBuilder: (context, state) => const _RouteNotFoundPage(),
