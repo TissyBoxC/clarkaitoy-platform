@@ -1,0 +1,229 @@
+name: sprout
+
+# Cloud deployment for 1Panel.
+#
+# This file is intentionally separate from deploy/docker-compose.yml:
+# the local stack builds from source, while a cloud host should pull the
+# immutable images published by GitHub Releases.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${SPROUT_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${SPROUT_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${SPROUT_POSTGRES_DB}
+    volumes:
+      - sprout_postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${SPROUT_POSTGRES_USER} -d ${SPROUT_POSTGRES_DB}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--requirepass",
+        "${SPROUT_REDIS_PASSWORD}",
+      ]
+    environment:
+      SPROUT_REDIS_PASSWORD: ${SPROUT_REDIS_PASSWORD}
+    volumes:
+      - sprout_redis_data:/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "redis-cli -a \"$${SPROUT_REDIS_PASSWORD}\" ping | grep PONG",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+  mqtt:
+    image: eclipse-mosquitto:2
+    ports:
+      - "${SPROUT_MQTT_BIND_ADDRESS}:${SPROUT_MQTT_PORT}:1883"
+      - "${SPROUT_MQTTS_BIND_ADDRESS}:${SPROUT_MQTTS_PORT}:8883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/certs:/mosquitto/certs:ro
+      - sprout_mqtt_data:/mosquitto/data
+      - sprout_mqtt_log:/mosquitto/log
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mosquitto_sub -h 127.0.0.1 -p 8883 --cafile /mosquitto/certs/ca.crt --cert /mosquitto/certs/device.crt --key /mosquitto/certs/device.key -t '$$SYS/broker/version' -C 1 -W 3 >/dev/null 2>&1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 10s
+    restart: unless-stopped
+
+  sub2api:
+    image: ghcr.io/tissyboxc/sub2api:${SPROUT_SUB2API_VERSION}
+    security_opt:
+      - no-new-privileges:true
+    ulimits:
+      nofile:
+        soft: 100000
+        hard: 100000
+    volumes:
+      - sprout_sub2api_data:/app/data
+    environment:
+      AUTO_SETUP: "true"
+      SERVER_HOST: "0.0.0.0"
+      SERVER_PORT: "8080"
+      SERVER_MODE: "release"
+      DATABASE_HOST: "postgres"
+      DATABASE_PORT: "5432"
+      DATABASE_USER: ${SPROUT_POSTGRES_USER}
+      DATABASE_PASSWORD: ${SPROUT_POSTGRES_PASSWORD}
+      DATABASE_DBNAME: ${SPROUT_SUB2API_DATABASE_NAME}
+      DATABASE_SSLMODE: "disable"
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${SPROUT_REDIS_PASSWORD}
+      REDIS_DB: "1"
+      ADMIN_EMAIL: ${SPROUT_SUB2API_ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${SPROUT_SUB2API_ADMIN_PASSWORD}
+      JWT_SECRET: ${SPROUT_SUB2API_JWT_SECRET}
+      TOTP_ENCRYPTION_KEY: ${SPROUT_SUB2API_TOTP_ENCRYPTION_KEY}
+      TZ: ${SPROUT_TIMEZONE}
+      SECURITY_URL_ALLOWLIST_ENABLED: "true"
+      SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP: "false"
+      SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS: "false"
+      SPROUT_INTERNAL_API_ENABLED: "true"
+      SPROUT_INTERNAL_API_TOKEN: ${SPROUT_INTERNAL_SERVICE_TOKEN}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+
+  device_platform:
+    image: ghcr.io/tissyboxc/sprout-device-platform:${SPROUT_PLATFORM_VERSION}
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "${SPROUT_SERVICE_BIND_ADDRESS}:${SPROUT_DEVICE_PLATFORM_PORT}:8081"
+    environment:
+      DEVICE_PLATFORM_HTTP_HOST: "0.0.0.0"
+      DEVICE_PLATFORM_HTTP_PORT: "8081"
+      DEVICE_PLATFORM_DATABASE_DSN: "postgres://${SPROUT_POSTGRES_USER}:${SPROUT_POSTGRES_PASSWORD}@postgres:5432/${SPROUT_DEVICE_PLATFORM_DATABASE_NAME}?sslmode=disable"
+      DEVICE_PLATFORM_REDIS_ADDRESS: "redis:6379"
+      DEVICE_PLATFORM_REDIS_PASSWORD: ${SPROUT_REDIS_PASSWORD}
+      DEVICE_PLATFORM_REDIS_DB: "0"
+      DEVICE_PLATFORM_MQTT_BROKER: "tls://mqtt:8883"
+      DEVICE_PLATFORM_MQTT_CLIENT_ID: "device-platform"
+      DEVICE_PLATFORM_MQTT_CA_FILE: "/run/sprout/mqtt/ca.crt"
+      DEVICE_PLATFORM_MQTT_CLIENT_CERTIFICATE_FILE: "/run/sprout/mqtt/device.crt"
+      DEVICE_PLATFORM_MQTT_CLIENT_KEY_FILE: "/run/sprout/mqtt/device.key"
+      DEVICE_PLATFORM_MQTT_INSECURE_SKIP_VERIFY: "false"
+      DEVICE_PLATFORM_AUTH_ACCESS_TOKEN_SECRET: ${SPROUT_AUTH_ACCESS_TOKEN_SECRET}
+      DEVICE_PLATFORM_AUTH_ACCESS_TOKEN_TTL: ${SPROUT_AUTH_ACCESS_TOKEN_TTL}
+      DEVICE_PLATFORM_AUTH_REFRESH_TOKEN_TTL: ${SPROUT_AUTH_REFRESH_TOKEN_TTL}
+      DEVICE_PLATFORM_AI_CREDENTIAL_KEY: ${SPROUT_AI_CREDENTIAL_KEY}
+      DEVICE_PLATFORM_MFA_CREDENTIAL_KEY: ${SPROUT_MFA_CREDENTIAL_KEY}
+      DEVICE_PLATFORM_MFA_CHALLENGE_TTL: ${SPROUT_MFA_CHALLENGE_TTL}
+      DEVICE_PLATFORM_PHONE_VERIFICATION_MODE: ${SPROUT_PHONE_VERIFICATION_MODE}
+      DEVICE_PLATFORM_ALLOW_LOCAL_SMS_BYPASS: ${SPROUT_ALLOW_LOCAL_SMS_BYPASS}
+      DEVICE_PLATFORM_SUB2API_BASE_URL: "http://sub2api:8080"
+      DEVICE_PLATFORM_SUB2API_SERVICE_TOKEN: ${SPROUT_INTERNAL_SERVICE_TOKEN}
+      DEVICE_PLATFORM_AI_DEFAULT_BALANCE_USD: ${SPROUT_AI_DEFAULT_BALANCE_USD}
+      DEVICE_PLATFORM_AI_DEFAULT_CONCURRENCY: ${SPROUT_AI_DEFAULT_CONCURRENCY}
+      DEVICE_PLATFORM_AI_DEFAULT_MODELS: ${SPROUT_AI_DEFAULT_MODELS}
+    volumes:
+      - ./mosquitto/certs:/run/sprout/mqtt:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mqtt:
+        condition: service_healthy
+      sub2api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8081/readyz"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  voice_gateway:
+    image: ghcr.io/tissyboxc/sprout-voice-gateway:${SPROUT_PLATFORM_VERSION}
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "${SPROUT_SERVICE_BIND_ADDRESS}:${SPROUT_VOICE_GATEWAY_PORT}:8082"
+    environment:
+      VOICE_GATEWAY_HTTP_HOST: "0.0.0.0"
+      VOICE_GATEWAY_HTTP_PORT: "8082"
+      VOICE_GATEWAY_REDIS_ADDRESS: "redis:6379"
+      VOICE_GATEWAY_REDIS_PASSWORD: ${SPROUT_REDIS_PASSWORD}
+      VOICE_GATEWAY_SUB2API_BASE_URL: "http://sub2api:8080"
+      VOICE_GATEWAY_SUB2API_API_KEY: ${SPROUT_SUB2API_API_KEY}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8082/readyz"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  admin_web:
+    image: ghcr.io/tissyboxc/sprout-admin-web:${SPROUT_PLATFORM_VERSION}
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "${SPROUT_SERVICE_BIND_ADDRESS}:${SPROUT_ADMIN_WEB_PORT}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+    depends_on:
+      device_platform:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "3", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  sprout_postgres_data:
+  sprout_redis_data:
+  sprout_mqtt_data:
+  sprout_mqtt_log:
+  sprout_sub2api_data:

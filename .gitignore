@@ -39,6 +39,13 @@ deploy/.env.*
 deploy/mosquitto/certs/
 deploy/**/data/
 
+# Cloud deployment secrets, migration data, and generated certificates
+deploy/cloud/.env
+deploy/cloud/mosquitto/certs/
+deploy/cloud/migration-data/
+deploy/cloud/**/*.dump
+deploy/cloud/**/*.tar.gz
+
 # Go build and test output
 bin/
 coverage/
