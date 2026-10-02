@@ -225,6 +225,33 @@ func (handler deviceBindingHandler) bind(
 	writeSuccess(response, request, http.StatusCreated, bindingResponse(binding))
 }
 
+// bindingStatus is polled by an authenticated device after it presents a
+// provisioning code. It never reveals which guardian account completed binding.
+func (handler deviceBindingHandler) bindingStatus(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	deviceID := strings.TrimSpace(request.PathValue("device_id"))
+	sessionToken, ok := bearerToken(request)
+	if !ok {
+		writeError(response, request, http.StatusUnauthorized, "device_session_expired", "设备登录已过期，请重新连接")
+		return
+	}
+	isBound, err := handler.service.BindingStatus(
+		request.Context(),
+		deviceID,
+		sessionToken,
+	)
+	if err != nil {
+		writeDeviceBindingError(response, request, err)
+		return
+	}
+	writeSuccess(response, request, http.StatusOK, map[string]any{
+		"device_id": deviceID,
+		"is_bound":  isBound,
+	})
+}
+
 func (handler deviceBindingHandler) list(
 	response http.ResponseWriter,
 	request *http.Request,

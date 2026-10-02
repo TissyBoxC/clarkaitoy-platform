@@ -411,6 +411,56 @@ func (s *Service) GetByDeviceID(
 	return s.repository.GetByDeviceID(ctx, deviceID)
 }
 
+// VerifyDeviceSession resolves the device id for a live device session token.
+//
+// Device-scoped endpoints use this instead of a parent access token because the
+// firmware never receives a guardian credential.
+func (s *Service) VerifyDeviceSession(
+	ctx context.Context,
+	deviceSessionToken string,
+) (string, error) {
+	deviceSessionToken = strings.TrimSpace(deviceSessionToken)
+	if deviceSessionToken == "" {
+		return "", domain.ErrDeviceSessionNotFound
+	}
+	session, err := s.repository.GetDeviceSessionByTokenHash(
+		ctx,
+		hashToken(deviceSessionToken),
+	)
+	if err != nil {
+		return "", err
+	}
+	if !session.ExpiresAt.After(s.timeSource.Now().UTC()) {
+		return "", domain.ErrDeviceSessionExpired
+	}
+	return session.DeviceID, nil
+}
+
+// BindingStatus reports whether a device session belongs to a bound device.
+//
+// A device polls this after showing a QR code so it can leave the provisioning
+// screen without ever learning the guardian account behind the binding.
+func (s *Service) BindingStatus(
+	ctx context.Context,
+	deviceID string,
+	deviceSessionToken string,
+) (bool, error) {
+	sessionDeviceID, err := s.VerifyDeviceSession(ctx, deviceSessionToken)
+	if err != nil {
+		return false, err
+	}
+	if sessionDeviceID != strings.TrimSpace(deviceID) {
+		return false, domain.ErrInvalidDeviceProof
+	}
+	if _, err := s.repository.GetByDeviceID(ctx, sessionDeviceID); err != nil {
+		if errors.Is(err, domain.ErrDeviceNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 // Delete removes a device binding owned by the parent account.
 func (s *Service) Delete(
 	ctx context.Context,

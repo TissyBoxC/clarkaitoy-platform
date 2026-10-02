@@ -67,6 +67,10 @@ func NewRouter(options RouterOptions) http.Handler {
 				bindingHandler.createDeviceProvisioningToken,
 			)
 			mux.HandleFunc(
+				"GET /api/v1/devices/{device_id}/binding-status",
+				bindingHandler.bindingStatus,
+			)
+			mux.HandleFunc(
 				"POST /api/v1/devices/bind",
 				authHandler.requireAuthentication(bindingHandler.bind),
 			)
