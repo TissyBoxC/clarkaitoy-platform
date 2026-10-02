@@ -106,12 +106,14 @@ func New(options Options) (*Service, error) {
 }
 
 // Register creates a guardian account and best-effort creates its AI account.
-// A temporary AI gateway outage must not discard a valid parent registration;
-// the AI projection remains unavailable until a later login or read repairs it.
+//
+// A temporary AI gateway outage must not discard a valid parent registration,
+// so a failed provisioning attempt returns a nil summary instead of an error.
+// The AI projection is repaired by a later login or account read.
 func (s *Service) Register(
 	ctx context.Context,
 	input domain.RegisterInput,
-) (*domain.ParentAccount, *domain.TokenPair, error) {
+) (*domain.ParentAccount, *domain.TokenPair, *domain.AIAccountSummary, error) {
 	input.Email = normalizeEmail(input.Email)
 	input.DisplayName = strings.TrimSpace(input.DisplayName)
 	input.Phone = strings.TrimSpace(input.Phone)
@@ -120,7 +122,7 @@ func (s *Service) Register(
 		input.GuardianConsentVersion = defaultConsent
 	}
 	if err := validateRegistration(input); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	passwordHash, err := bcrypt.GenerateFromPassword(
@@ -128,7 +130,7 @@ func (s *Service) Register(
 		bcrypt.DefaultCost,
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("hash password: %w", err)
+		return nil, nil, nil, fmt.Errorf("hash password: %w", err)
 	}
 
 	now := s.timeSource.Now().UTC()
@@ -146,58 +148,61 @@ func (s *Service) Register(
 		UpdatedAt:              now,
 	}
 	if err := s.repository.CreateParentAccount(ctx, account); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	tokenPair, err := s.issueSession(ctx, account.ID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
+	var summary *domain.AIAccountSummary
 	if s.aiProvisioner != nil {
 		// AI provisioning is deliberately after account and session creation:
 		// the parent account remains recoverable when the AI gateway is down.
-		_, _ = s.aiProvisioner.EnsureForParent(ctx, account.ID, account.Email)
+		summary, _ = s.aiProvisioner.EnsureForParent(ctx, account.ID, account.Email)
 	}
-	return account, tokenPair, nil
+	return account, tokenPair, summary, nil
 }
 
-// Login validates credentials and creates a new renewable session.
+// Login validates credentials, creates a renewable session, and repairs the
+// parent's AI account projection when the provider is reachable.
 func (s *Service) Login(
 	ctx context.Context,
 	input domain.LoginInput,
-) (*domain.ParentAccount, *domain.TokenPair, error) {
+) (*domain.ParentAccount, *domain.TokenPair, *domain.AIAccountSummary, error) {
 	email := normalizeEmail(input.Email)
 	if email == "" || input.Password == "" {
-		return nil, nil, domain.ErrInvalidCredentials
+		return nil, nil, nil, domain.ErrInvalidCredentials
 	}
 	account, err := s.repository.GetParentAccountByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, domain.ErrAccountNotFound) {
-			return nil, nil, domain.ErrInvalidCredentials
+			return nil, nil, nil, domain.ErrInvalidCredentials
 		}
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if account.Status != accountStatusActive {
-		return nil, nil, domain.ErrAccountDisabled
+		return nil, nil, nil, domain.ErrAccountDisabled
 	}
 	if err := bcrypt.CompareHashAndPassword(
 		[]byte(account.PasswordHash),
 		[]byte(input.Password),
 	); err != nil {
-		return nil, nil, domain.ErrInvalidCredentials
+		return nil, nil, nil, domain.ErrInvalidCredentials
 	}
 
 	if err := s.repository.UpdateLastLogin(ctx, account.ID); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	tokenPair, err := s.issueSession(ctx, account.ID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
+	var summary *domain.AIAccountSummary
 	if s.aiProvisioner != nil {
-		_, _ = s.aiProvisioner.EnsureForParent(ctx, account.ID, account.Email)
+		summary, _ = s.aiProvisioner.EnsureForParent(ctx, account.ID, account.Email)
 	}
-	return account, tokenPair, nil
+	return account, tokenPair, summary, nil
 }
 
 // StartAdminLogin validates an administrator password and creates a

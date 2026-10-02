@@ -44,7 +44,7 @@ func (handler authHandler) register(response http.ResponseWriter, request *http.
 		writeError(response, request, http.StatusBadRequest, "invalid_request", "请检查填写的内容")
 		return
 	}
-	account, pair, err := handler.service.Register(request.Context(), authdomain.RegisterInput{
+	account, pair, summary, err := handler.service.Register(request.Context(), authdomain.RegisterInput{
 		Email:                  payload.Email,
 		Password:               payload.Password,
 		DisplayName:            payload.DisplayName,
@@ -55,7 +55,7 @@ func (handler authHandler) register(response http.ResponseWriter, request *http.
 		writeAuthServiceError(response, request, err)
 		return
 	}
-	writeSuccess(response, request, http.StatusCreated, authResponse(account, pair, nil))
+	writeSuccess(response, request, http.StatusCreated, authResponse(account, pair, summary))
 }
 
 func (handler authHandler) login(response http.ResponseWriter, request *http.Request) {
@@ -64,7 +64,7 @@ func (handler authHandler) login(response http.ResponseWriter, request *http.Req
 		writeError(response, request, http.StatusBadRequest, "invalid_request", "请检查填写的内容")
 		return
 	}
-	account, pair, err := handler.service.Login(request.Context(), authdomain.LoginInput{
+	account, pair, summary, err := handler.service.Login(request.Context(), authdomain.LoginInput{
 		Email:    payload.Email,
 		Password: payload.Password,
 	})
@@ -72,7 +72,7 @@ func (handler authHandler) login(response http.ResponseWriter, request *http.Req
 		writeAuthServiceError(response, request, err)
 		return
 	}
-	writeSuccess(response, request, http.StatusOK, authResponse(account, pair, nil))
+	writeSuccess(response, request, http.StatusOK, authResponse(account, pair, summary))
 }
 
 // startAdminLogin validates the password and returns a short-lived MFA
