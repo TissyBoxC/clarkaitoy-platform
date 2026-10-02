@@ -8,19 +8,8 @@ const isLoginRoute = computed(() => route.meta.public === true)
 </script>
 
 <template>
-  <RouterView v-if="isLoginRoute" />
-  <AdminLayout v-else />
+  <Transition name="page" mode="out-in">
+    <RouterView v-if="isLoginRoute" />
+    <AdminLayout v-else />
+  </Transition>
 </template>
-
-<style>
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  color: #4a2e3b;
-  background: #fffbfc;
-  font-family: Inter, 'Microsoft YaHei', sans-serif;
-}
-</style>

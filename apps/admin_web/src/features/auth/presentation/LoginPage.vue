@@ -59,7 +59,11 @@ function handleCodeInput(event: Event): void {
       <p class="brand-name">如此萌屋</p>
       <h1>管理后台登录</h1>
       <p class="description">
-        {{ authStore.isMFARequired ? '请输入验证器中的 6 位验证码。' : '登录后管理家长账号、AI 额度和设备绑定。' }}
+        {{
+          authStore.isMFARequired
+            ? '请输入验证器中的 6 位验证码。'
+            : '登录后管理家长账号、AI 额度和设备绑定。'
+        }}
       </p>
 
       <form class="login-form" @submit.prevent="submit">
@@ -80,28 +84,25 @@ function handleCodeInput(event: Event): void {
         <template v-else>
           <label>
             <span>管理员邮箱</span>
-            <input
-              v-model="email"
-              type="email"
-              autocomplete="username"
-              required
-            />
+            <input v-model="email" type="email" autocomplete="username" required />
           </label>
           <label>
             <span>密码</span>
-            <input
-              v-model="password"
-              type="password"
-              autocomplete="current-password"
-              required
-            />
+            <input v-model="password" type="password" autocomplete="current-password" required />
           </label>
         </template>
-        <p v-if="authStore.error" class="error-message">
-          {{ authStore.error.message }}
-        </p>
+        <Transition name="toast">
+          <p v-if="authStore.error" class="error-message">
+            {{ authStore.error.message }}
+          </p>
+        </Transition>
         <button type="submit" :disabled="isSubmitting">
-          {{ isSubmitting ? '正在登录…' : authStore.isMFARequired ? '验证并登录' : '登录管理后台' }}
+          <span class="button-label">
+            <span v-if="isSubmitting" class="button-spinner" aria-hidden="true"></span>
+            {{
+              isSubmitting ? '正在登录…' : authStore.isMFARequired ? '验证并登录' : '登录管理后台'
+            }}
+          </span>
         </button>
         <button
           v-if="authStore.isMFARequired"
@@ -125,21 +126,38 @@ function handleCodeInput(event: Event): void {
   padding: 24px;
   background:
     radial-gradient(circle at 10% 10%, #fff2f5 0, transparent 34%),
-    #fffbfc;
+    radial-gradient(circle at 92% 88%, rgb(102 204 255 / 10%), transparent 28%),
+    var(--sprout-surface);
+  overflow: hidden;
 }
 
 .login-panel {
+  position: relative;
   width: min(100%, 420px);
   padding: 36px;
-  border: 1px solid #f0bdcb;
+  border: 1px solid var(--sprout-outline);
   border-radius: 28px;
   background: #ffffff;
-  box-shadow: 0 18px 48px rgb(217 79 131 / 10%);
+  box-shadow: 0 24px 64px rgb(217 79 131 / 14%);
   text-align: center;
+  animation: login-panel-in 520ms var(--sprout-ease-out) both;
+}
+
+.login-panel::before {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 58px;
+  height: 4px;
+  border-radius: 0 0 999px 999px;
+  background: linear-gradient(90deg, var(--sprout-pink), var(--sprout-yellow));
+  content: '';
+  transform: translateX(-50%);
 }
 
 .brand-avatar {
   border-radius: 50%;
+  box-shadow: 0 12px 30px rgb(217 79 131 / 16%);
 }
 
 .brand-name {
@@ -188,14 +206,21 @@ input:focus {
 }
 
 button {
+  position: relative;
   min-height: 50px;
   border: 0;
   border-radius: 25px;
-  background: #d94f83;
+  background: linear-gradient(135deg, #ec6f9d, #d94f83);
   color: #ffffff;
   font: inherit;
   font-weight: 700;
   cursor: pointer;
+  box-shadow: 0 12px 24px rgb(217 79 131 / 18%);
+}
+
+button:not(:disabled):hover {
+  box-shadow: 0 16px 30px rgb(217 79 131 / 26%);
+  transform: translateY(-1px);
 }
 
 button:disabled {
@@ -203,14 +228,54 @@ button:disabled {
   opacity: 0.65;
 }
 
+.button-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+}
+
+.button-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgb(255 255 255 / 45%);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
 .secondary-button {
   border: 1px solid #f0bdcb;
   background: #ffffff;
   color: #b23a68;
+  box-shadow: none;
+}
+
+.secondary-button:not(:disabled):hover {
+  background: #fff7fa;
+  box-shadow: 0 10px 20px rgb(217 79 131 / 10%);
 }
 
 .error-message {
   margin: 0;
   color: #b3261e;
+}
+
+@keyframes login-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

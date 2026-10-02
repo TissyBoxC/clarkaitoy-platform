@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../auth/data/auth_api.dart';
 import '../../device/application/device_binding_controller.dart';
+import '../../../shared/widgets/app_reveal.dart';
+import '../../../shared/widgets/app_state_switcher.dart';
 
 /// Parent workspace with account, AI usage, and device entry points.
 class FamilyHomePage extends ConsumerWidget {
@@ -42,116 +44,164 @@ class FamilyHomePage extends ConsumerWidget {
           ),
         ],
       ),
-      body: auth.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => _ErrorState(
-          message: authErrorMessage(error),
-          onRetry: () =>
-              ref.read(authControllerProvider.notifier).refreshAccount(),
+      body: AppStateSwitcher(
+        stateKey: auth.when(
+          data: (value) => value.account == null ? 'signed-out' : 'content',
+          error: (_, _) => 'error',
+          loading: () => 'loading',
         ),
-        data: (state) {
-          final account = state.account;
-          if (account == null) {
-            return const _SignInPrompt();
-          }
-          final devices = ref.watch(deviceBindingControllerProvider);
-          return RefreshIndicator(
-            onRefresh: () async {
-              await ref.read(authControllerProvider.notifier).refreshAccount();
-              await ref
-                  .read(deviceBindingControllerProvider.notifier)
-                  .refresh();
-            },
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                Text(
-                  '你好，${account.displayName}',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 6),
-                const Text('孩子今天想聊些什么？'),
-                const SizedBox(height: 20),
-                _AiAccountCard(
-                  aiAccount: state.aiAccount,
-                  onRetry: () => ref
-                      .read(authControllerProvider.notifier)
-                      .retryAIService(),
-                  onModelsChanged: (models) => ref
-                      .read(authControllerProvider.notifier)
-                      .updateSelectedModels(models),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Text(
-                      '我的设备',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const Spacer(),
-                    TextButton.icon(
-                      onPressed: () => context.go('/devices'),
-                      icon: const Icon(Icons.add_circle_outline),
-                      label: const Text('添加设备'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                devices.when(
-                  loading: () => const Card(
-                    child: ListTile(
-                      leading: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      title: Text('正在读取设备…'),
-                    ),
-                  ),
-                  error: (error, _) => _InlineError(
-                    message: authErrorMessage(error),
-                    onRetry: () => ref
-                        .read(deviceBindingControllerProvider.notifier)
-                        .refresh(),
-                  ),
-                  data: (deviceState) {
-                    final bindings = deviceState.bindings;
-                    if (bindings.isEmpty) {
-                      return const Card(
-                        child: ListTile(
-                          leading: Icon(Icons.toys_outlined),
-                          title: Text('还没有绑定设备'),
-                          subtitle: Text('打开初芽的配网页，用手机扫描二维码或在附近设备中添加。'),
+        child: auth.when(
+          loading: () => const Center(
+            key: ValueKey<String>('loading'),
+            child: CircularProgressIndicator(),
+          ),
+          error: (error, _) => _ErrorState(
+            key: const ValueKey<String>('error'),
+            message: authErrorMessage(error),
+            onRetry: () =>
+                ref.read(authControllerProvider.notifier).refreshAccount(),
+          ),
+          data: (state) {
+            final account = state.account;
+            if (account == null) {
+              return const _SignInPrompt(key: ValueKey<String>('signed-out'));
+            }
+            final devices = ref.watch(deviceBindingControllerProvider);
+            return RefreshIndicator(
+              key: const ValueKey<String>('content'),
+              onRefresh: () async {
+                await ref
+                    .read(authControllerProvider.notifier)
+                    .refreshAccount();
+                await ref
+                    .read(deviceBindingControllerProvider.notifier)
+                    .refresh();
+              },
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  AppReveal(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '你好，${account.displayName}',
+                          style: Theme.of(context).textTheme.headlineSmall,
                         ),
-                      );
-                    }
-                    return Column(
-                      children: bindings
-                          .map(
-                            (binding) => Card(
-                              child: ListTile(
-                                leading: const Icon(Icons.toys_outlined),
-                                title: Text(binding.deviceName),
-                                subtitle: Text(
-                                  binding.boundAt
-                                      .toLocal()
-                                      .toString()
-                                      .split(' ')
-                                      .first,
-                                ),
-                                trailing: const Icon(Icons.chevron_right),
-                                onTap: () => context.go('/devices'),
-                              ),
+                        const SizedBox(height: 6),
+                        const Text('孩子今天想聊些什么？'),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  AppReveal(
+                    delay: const Duration(milliseconds: 70),
+                    child: _AiAccountCard(
+                      aiAccount: state.aiAccount,
+                      onRetry: () => ref
+                          .read(authControllerProvider.notifier)
+                          .retryAIService(),
+                      onModelsChanged: (models) => ref
+                          .read(authControllerProvider.notifier)
+                          .updateSelectedModels(models),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  AppReveal(
+                    delay: const Duration(milliseconds: 130),
+                    child: Row(
+                      children: [
+                        Text(
+                          '我的设备',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const Spacer(),
+                        TextButton.icon(
+                          onPressed: () => context.go('/devices'),
+                          icon: const Icon(Icons.add_circle_outline),
+                          label: const Text('添加设备'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  AppStateSwitcher(
+                    stateKey: devices.when(
+                      data: (deviceState) => deviceState.bindings.isEmpty
+                          ? 'devices-empty'
+                          : 'devices-content',
+                      error: (_, _) => 'devices-error',
+                      loading: () => 'devices-loading',
+                    ),
+                    child: devices.when(
+                      loading: () => const Card(
+                        key: ValueKey<String>('devices-loading'),
+                        child: ListTile(
+                          leading: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          title: Text('正在读取设备…'),
+                        ),
+                      ),
+                      error: (error, _) => _InlineError(
+                        key: const ValueKey<String>('devices-error'),
+                        message: authErrorMessage(error),
+                        onRetry: () => ref
+                            .read(deviceBindingControllerProvider.notifier)
+                            .refresh(),
+                      ),
+                      data: (deviceState) {
+                        final bindings = deviceState.bindings;
+                        if (bindings.isEmpty) {
+                          return const Card(
+                            key: ValueKey<String>('devices-empty'),
+                            child: ListTile(
+                              leading: Icon(Icons.toys_outlined),
+                              title: Text('还没有绑定设备'),
+                              subtitle: Text('打开初芽的配网页，用手机扫描二维码或在附近设备中添加。'),
                             ),
-                          )
-                          .toList(growable: false),
-                    );
-                  },
-                ),
-              ],
-            ),
-          );
-        },
+                          );
+                        }
+                        return Column(
+                          key: const ValueKey<String>('devices-content'),
+                          children: [
+                            for (
+                              var index = 0;
+                              index < bindings.length;
+                              index++
+                            )
+                              AppReveal(
+                                delay: Duration(
+                                  milliseconds: 70 * index.clamp(0, 5),
+                                ),
+                                child: Card(
+                                  child: ListTile(
+                                    leading: const Icon(Icons.toys_outlined),
+                                    title: Text(bindings[index].deviceName),
+                                    subtitle: Text(
+                                      bindings[index].boundAt
+                                          .toLocal()
+                                          .toString()
+                                          .split(' ')
+                                          .first,
+                                    ),
+                                    trailing: const Icon(Icons.chevron_right),
+                                    onTap: () => context.go('/devices'),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -224,10 +274,7 @@ class _AiAccountCard extends StatelessWidget {
     );
   }
 
-  Future<void> _showModelPicker(
-    BuildContext context,
-    AiAccount account,
-  ) async {
+  Future<void> _showModelPicker(BuildContext context, AiAccount account) async {
     // An empty saved selection means "all available", so the picker opens with
     // every approved model checked instead of showing a misleading empty state.
     final selectedModels = <String>{
@@ -246,10 +293,7 @@ class _AiAccountCard extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                '选择对话模型',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
+              Text('选择对话模型', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 6),
               const Text('只勾选允许孩子使用的模型，至少要保留一个。'),
               const SizedBox(height: 12),
@@ -294,7 +338,7 @@ class _AiAccountCard extends StatelessWidget {
 }
 
 class _SignInPrompt extends StatelessWidget {
-  const _SignInPrompt();
+  const _SignInPrompt({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -320,7 +364,7 @@ class _SignInPrompt extends StatelessWidget {
 }
 
 class _InlineError extends StatelessWidget {
-  const _InlineError({required this.message, required this.onRetry});
+  const _InlineError({required this.message, required this.onRetry, super.key});
 
   final String message;
   final VoidCallback onRetry;
@@ -338,7 +382,7 @@ class _InlineError extends StatelessWidget {
 }
 
 class _ErrorState extends StatelessWidget {
-  const _ErrorState({required this.message, required this.onRetry});
+  const _ErrorState({required this.message, required this.onRetry, super.key});
 
   final String message;
   final VoidCallback onRetry;

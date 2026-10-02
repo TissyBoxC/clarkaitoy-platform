@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { RouterLink, RouterView, useRouter } from 'vue-router'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 
 import { useAuthStore } from '@/features/auth/application/authStore'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 
 async function logout(): Promise<void> {
@@ -29,10 +30,22 @@ async function logout(): Promise<void> {
         </span>
       </RouterLink>
       <nav class="admin-nav" aria-label="主要导航">
-        <RouterLink to="/">运营概览</RouterLink>
-        <RouterLink to="/ai-accounts">家长 AI 账号</RouterLink>
-        <RouterLink to="/devices">设备管理</RouterLink>
-        <RouterLink to="/ui-text">界面文案</RouterLink>
+        <RouterLink to="/">
+          <span class="nav-dot" aria-hidden="true"></span>
+          运营概览
+        </RouterLink>
+        <RouterLink to="/ai-accounts">
+          <span class="nav-dot" aria-hidden="true"></span>
+          家长 AI 账号
+        </RouterLink>
+        <RouterLink to="/devices">
+          <span class="nav-dot" aria-hidden="true"></span>
+          设备管理
+        </RouterLink>
+        <RouterLink to="/ui-text">
+          <span class="nav-dot" aria-hidden="true"></span>
+          界面文案
+        </RouterLink>
       </nav>
       <div class="account-panel">
         <p>{{ authStore.account?.displayName }}</p>
@@ -41,7 +54,11 @@ async function logout(): Promise<void> {
       </div>
     </aside>
     <main class="admin-content">
-      <RouterView />
+      <RouterView v-slot="{ Component }">
+        <Transition name="page" mode="out-in">
+          <component :is="Component" :key="route.path" />
+        </Transition>
+      </RouterView>
     </main>
   </div>
 </template>
@@ -51,15 +68,19 @@ async function logout(): Promise<void> {
   display: grid;
   min-height: 100vh;
   grid-template-columns: 248px minmax(0, 1fr);
-  background: #fffbfc;
+  background: transparent;
 }
 
 .admin-sidebar {
+  position: sticky;
+  top: 0;
   display: flex;
+  height: 100vh;
   flex-direction: column;
   padding: 24px 18px;
-  border-right: 1px solid #f0bdcb;
-  background: #ffffff;
+  border-right: 1px solid rgb(240 189 203 / 72%);
+  background: rgb(255 255 255 / 88%);
+  backdrop-filter: blur(18px);
 }
 
 .brand {
@@ -69,11 +90,17 @@ async function logout(): Promise<void> {
   margin-bottom: 32px;
   color: #4a2e3b;
   text-decoration: none;
+  transition: transform var(--sprout-duration-base) var(--sprout-ease-out);
+}
+
+.brand:hover {
+  transform: translateY(-1px);
 }
 
 .brand-avatar {
   flex: 0 0 auto;
   border-radius: 50%;
+  box-shadow: 0 8px 20px rgb(217 79 131 / 14%);
 }
 
 .brand span {
@@ -96,16 +123,56 @@ async function logout(): Promise<void> {
 }
 
 .admin-nav a {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 11px;
   padding: 11px 14px;
   color: #6b4f5a;
   text-decoration: none;
-  border-radius: 14px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  transition:
+    transform var(--sprout-duration-base) var(--sprout-ease-out),
+    background-color var(--sprout-duration-base) ease,
+    border-color var(--sprout-duration-base) ease,
+    color var(--sprout-duration-base) ease,
+    box-shadow var(--sprout-duration-base) ease;
+}
+
+.admin-nav a:hover {
+  border-color: #f7d9e2;
+  background: #fffafb;
+  color: #b23a68;
+  transform: translateX(2px);
+}
+
+.nav-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border: 1.5px solid #e7a1b6;
+  border-radius: 999px;
+  background: transparent;
+  transition:
+    width var(--sprout-duration-base) var(--sprout-ease-out),
+    background-color var(--sprout-duration-base) ease,
+    border-color var(--sprout-duration-base) ease,
+    box-shadow var(--sprout-duration-base) ease;
 }
 
 .admin-nav a.router-link-active {
   background: #fff0f4;
   color: #c94175;
   font-weight: 700;
+  box-shadow: inset 0 0 0 1px rgb(240 189 203 / 60%);
+}
+
+.admin-nav a.router-link-active .nav-dot {
+  width: 18px;
+  border-color: #f7a8bf;
+  background: #f7a8bf;
+  box-shadow: 0 4px 10px rgb(217 79 131 / 18%);
 }
 
 .account-panel {
@@ -142,6 +209,12 @@ async function logout(): Promise<void> {
   cursor: pointer;
 }
 
+.account-panel button:hover {
+  border-color: #e9a5b8;
+  background: #fff7fa;
+  box-shadow: 0 8px 18px rgb(217 79 131 / 10%);
+}
+
 .admin-content {
   min-width: 0;
   padding: 32px;
@@ -154,6 +227,7 @@ async function logout(): Promise<void> {
 
   .admin-sidebar {
     position: static;
+    height: auto;
     border-right: 0;
     border-bottom: 1px solid #f0bdcb;
   }

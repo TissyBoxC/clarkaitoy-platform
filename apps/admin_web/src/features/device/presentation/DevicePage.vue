@@ -13,27 +13,27 @@
 <style scoped>
 .page-header {
   padding: 24px;
-  border: 1px solid #d8e2dd;
-  border-radius: 8px;
+  border: 1px solid var(--sprout-outline);
+  border-radius: var(--sprout-radius-card);
   background: #ffffff;
+  box-shadow: 0 8px 24px rgb(194 91 128 / 5%);
 }
 
 .eyebrow {
   margin: 0 0 6px;
-  color: #61736c;
+  color: var(--sprout-pink-strong);
   font-size: 13px;
-  font-weight: 600;
-  text-transform: uppercase;
+  font-weight: 700;
 }
 
 h1 {
   margin: 0;
-  color: #183c34;
+  color: var(--sprout-text);
   font-size: 28px;
 }
 
 .page-description {
   margin: 12px 0 0;
-  color: #61736c;
+  color: var(--sprout-text-muted);
 }
 </style>

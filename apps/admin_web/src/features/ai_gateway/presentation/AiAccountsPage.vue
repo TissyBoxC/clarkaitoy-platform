@@ -45,105 +45,105 @@ async function save(): Promise<void> {
         <h1>家长 AI 账号</h1>
         <p>这里只管理余额、模型和账号状态，不会显示家长或设备使用的密钥。</p>
       </div>
-      <button type="button" :disabled="store.isLoading" @click="store.load">
-        重新加载
-      </button>
+      <button type="button" :disabled="store.isLoading" @click="store.load">重新加载</button>
     </header>
 
-    <p v-if="saveMessage" class="success-message">{{ saveMessage }}</p>
-    <p v-if="store.error" class="error-message">{{ store.error.message }}</p>
+    <Transition name="toast">
+      <p v-if="saveMessage" class="success-message">{{ saveMessage }}</p>
+    </Transition>
+    <Transition name="toast">
+      <p v-if="store.error" class="error-message">{{ store.error.message }}</p>
+    </Transition>
 
-    <div v-if="store.isLoading" class="state-panel">正在读取家长账号…</div>
-    <div v-else-if="store.accounts.length === 0" class="state-panel">
-      还没有家长账号。家长完成注册后，账号会显示在这里。
-    </div>
-    <div v-else class="table-shell">
-      <table>
-        <thead>
-          <tr>
-            <th>家长</th>
-            <th>状态</th>
-            <th>余额</th>
-            <th>同时对话</th>
-            <th>可分配模型</th>
-            <th>家长已选</th>
-            <th>凭证</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="account in store.accounts" :key="account.providerAccountId">
-            <td>
-              <span class="parent-name">
+    <Transition name="page" mode="out-in">
+      <div v-if="store.isLoading" key="loading" class="state-panel">
+        <span class="state-spinner" aria-hidden="true"></span>
+        正在读取家长账号…
+      </div>
+      <div v-else-if="store.accounts.length === 0" key="empty" class="state-panel">
+        <span class="state-icon" aria-hidden="true">☆</span>
+        <span>还没有家长账号。家长完成注册后，账号会显示在这里。</span>
+      </div>
+      <div v-else key="table" class="table-shell">
+        <table>
+          <thead>
+            <tr>
+              <th>家长</th>
+              <th>状态</th>
+              <th>余额</th>
+              <th>同时对话</th>
+              <th>可分配模型</th>
+              <th>家长已选</th>
+              <th>凭证</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="account in store.accounts" :key="account.providerAccountId">
+              <td>
+                <span class="parent-name">
+                  {{ account.parentDisplayName || account.parentEmail || '未提供称呼' }}
+                </span>
+                <span class="parent-email">{{ account.parentEmail }}</span>
+              </td>
+              <td>
+                <span :class="['status', account.status]">
+                  {{ account.status === 'active' ? '可用' : '已暂停' }}
+                </span>
+              </td>
+              <td>${{ account.balanceUsd.toFixed(2) }}</td>
+              <td>{{ account.concurrencyLimit }}</td>
+              <td>{{ account.availableModels.join('、') || '使用默认模型' }}</td>
+              <td>
                 {{
-                  account.parentDisplayName ||
-                  account.parentEmail ||
-                  '未提供称呼'
+                  account.selectedModels.length === 0
+                    ? '全部可用'
+                    : account.selectedModels.join('、')
                 }}
-              </span>
-              <span class="parent-email">{{ account.parentEmail }}</span>
-            </td>
-            <td>
-              <span :class="['status', account.status]">
-                {{ account.status === 'active' ? '可用' : '已暂停' }}
-              </span>
-            </td>
-            <td>${{ account.balanceUsd.toFixed(2) }}</td>
-            <td>{{ account.concurrencyLimit }}</td>
-            <td>{{ account.availableModels.join('、') || '使用默认模型' }}</td>
-            <td>
-              {{
-                account.selectedModels.length === 0
-                  ? '全部可用'
-                  : account.selectedModels.join('、')
-              }}
-            </td>
-            <td>{{ account.credentialReady ? '已就绪' : '待修复' }}</td>
-            <td>
-              <button type="button" @click="openEditor(account)">管理</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+              </td>
+              <td>{{ account.credentialReady ? '已就绪' : '待修复' }}</td>
+              <td>
+                <button type="button" @click="openEditor(account)">管理</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </Transition>
 
-    <div v-if="editing" class="dialog-backdrop" @click.self="editing = null">
-      <form class="dialog" @submit.prevent="save">
-        <h2>调整家长 AI 额度</h2>
-        <p class="account-id">
-          {{
-            editing.parentDisplayName ||
-            editing.parentEmail ||
-            editing.providerAccountId
-          }}
-        </p>
-        <label>
-          <span>账号状态</span>
-          <select v-model="editing.status">
-            <option value="active">可用</option>
-            <option value="suspended">暂停使用</option>
-          </select>
-        </label>
-        <label>
-          <span>可用余额（美元）</span>
-          <input v-model.number="editing.balanceUsd" type="number" min="0" step="0.01" />
-        </label>
-        <label>
-          <span>同时对话数量</span>
-          <input v-model.number="editing.concurrencyLimit" type="number" min="1" />
-        </label>
-        <label>
-          <span>可分配模型</span>
-          <input v-model="modelsText" placeholder="用逗号分隔，留空使用默认模型" />
-        </label>
-        <div class="dialog-actions">
-          <button type="button" class="secondary" @click="editing = null">
-            取消
-          </button>
-          <button type="submit">保存更改</button>
-        </div>
-      </form>
-    </div>
+    <Transition name="modal">
+      <div v-if="editing" class="dialog-backdrop" @click.self="editing = null">
+        <form class="dialog" @submit.prevent="save">
+          <h2>调整家长 AI 额度</h2>
+          <p class="account-id">
+            {{ editing.parentDisplayName || editing.parentEmail || editing.providerAccountId }}
+          </p>
+          <label>
+            <span>账号状态</span>
+            <select v-model="editing.status">
+              <option value="active">可用</option>
+              <option value="suspended">暂停使用</option>
+            </select>
+          </label>
+          <label>
+            <span>可用余额（美元）</span>
+            <input v-model.number="editing.balanceUsd" type="number" min="0" step="0.01" />
+          </label>
+          <label>
+            <span>同时对话数量</span>
+            <input v-model.number="editing.concurrencyLimit" type="number" min="1" />
+          </label>
+          <label>
+            <span>可分配模型</span>
+            <input v-model="modelsText" placeholder="用逗号分隔，留空使用默认模型" />
+          </label>
+          <div class="dialog-actions">
+            <button type="button" class="secondary" @click="editing = null">取消</button>
+            <button type="submit">保存更改</button>
+          </div>
+        </form>
+      </div>
+    </Transition>
   </section>
 </template>
 
@@ -179,12 +179,18 @@ button {
   min-height: 38px;
   padding: 0 16px;
   border: 1px solid #e9a5b8;
-  border-radius: 19px;
+  border-radius: var(--sprout-radius-control);
   background: #ffffff;
   color: #c94175;
   font: inherit;
   font-weight: 700;
   cursor: pointer;
+}
+
+button:not(:disabled):hover {
+  border-color: #d94f83;
+  background: #fff7fa;
+  box-shadow: 0 8px 18px rgb(217 79 131 / 10%);
 }
 
 button:disabled {
@@ -195,9 +201,10 @@ button:disabled {
 .table-shell,
 .state-panel {
   overflow: hidden;
-  border: 1px solid #f0bdcb;
-  border-radius: 20px;
+  border: 1px solid var(--sprout-outline);
+  border-radius: var(--sprout-radius-card);
   background: #ffffff;
+  box-shadow: 0 10px 28px rgb(194 91 128 / 6%);
 }
 
 table {
@@ -223,6 +230,14 @@ td {
 
 tbody tr:last-child td {
   border-bottom: 0;
+}
+
+tbody tr {
+  transition: background-color var(--sprout-duration-fast) ease;
+}
+
+tbody tr:hover {
+  background: #fff8fa;
 }
 
 .account-id {
@@ -259,8 +274,36 @@ tbody tr:last-child td {
 }
 
 .state-panel {
+  display: flex;
+  min-height: 132px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
   padding: 28px;
   color: #6b4f5a;
+  text-align: center;
+}
+
+.state-spinner {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border: 2px solid #f0bdcb;
+  border-top-color: #d94f83;
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+.state-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 12px;
+  background: #fff2f5;
+  color: #d94f83;
+  font-size: 20px;
 }
 
 .error-message {
@@ -278,6 +321,7 @@ tbody tr:last-child td {
   place-items: center;
   padding: 20px;
   background: rgb(74 46 59 / 35%);
+  backdrop-filter: blur(3px);
 }
 
 .dialog {
@@ -288,6 +332,7 @@ tbody tr:last-child td {
   border: 1px solid #f0bdcb;
   border-radius: 26px;
   background: #ffffff;
+  box-shadow: 0 28px 72px rgb(74 46 59 / 22%);
 }
 
 .dialog h2 {
@@ -311,6 +356,18 @@ tbody tr:last-child td {
   background: #fff8fa;
   color: #4a2e3b;
   font: inherit;
+  transition:
+    border-color var(--sprout-duration-fast) ease,
+    box-shadow var(--sprout-duration-fast) ease,
+    background-color var(--sprout-duration-fast) ease;
+}
+
+.dialog input:focus,
+.dialog select:focus {
+  border-color: #d94f83;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgb(217 79 131 / 12%);
+  outline: none;
 }
 
 .dialog-actions {
@@ -324,5 +381,16 @@ tbody tr:last-child td {
   border-color: #d94f83;
   background: #d94f83;
   color: #ffffff;
+}
+
+.dialog button[type='submit']:hover {
+  background: #c94175;
+  box-shadow: 0 10px 20px rgb(217 79 131 / 18%);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

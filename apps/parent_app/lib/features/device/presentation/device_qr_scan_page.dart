@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../../core/theme/app_motion.dart';
+import '../../../shared/widgets/app_reveal.dart';
 import '../application/device_binding_controller.dart';
 import '../domain/device_payload.dart';
 
@@ -93,20 +95,28 @@ class _DeviceQrScanPageState extends ConsumerState<DeviceQrScanPage> {
             ),
           ),
           const Center(child: _ScannerFrame()),
-          if (_errorMessage != null)
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: Container(
-                width: double.infinity,
-                margin: const EdgeInsets.all(24),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.errorContainer,
-                  borderRadius: BorderRadius.circular(18),
+          AnimatedSlide(
+            offset: _errorMessage == null ? const Offset(0, 0.18) : Offset.zero,
+            duration: AppMotion.standard,
+            curve: AppMotion.enterCurve,
+            child: AnimatedOpacity(
+              opacity: _errorMessage == null ? 0 : 1,
+              duration: AppMotion.fast,
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.all(24),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Text(_errorMessage ?? ''),
                 ),
-                child: Text(_errorMessage!),
               ),
             ),
+          ),
         ],
       ),
     );
@@ -118,15 +128,26 @@ class _ScannerFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 240,
-      height: 240,
-      decoration: BoxDecoration(
-        border: Border.all(
-          color: Theme.of(context).colorScheme.primary,
-          width: 3,
+    return AppReveal(
+      child: Container(
+        width: 240,
+        height: 240,
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: Theme.of(context).colorScheme.primary,
+            width: 3,
+          ),
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Theme.of(
+                context,
+              ).colorScheme.primary.withValues(alpha: 0.18),
+              blurRadius: 28,
+              spreadRadius: 2,
+            ),
+          ],
         ),
-        borderRadius: BorderRadius.circular(24),
       ),
     );
   }

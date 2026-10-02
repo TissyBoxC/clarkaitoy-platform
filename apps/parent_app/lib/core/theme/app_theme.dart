@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'app_motion.dart';
+
 /// Central Material 3 theme for the 如此萌屋 parent application.
 ///
 /// Pink-white surfaces stay readable through deep plum text, restrained
@@ -28,6 +30,8 @@ abstract final class AppTheme {
       colorScheme: colorScheme,
       useMaterial3: true,
       scaffoldBackgroundColor: _surface,
+      pageTransitionsTheme: AppMotion.pageTransitionsTheme,
+      splashFactory: InkSparkle.splashFactory,
       visualDensity: VisualDensity.standard,
       appBarTheme: const AppBarTheme(
         backgroundColor: _surface,
@@ -75,6 +79,7 @@ abstract final class AppTheme {
           backgroundColor: _primaryStrong,
           foregroundColor: Colors.white,
           minimumSize: const Size.fromHeight(52),
+          animationDuration: AppMotion.fast,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(26),
           ),
@@ -85,6 +90,7 @@ abstract final class AppTheme {
         style: OutlinedButton.styleFrom(
           foregroundColor: _primaryStrong,
           minimumSize: const Size.fromHeight(52),
+          animationDuration: AppMotion.fast,
           side: const BorderSide(color: _outline),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(26),
@@ -92,7 +98,39 @@ abstract final class AppTheme {
         ),
       ),
       textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(foregroundColor: _primaryStrong),
+        style: TextButton.styleFrom(
+          foregroundColor: _primaryStrong,
+          animationDuration: AppMotion.fast,
+        ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(26),
+          side: const BorderSide(color: _outline),
+        ),
+        titleTextStyle: const TextStyle(
+          color: _text,
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+        ),
+        contentTextStyle: const TextStyle(color: _textMuted, height: 1.45),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        showDragHandle: true,
+        dragHandleColor: _outline,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: _text,
+        contentTextStyle: const TextStyle(color: Colors.white),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       ),
       listTileTheme: const ListTileThemeData(
         iconColor: _primaryStrong,

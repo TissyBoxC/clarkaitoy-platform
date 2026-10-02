@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/theme/app_motion.dart';
+import '../../../shared/widgets/app_reveal.dart';
+import '../../../shared/widgets/app_state_switcher.dart';
 import '../application/device_binding_controller.dart';
 
 /// Lists bound devices and starts QR or nearby-device provisioning.
@@ -20,145 +23,188 @@ class DeviceListPage extends ConsumerWidget {
           icon: const Icon(Icons.arrow_back),
         ),
       ),
-      body: binding.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('暂时无法读取设备'),
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: () => ref
-                      .read(deviceBindingControllerProvider.notifier)
-                      .refresh(),
-                  child: const Text('重新加载'),
-                ),
-              ],
+      body: AppStateSwitcher(
+        stateKey: binding.when(
+          data: (_) => 'devices-content',
+          error: (_, _) => 'devices-error',
+          loading: () => 'devices-loading',
+        ),
+        child: binding.when(
+          loading: () => const Center(
+            key: ValueKey<String>('devices-loading'),
+            child: CircularProgressIndicator(),
+          ),
+          error: (error, _) => Center(
+            key: const ValueKey<String>('devices-error'),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('暂时无法读取设备'),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: () => ref
+                        .read(deviceBindingControllerProvider.notifier)
+                        .refresh(),
+                    child: const Text('重新加载'),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-        data: (state) {
-          return RefreshIndicator(
-            onRefresh: () =>
-                ref.read(deviceBindingControllerProvider.notifier).refresh(),
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          '添加新设备',
-                          style: Theme.of(context).textTheme.titleMedium,
+          data: (state) {
+            return RefreshIndicator(
+              key: const ValueKey<String>('devices-content'),
+              onRefresh: () =>
+                  ref.read(deviceBindingControllerProvider.notifier).refresh(),
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  AppReveal(
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              '添加新设备',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            const SizedBox(height: 6),
+                            const Text('带屏幕的初芽会显示二维码；没有屏幕时请在附近设备中选择。'),
+                            const SizedBox(height: 16),
+                            FilledButton.icon(
+                              onPressed: () => context.go('/devices/scan'),
+                              icon: const Icon(Icons.qr_code_scanner),
+                              label: const Text('扫描设备绑定码'),
+                            ),
+                            const SizedBox(height: 10),
+                            AnimatedSwitcher(
+                              duration: AppMotion.fast,
+                              child: OutlinedButton.icon(
+                                key: ValueKey<bool>(state.isScanning),
+                                onPressed: state.isScanning
+                                    ? null
+                                    : () => ref
+                                          .read(
+                                            deviceBindingControllerProvider
+                                                .notifier,
+                                          )
+                                          .scanNearby(),
+                                icon: state.isScanning
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.bluetooth_searching),
+                                label: Text(
+                                  state.isScanning ? '正在寻找设备…' : '在附近设备中添加',
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 6),
-                        const Text('带屏幕的初芽会显示二维码；没有屏幕时请在附近设备中选择。'),
-                        const SizedBox(height: 16),
-                        FilledButton.icon(
-                          onPressed: () => context.go('/devices/scan'),
-                          icon: const Icon(Icons.qr_code_scanner),
-                          label: const Text('扫描设备绑定码'),
-                        ),
-                        const SizedBox(height: 10),
-                        OutlinedButton.icon(
-                          onPressed: state.isScanning
-                              ? null
-                              : () => ref
-                                    .read(
-                                      deviceBindingControllerProvider.notifier,
-                                    )
-                                    .scanNearby(),
-                          icon: state.isScanning
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.bluetooth_searching),
-                          label: Text(
-                            state.isScanning ? '正在寻找设备…' : '在附近设备中添加',
+                      ),
+                    ),
+                  ),
+                  AnimatedSize(
+                    duration: AppMotion.standard,
+                    curve: AppMotion.enterCurve,
+                    alignment: Alignment.topCenter,
+                    child: state.errorMessage == null
+                        ? const SizedBox(width: double.infinity)
+                        : Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Card(
+                              child: ListTile(
+                                leading: const Icon(Icons.info_outline),
+                                title: Text(state.errorMessage!),
+                              ),
+                            ),
+                          ),
+                  ),
+                  if (state.devices.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    Text(
+                      '发现的设备',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    for (var index = 0; index < state.devices.length; index++)
+                      AppReveal(
+                        delay: Duration(milliseconds: 55 * index.clamp(0, 5)),
+                        child: Card(
+                          child: ListTile(
+                            leading: const Icon(Icons.bluetooth),
+                            title: Text(state.devices[index].name),
+                            subtitle: Text(
+                              '信号 ${state.devices[index].rssi} dBm',
+                            ),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () => _openDiscoveredDevice(
+                              context,
+                              state.devices[index].name,
+                            ),
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                ),
-                if (state.errorMessage != null) ...[
-                  const SizedBox(height: 12),
-                  Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.info_outline),
-                      title: Text(state.errorMessage!),
-                    ),
-                  ),
-                ],
-                if (state.devices.isNotEmpty) ...[
-                  const SizedBox(height: 20),
-                  Text('发现的设备', style: Theme.of(context).textTheme.titleMedium),
+                      ),
+                  ],
+                  const SizedBox(height: 24),
+                  Text('已绑定设备', style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
-                  ...state.devices.map(
-                    (device) => Card(
+                  if (state.bindings.isEmpty)
+                    const Card(
                       child: ListTile(
-                        leading: const Icon(Icons.bluetooth),
-                        title: Text(device.name),
-                        subtitle: Text('信号 ${device.rssi} dBm'),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () =>
-                            _openDiscoveredDevice(context, device.name),
+                        leading: Icon(Icons.toys_outlined),
+                        title: Text('还没有绑定设备'),
+                        subtitle: Text('完成上面的步骤后，设备会显示在这里。'),
                       ),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 24),
-                Text('已绑定设备', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
-                if (state.bindings.isEmpty)
-                  const Card(
-                    child: ListTile(
-                      leading: Icon(Icons.toys_outlined),
-                      title: Text('还没有绑定设备'),
-                      subtitle: Text('完成上面的步骤后，设备会显示在这里。'),
-                    ),
-                  )
-                else
-                  ...state.bindings.map(
-                    (device) => Card(
-                      child: ListTile(
-                        leading: const Icon(Icons.toys_outlined),
-                        title: Text(device.deviceName),
-                        subtitle: Text(
-                          [
-                            if (device.hardwareModel.isNotEmpty)
-                              device.hardwareModel,
-                            if (device.firmwareVersion.isNotEmpty)
-                              device.firmwareVersion,
-                          ].join(' · '),
-                        ),
-                        trailing: IconButton(
-                          tooltip: '解除绑定',
-                          onPressed: () => _confirmRemove(
-                            context,
-                            ref,
-                            device.deviceId,
-                            device.deviceName,
+                    )
+                  else
+                    for (var index = 0; index < state.bindings.length; index++)
+                      AppReveal(
+                        delay: Duration(milliseconds: 55 * index.clamp(0, 5)),
+                        child: Card(
+                          child: ListTile(
+                            leading: const Icon(Icons.toys_outlined),
+                            title: Text(state.bindings[index].deviceName),
+                            subtitle: Text(
+                              [
+                                if (state
+                                    .bindings[index]
+                                    .hardwareModel
+                                    .isNotEmpty)
+                                  state.bindings[index].hardwareModel,
+                                if (state
+                                    .bindings[index]
+                                    .firmwareVersion
+                                    .isNotEmpty)
+                                  state.bindings[index].firmwareVersion,
+                              ].join(' · '),
+                            ),
+                            trailing: IconButton(
+                              tooltip: '解除绑定',
+                              onPressed: () => _confirmRemove(
+                                context,
+                                ref,
+                                state.bindings[index].deviceId,
+                                state.bindings[index].deviceName,
+                              ),
+                              icon: const Icon(Icons.link_off),
+                            ),
                           ),
-                          icon: const Icon(Icons.link_off),
                         ),
                       ),
-                    ),
-                  ),
-              ],
-            ),
-          );
-        },
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }

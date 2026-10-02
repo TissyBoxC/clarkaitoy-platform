@@ -1,0 +1,148 @@
+:root {
+  color-scheme: light;
+  --sprout-surface: #fffbfc;
+  --sprout-surface-raised: #ffffff;
+  --sprout-surface-soft: #fff2f5;
+  --sprout-pink: #f7a8bf;
+  --sprout-pink-strong: #d94f83;
+  --sprout-pink-deep: #b23a68;
+  --sprout-outline: #f0bdcb;
+  --sprout-outline-soft: #f7d9e2;
+  --sprout-text: #4a2e3b;
+  --sprout-text-muted: #6b4f5a;
+  --sprout-yellow: #ffe066;
+  --sprout-blue: #66ccff;
+  --sprout-shadow-soft: 0 14px 34px rgb(194 91 128 / 10%);
+  --sprout-shadow-hover: 0 18px 42px rgb(194 91 128 / 16%);
+  --sprout-radius-control: 18px;
+  --sprout-radius-card: 22px;
+  --sprout-duration-fast: 150ms;
+  --sprout-duration-base: 220ms;
+  --sprout-duration-slow: 320ms;
+  --sprout-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  background: var(--sprout-surface);
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  color: var(--sprout-text);
+  background:
+    radial-gradient(circle at 92% 4%, rgb(255 224 102 / 10%), transparent 24rem),
+    radial-gradient(circle at 4% 12%, rgb(102 204 255 / 8%), transparent 28rem),
+    var(--sprout-surface);
+  font-family: Inter, 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  transition:
+    transform var(--sprout-duration-fast) var(--sprout-ease-out),
+    border-color var(--sprout-duration-fast) ease,
+    background-color var(--sprout-duration-fast) ease,
+    box-shadow var(--sprout-duration-base) ease,
+    color var(--sprout-duration-fast) ease,
+    opacity var(--sprout-duration-fast) ease;
+}
+
+button:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+:focus-visible {
+  outline: 2px solid var(--sprout-pink-strong);
+  outline-offset: 3px;
+}
+
+::selection {
+  color: var(--sprout-text);
+  background: rgb(247 168 191 / 42%);
+}
+
+.page-enter-active,
+.page-leave-active {
+  transition:
+    opacity var(--sprout-duration-base) ease,
+    transform var(--sprout-duration-base) var(--sprout-ease-out);
+}
+
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity var(--sprout-duration-base) ease;
+}
+
+.modal-enter-active .dialog,
+.modal-leave-active .dialog {
+  transition:
+    opacity var(--sprout-duration-base) ease,
+    transform var(--sprout-duration-slow) var(--sprout-ease-out);
+}
+
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+
+.modal-enter-from .dialog,
+.modal-leave-to .dialog {
+  opacity: 0;
+  transform: translateY(10px) scale(0.97);
+}
+
+.toast-enter-active,
+.toast-leave-active {
+  transition:
+    opacity var(--sprout-duration-base) ease,
+    transform var(--sprout-duration-base) var(--sprout-ease-out);
+}
+
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
+  }
+}

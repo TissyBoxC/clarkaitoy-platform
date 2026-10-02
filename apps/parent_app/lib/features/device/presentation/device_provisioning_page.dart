@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/error/app_exception.dart';
+import '../../../shared/widgets/app_state_switcher.dart';
 import '../application/device_binding_controller.dart';
 import '../domain/device_payload.dart';
 
@@ -152,13 +153,37 @@ class _DeviceProvisioningPageState
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20),
-          child: switch (_step) {
-            _ProvisioningStep.finding => _buildFinding(),
-            _ProvisioningStep.wifi => _buildWifiList(),
-            _ProvisioningStep.password => _buildPassword(),
-            _ProvisioningStep.binding => _buildProgress('正在完成连接…'),
-            _ProvisioningStep.done => _buildDone(),
-          },
+          child: AppStateSwitcher(
+            stateKey: _step,
+            child: switch (_step) {
+              _ProvisioningStep.finding => KeyedSubtree(
+                key: const ValueKey<_ProvisioningStep>(
+                  _ProvisioningStep.finding,
+                ),
+                child: _buildFinding(),
+              ),
+              _ProvisioningStep.wifi => KeyedSubtree(
+                key: const ValueKey<_ProvisioningStep>(_ProvisioningStep.wifi),
+                child: _buildWifiList(),
+              ),
+              _ProvisioningStep.password => KeyedSubtree(
+                key: const ValueKey<_ProvisioningStep>(
+                  _ProvisioningStep.password,
+                ),
+                child: _buildPassword(),
+              ),
+              _ProvisioningStep.binding => KeyedSubtree(
+                key: const ValueKey<_ProvisioningStep>(
+                  _ProvisioningStep.binding,
+                ),
+                child: _buildProgress('正在完成连接…'),
+              ),
+              _ProvisioningStep.done => KeyedSubtree(
+                key: const ValueKey<_ProvisioningStep>(_ProvisioningStep.done),
+                child: _buildDone(),
+              ),
+            },
+          ),
         ),
       ),
     );
@@ -235,15 +260,20 @@ class _DeviceProvisioningPageState
           child: ListView(
             children: _networks
                 .map(
-                  (network) => Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.wifi),
-                      title: Text(network.ssid),
-                      subtitle: network.rssi == null
-                          ? null
-                          : Text('信号 ${network.rssi} dBm'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => _selectNetwork(network),
+                  (network) => AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    margin: const EdgeInsets.only(bottom: 2),
+                    child: Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.wifi),
+                        title: Text(network.ssid),
+                        subtitle: network.rssi == null
+                            ? null
+                            : Text('信号 ${network.rssi} dBm'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => _selectNetwork(network),
+                      ),
                     ),
                   ),
                 )
@@ -309,9 +339,22 @@ class _DeviceProvisioningPageState
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.check_circle_outline, size: 56),
+          TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0.82, end: 1),
+            duration: const Duration(milliseconds: 360),
+            curve: Curves.easeOutBack,
+            builder: (context, scale, child) =>
+                Transform.scale(scale: scale, child: child),
+            child: Icon(
+              Icons.check_circle_outline,
+              size: 56,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
           const SizedBox(height: 16),
-          const Text('初芽已连接'),
+          Text('初芽已连接', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 6),
+          const Text('现在可以在家长端查看设备状态。'),
           const SizedBox(height: 20),
           FilledButton(
             onPressed: () => context.go('/devices'),
