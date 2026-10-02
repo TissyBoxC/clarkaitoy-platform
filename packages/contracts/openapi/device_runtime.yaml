@@ -1,0 +1,434 @@
+openapi: 3.1.0
+info:
+  title: Sprout device runtime API
+  version: 1.0.0
+  description: |
+    Device heartbeat, parent runtime status, and administrator maintenance
+    commands. All session and administrator endpoints use the platform's
+    normal bearer-token authentication.
+servers:
+  - url: https://api.clarkhub.cn
+paths:
+  /api/v1/devices/{device_id}/runtime/heartbeat:
+    post:
+      operationId: recordDeviceHeartbeat
+      summary: Record an authenticated device heartbeat
+      description: |
+        The device session token identifies the owner. The path device id must
+        match that owner. A repeated heartbeat id is accepted idempotently.
+      security:
+        - deviceSession: []
+      parameters:
+        - $ref: '#/components/parameters/DeviceID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/device_runtime.schema.json'
+      responses:
+        '200':
+          description: Current runtime state after the heartbeat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /api/v1/devices/{device_id}/runtime/commands:
+    get:
+      operationId: listPendingDeviceCommands
+      summary: List pending maintenance commands for the authenticated device
+      security:
+        - deviceSession: []
+      parameters:
+        - $ref: '#/components/parameters/DeviceID'
+      responses:
+        '200':
+          description: Commands awaiting acknowledgement
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandListEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/devices/{device_id}/runtime/commands/{command_id}/ack:
+    post:
+      operationId: acknowledgeDeviceCommand
+      summary: Acknowledge a device maintenance command
+      security:
+        - deviceSession: []
+      parameters:
+        - $ref: '#/components/parameters/DeviceID'
+        - $ref: '#/components/parameters/CommandID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - status
+                - result_code
+              properties:
+                status:
+                  type: string
+                  enum:
+                    - acknowledged
+                    - failed
+                result_code:
+                  type: string
+                  maxLength: 128
+      responses:
+        '200':
+          description: The command was acknowledged exactly once
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/devices/status:
+    get:
+      operationId: listParentDeviceStatuses
+      summary: List runtime status for the signed-in guardian
+      security:
+        - parentSession: []
+      responses:
+        '200':
+          description: Guardian-owned device statuses
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceStatusListEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/devices/{device_id}/status:
+    get:
+      operationId: getParentDeviceStatus
+      summary: Read one guardian-owned device status
+      security:
+        - parentSession: []
+      parameters:
+        - $ref: '#/components/parameters/DeviceID'
+      responses:
+        '200':
+          description: Current device runtime status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceStatusEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/admin/devices:
+    get:
+      operationId: listAdminDeviceStatuses
+      summary: List all device runtime statuses for operations staff
+      security:
+        - adminSession: []
+      responses:
+        '200':
+          description: All device statuses
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceStatusListEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/admin/devices/{device_id}/commands:
+    post:
+      operationId: createAdminDeviceCommand
+      summary: Queue a maintenance command for one device
+      security:
+        - adminSession: []
+      parameters:
+        - $ref: '#/components/parameters/DeviceID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - command_type
+              properties:
+                command_type:
+                  type: string
+                  enum:
+                    - refresh_configuration
+                    - reconnect_network
+                    - resync_time
+      responses:
+        '201':
+          description: Command queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+    get:
+      operationId: listAdminDeviceCommands
+      summary: List recent maintenance commands for one device
+      security:
+        - adminSession: []
+      parameters:
+        - $ref: '#/components/parameters/DeviceID'
+      responses:
+        '200':
+          description: Recent commands
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandListEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+components:
+  securitySchemes:
+    parentSession:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    adminSession:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    deviceSession:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+  parameters:
+    DeviceID:
+      name: device_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[a-z][a-z0-9]*(?:_[a-z0-9]+){1,7}$'
+    CommandID:
+      name: command_id
+      in: path
+      required: true
+      schema:
+        oneOf:
+          - type: string
+            format: uuid
+          - type: string
+            pattern: '^[a-z][a-z0-9]*(?:_[a-z0-9]+){1,7}$'
+  schemas:
+    RuntimeEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/RuntimeStatus'
+    DeviceStatusEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/DeviceStatus'
+    DeviceStatusListEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              required:
+                - devices
+              properties:
+                devices:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/DeviceStatus'
+    CommandEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Command'
+    CommandListEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              required:
+                - commands
+              properties:
+                commands:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Command'
+    AckEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              required:
+                - acknowledged
+              properties:
+                acknowledged:
+                  type: boolean
+    SuccessEnvelope:
+      type: object
+      required:
+        - schema_version
+        - request_id
+        - data
+      properties:
+        schema_version:
+          type: string
+          const: 1.0.0
+        request_id:
+          type: string
+        data: {}
+    RuntimeStatus:
+      $ref: '../schemas/device_runtime.schema.json'
+    DeviceStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - device_id
+        - device_name
+        - hardware_model
+        - firmware_version
+        - capabilities
+        - bound_at
+        - updated_at
+        - runtime
+      properties:
+        device_id:
+          type: string
+        device_name:
+          type: string
+        hardware_model:
+          type: string
+        firmware_version:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        bound_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        runtime:
+          oneOf:
+            - $ref: '#/components/schemas/RuntimeStatus'
+            - type: 'null'
+    Command:
+      type: object
+      additionalProperties: false
+      required:
+        - command_id
+        - device_id
+        - command_type
+        - status
+        - created_at
+      properties:
+        command_id:
+          type: string
+        device_id:
+          type: string
+        command_type:
+          type: string
+          enum:
+            - refresh_configuration
+            - reconnect_network
+            - resync_time
+        status:
+          type: string
+          enum:
+            - pending
+            - delivered
+            - acknowledged
+            - failed
+        request_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        delivered_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        acknowledged_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        result_code:
+          type: string
+  responses:
+    BadRequest:
+      description: Request body is malformed
+      content:
+        application/json:
+          schema:
+            $ref: '../errors/error_response.schema.json'
+    Unauthorized:
+      description: Session or device token is missing or expired
+      content:
+        application/json:
+          schema:
+            $ref: '../errors/error_response.schema.json'
+    Forbidden:
+      description: The signed-in account has insufficient permission
+      content:
+        application/json:
+          schema:
+            $ref: '../errors/error_response.schema.json'
+    NotFound:
+      description: Device or command was not found
+      content:
+        application/json:
+          schema:
+            $ref: '../errors/error_response.schema.json'
+    Conflict:
+      description: The command was already handled
+      content:
+        application/json:
+          schema:
+            $ref: '../errors/error_response.schema.json'
+    Unprocessable:
+      description: Device data failed validation
+      content:
+        application/json:
+          schema:
+            $ref: '../errors/error_response.schema.json'

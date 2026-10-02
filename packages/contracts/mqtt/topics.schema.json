@@ -30,7 +30,7 @@
         "properties": {
           "topic": {
             "type": "string",
-            "pattern": "^sprout/v1/[a-z_]+(?:/[a-z_]+)*$"
+            "pattern": "^sprout/v1/(?:devices/\\{device_id\\}|[a-z_]+)(?:/[a-z_]+)*(?:/\\{device_id\\})?$"
           },
           "direction": {
             "type": "string",

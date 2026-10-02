@@ -2,7 +2,21 @@
   "schema_version": "1.0.0",
   "topics": [
     {
-      "topic": "sprout/v1/device/heartbeat",
+      "topic": "sprout/v1/devices/{device_id}/runtime",
+      "direction": "device_to_platform",
+      "qos": 1,
+      "retain": false,
+      "payload_schema": "https://sprout.example/contracts/schemas/device_runtime.schema.json"
+    },
+    {
+      "topic": "sprout/v1/devices/{device_id}/commands",
+      "direction": "platform_to_device",
+      "qos": 1,
+      "retain": false,
+      "payload_schema": "https://sprout.example/contracts/events/device_event.schema.json"
+    },
+    {
+      "topic": "sprout/v1/devices/{device_id}/commands/ack",
       "direction": "device_to_platform",
       "qos": 1,
       "retain": false,

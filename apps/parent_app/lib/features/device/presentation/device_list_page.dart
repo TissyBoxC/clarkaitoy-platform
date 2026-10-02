@@ -6,6 +6,7 @@ import '../../../core/theme/app_motion.dart';
 import '../../../shared/widgets/app_reveal.dart';
 import '../../../shared/widgets/app_state_switcher.dart';
 import '../application/device_binding_controller.dart';
+import '../data/device_binding_api.dart';
 
 /// Lists bound devices and starts QR or nearby-device provisioning.
 class DeviceListPage extends ConsumerWidget {
@@ -174,19 +175,9 @@ class DeviceListPage extends ConsumerWidget {
                             leading: const Icon(Icons.toys_outlined),
                             title: Text(state.bindings[index].deviceName),
                             subtitle: Text(
-                              [
-                                if (state
-                                    .bindings[index]
-                                    .hardwareModel
-                                    .isNotEmpty)
-                                  state.bindings[index].hardwareModel,
-                                if (state
-                                    .bindings[index]
-                                    .firmwareVersion
-                                    .isNotEmpty)
-                                  state.bindings[index].firmwareVersion,
-                              ].join(' · '),
+                              _deviceSubtitle(state.bindings[index]),
                             ),
+                            isThreeLine: true,
                             trailing: IconButton(
                               tooltip: '解除绑定',
                               onPressed: () => _confirmRemove(
@@ -269,4 +260,43 @@ class DeviceListPage extends ConsumerWidget {
       await ref.read(deviceBindingControllerProvider.notifier).remove(deviceId);
     }
   }
+}
+
+String _deviceSubtitle(BoundDevice device) {
+  final runtime = device.runtime;
+  final details = <String>[
+    if (runtime != null)
+      runtime.isOnline ? '在线' : '离线',
+    if (runtime?.networkQuality.isNotEmpty == true)
+      '网络${_networkQualityLabel(runtime!.networkQuality)}',
+    if (runtime?.receivedAt != null)
+      '最近连接 ${_relativeTime(runtime!.receivedAt!)}',
+    if (device.hardwareModel.isNotEmpty) device.hardwareModel,
+    if (device.firmwareVersion.isNotEmpty) device.firmwareVersion,
+  ];
+  return details.join(' · ');
+}
+
+String _networkQualityLabel(String quality) {
+  return switch (quality) {
+    'excellent' => '很好',
+    'good' => '良好',
+    'fair' => '一般',
+    'poor' => '较差',
+    _ => '未知',
+  };
+}
+
+String _relativeTime(DateTime value) {
+  final difference = DateTime.now().difference(value.toLocal());
+  if (difference.inMinutes < 1) {
+    return '刚刚';
+  }
+  if (difference.inHours < 1) {
+    return '${difference.inMinutes} 分钟前';
+  }
+  if (difference.inDays < 1) {
+    return '${difference.inHours} 小时前';
+  }
+  return '${difference.inDays} 天前';
 }

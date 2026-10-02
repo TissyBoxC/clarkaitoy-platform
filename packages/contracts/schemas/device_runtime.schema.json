@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sprout.example/contracts/schemas/device_runtime.schema.json",
+  "title": "Device runtime status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "device_id",
+    "heartbeat_id",
+    "reported_at",
+    "firmware_version",
+    "connection",
+    "network_quality",
+    "time_sync",
+    "offline"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "device_id": {
+      "$ref": "https://sprout.example/contracts/schemas/common.schema.json#/$defs/identifier"
+    },
+    "heartbeat_id": {
+      "$ref": "https://sprout.example/contracts/schemas/common.schema.json#/$defs/identifier"
+    },
+    "reported_at": {
+      "$ref": "https://sprout.example/contracts/schemas/common.schema.json#/$defs/timestamp"
+    },
+    "firmware_version": {
+      "$ref": "https://sprout.example/contracts/schemas/common.schema.json#/$defs/firmware_version"
+    },
+    "connection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "transport"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "offline",
+            "connecting",
+            "online"
+          ]
+        },
+        "transport": {
+          "type": "string",
+          "enum": [
+            "none",
+            "wifi",
+            "cellular_4g"
+          ]
+        }
+      }
+    },
+    "network_quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "level",
+        "rssi_dbm",
+        "latency_ms",
+        "packet_loss_percent"
+      ],
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": [
+            "unknown",
+            "poor",
+            "fair",
+            "good",
+            "excellent"
+          ]
+        },
+        "rssi_dbm": {
+          "type": "integer",
+          "minimum": -127,
+          "maximum": 0
+        },
+        "latency_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 60000
+        },
+        "packet_loss_percent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    },
+    "time_sync": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "last_synced_at",
+        "offset_ms"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "unsynchronized",
+            "synchronizing",
+            "synchronized"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "none",
+            "sntp",
+            "platform"
+          ]
+        },
+        "last_synced_at": {
+          "oneOf": [
+            {
+              "$ref": "https://sprout.example/contracts/schemas/common.schema.json#/$defs/timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset_ms": {
+          "type": "integer",
+          "minimum": -60000,
+          "maximum": 60000
+        }
+      }
+    },
+    "offline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "reason",
+        "fallback_active",
+        "pending_telemetry"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "online",
+            "grace",
+            "offline"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "none",
+            "network_unavailable",
+            "authentication_failed",
+            "time_not_synchronized",
+            "service_unavailable"
+          ]
+        },
+        "fallback_active": {
+          "type": "boolean"
+        },
+        "pending_telemetry": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        }
+      }
+    }
+  }
+}

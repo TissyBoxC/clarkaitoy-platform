@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "device_id": "device_demo_001",
+  "heartbeat_id": "heartbeat_demo_001",
+  "reported_at": "2026-10-03T10:00:00Z",
+  "firmware_version": "0.3.0",
+  "connection": {
+    "state": "online",
+    "transport": "wifi"
+  },
+  "network_quality": {
+    "level": "good",
+    "rssi_dbm": -58,
+    "latency_ms": 42,
+    "packet_loss_percent": 1
+  },
+  "time_sync": {
+    "state": "synchronized",
+    "source": "sntp",
+    "last_synced_at": "2026-10-03T10:00:00Z",
+    "offset_ms": 12
+  },
+  "offline": {
+    "state": "online",
+    "reason": "none",
+    "fallback_active": false,
+    "pending_telemetry": 0
+  }
+}

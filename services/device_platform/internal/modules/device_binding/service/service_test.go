@@ -171,6 +171,12 @@ func (r *memoryRepository) ListByParentAccountID(
 	return nil, nil
 }
 
+func (r *memoryRepository) ListAllBindings(
+	context.Context,
+) ([]domain.Binding, error) {
+	return nil, nil
+}
+
 func (r *memoryRepository) GetByDeviceID(
 	context.Context,
 	string,

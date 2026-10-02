@@ -14,6 +14,7 @@ import (
 	gatewayservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/ai_gateway/service"
 	authservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/service"
 	bindingservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_binding/service"
+	runtimeservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_runtime/service"
 )
 
 // RouterOptions contains dependencies for the device platform HTTP transport.
@@ -23,6 +24,7 @@ type RouterOptions struct {
 	AuthService       *authservice.Service
 	AIService         *gatewayservice.Service
 	BindingService    *bindingservice.Service
+	RuntimeService    *runtimeservice.Service
 }
 
 // NewRouter returns the HTTP router for the device platform.
@@ -89,6 +91,41 @@ func NewRouter(options RouterOptions) http.Handler {
 			mux.HandleFunc(
 				"DELETE /api/v1/devices/{device_id}",
 				authHandler.requireAuthentication(bindingHandler.remove),
+			)
+		}
+		if options.RuntimeService != nil {
+			runtimeHandler := deviceRuntimeHandler{service: options.RuntimeService}
+			mux.HandleFunc(
+				"GET /api/v1/devices/status",
+				authHandler.requireAuthentication(runtimeHandler.listForParent),
+			)
+			mux.HandleFunc(
+				"GET /api/v1/devices/{device_id}/status",
+				authHandler.requireAuthentication(runtimeHandler.getForParent),
+			)
+			mux.HandleFunc(
+				"POST /api/v1/devices/{device_id}/runtime/heartbeat",
+				runtimeHandler.recordHeartbeat,
+			)
+			mux.HandleFunc(
+				"GET /api/v1/devices/{device_id}/runtime/commands",
+				runtimeHandler.listDeviceCommands,
+			)
+			mux.HandleFunc(
+				"POST /api/v1/devices/{device_id}/runtime/commands/{command_id}/ack",
+				runtimeHandler.acknowledgeCommand,
+			)
+			mux.HandleFunc(
+				"GET /api/v1/admin/devices",
+				authHandler.requireAdmin(runtimeHandler.listForAdmin),
+			)
+			mux.HandleFunc(
+				"POST /api/v1/admin/devices/{device_id}/commands",
+				authHandler.requireAdmin(runtimeHandler.createCommand),
+			)
+			mux.HandleFunc(
+				"GET /api/v1/admin/devices/{device_id}/commands",
+				authHandler.requireAdmin(runtimeHandler.listCommands),
 			)
 		}
 		if options.AIService != nil {

@@ -1,0 +1,97 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:parent_app/core/network/api_client.dart';
+import 'package:parent_app/features/device/data/device_binding_api.dart';
+
+void main() {
+  test('device status list maps online runtime and last connection', () async {
+    final client = _RecordingApiClient();
+    final api = DeviceBindingApi(client);
+
+    final devices = await api.list();
+
+    expect(client.path, '/api/v1/devices/status');
+    expect(devices, hasLength(1));
+    expect(devices.single.deviceName, '初芽');
+    expect(devices.single.runtime?.isOnline, isTrue);
+    expect(devices.single.runtime?.networkQuality, 'good');
+    expect(
+      devices.single.runtime?.receivedAt,
+      DateTime.parse('2026-10-03T10:00:02Z'),
+    );
+  });
+}
+
+class _RecordingApiClient implements ApiClient {
+  String? path;
+
+  @override
+  Future<Map<String, Object?>> get(
+    String path, {
+    Map<String, String>? queryParameters,
+  }) async {
+    this.path = path;
+    return {
+      'data': {
+        'devices': [
+          {
+            'device_id': 'device_demo_001',
+            'device_name': '初芽',
+            'hardware_model': 'sprout_initial',
+            'firmware_version': '0.3.0',
+            'capabilities': ['display'],
+            'bound_at': '2026-10-01T08:00:00Z',
+            'updated_at': '2026-10-03T10:00:02Z',
+            'runtime': {
+              'is_online': true,
+              'connection': {'state': 'online', 'transport': 'wifi'},
+              'network_quality': {
+                'level': 'good',
+                'rssi_dbm': -58,
+                'latency_ms': 42,
+                'packet_loss_percent': 1,
+              },
+              'time_sync': {
+                'state': 'synchronized',
+                'source': 'sntp',
+                'last_synced_at': '2026-10-03T10:00:00Z',
+                'offset_ms': 12,
+              },
+              'offline': {
+                'state': 'online',
+                'reason': 'none',
+                'fallback_active': false,
+                'pending_telemetry': 0,
+              },
+              'reported_at': '2026-10-03T10:00:00Z',
+              'received_at': '2026-10-03T10:00:02Z',
+            },
+          },
+        ],
+      },
+    };
+  }
+
+  @override
+  Future<Map<String, Object?>> post(String path, {Object? body}) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<Map<String, Object?>> put(String path, {Object? body}) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<Map<String, Object?>> postWithBearerToken(
+    String path, {
+    Object? body,
+    required String bearerToken,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<Map<String, Object?>> delete(String path) {
+    throw UnimplementedError();
+  }
+}

@@ -12,14 +12,15 @@ import (
 
 // Config contains runtime settings for the device platform service.
 type Config struct {
-	HTTP     HTTPConfig
-	Internal InternalAPIConfig
-	Auth     AuthConfig
-	AI       AIConfig
-	Log      LogConfig
-	Database DatabaseConfig
-	Redis    RedisConfig
-	MQTT     MQTTConfig
+	HTTP          HTTPConfig
+	Internal      InternalAPIConfig
+	Auth          AuthConfig
+	AI            AIConfig
+	Log           LogConfig
+	Database      DatabaseConfig
+	Redis         RedisConfig
+	MQTT          MQTTConfig
+	DeviceRuntime DeviceRuntimeConfig
 }
 
 // HTTPConfig contains HTTP server settings.
@@ -105,6 +106,12 @@ type MQTTConfig struct {
 	InsecureSkipVerify    bool
 }
 
+// DeviceRuntimeConfig contains heartbeat freshness and command policy.
+type DeviceRuntimeConfig struct {
+	OfflineThreshold time.Duration
+	CommandTTL       time.Duration
+}
+
 // Load reads configuration from environment variables with local defaults.
 func Load() (Config, error) {
 	cfg := Config{
@@ -157,6 +164,16 @@ func Load() (Config, error) {
 			ClientKeyFile:         env("DEVICE_PLATFORM_MQTT_CLIENT_KEY_FILE", ""),
 			InsecureSkipVerify:    envBool("DEVICE_PLATFORM_MQTT_INSECURE_SKIP_VERIFY", false),
 		},
+		DeviceRuntime: DeviceRuntimeConfig{
+			OfflineThreshold: envDuration(
+				"DEVICE_PLATFORM_RUNTIME_OFFLINE_THRESHOLD",
+				90*time.Second,
+			),
+			CommandTTL: envDuration(
+				"DEVICE_PLATFORM_RUNTIME_COMMAND_TTL",
+				15*time.Minute,
+			),
+		},
 	}
 
 	if cfg.Internal.Enabled && len(strings.TrimSpace(cfg.Internal.AuthToken)) < 32 {
@@ -192,6 +209,12 @@ func Load() (Config, error) {
 	}
 	if cfg.AI.DefaultConcurrency < 1 {
 		return Config{}, fmt.Errorf("DEVICE_PLATFORM_AI_DEFAULT_CONCURRENCY must be greater than zero")
+	}
+	if cfg.DeviceRuntime.OfflineThreshold <= 0 {
+		return Config{}, fmt.Errorf("DEVICE_PLATFORM_RUNTIME_OFFLINE_THRESHOLD must be positive")
+	}
+	if cfg.DeviceRuntime.CommandTTL <= 0 {
+		return Config{}, fmt.Errorf("DEVICE_PLATFORM_RUNTIME_COMMAND_TTL must be positive")
 	}
 
 	return cfg, nil

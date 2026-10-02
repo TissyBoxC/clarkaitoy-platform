@@ -68,9 +68,29 @@
       "type": "string",
       "enum": [
         "provisioning",
+        "online",
+        "offline",
         "active",
         "suspended",
         "retired"
+      ]
+    },
+    "device_network_quality": {
+      "type": "string",
+      "enum": [
+        "unknown",
+        "poor",
+        "fair",
+        "good",
+        "excellent"
+      ]
+    },
+    "device_time_sync_state": {
+      "type": "string",
+      "enum": [
+        "unsynchronized",
+        "synchronizing",
+        "synchronized"
       ]
     }
   }

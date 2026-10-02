@@ -26,6 +26,7 @@ type Repository interface {
 		ctx context.Context,
 		parentAccountID string,
 	) ([]domain.Binding, error)
+	ListAllBindings(ctx context.Context) ([]domain.Binding, error)
 	GetByDeviceID(ctx context.Context, deviceID string) (*domain.Binding, error)
 	Delete(ctx context.Context, parentAccountID string, deviceID string) error
 	CreateRegistrationToken(ctx context.Context, token *domain.RegistrationToken) error
@@ -247,6 +248,46 @@ func (r *PostgresRepository) ListByParentAccountID(
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate device bindings: %w", err)
+	}
+	return bindings, nil
+}
+
+// ListAllBindings returns every durable device binding for operations support.
+//
+// This method is intentionally separate from the guardian-scoped lookup so
+// callers must choose the privileged service surface explicitly.
+func (r *PostgresRepository) ListAllBindings(
+	ctx context.Context,
+) ([]domain.Binding, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT
+			id,
+			parent_account_id,
+			device_id,
+			device_name,
+			hardware_model,
+			firmware_version,
+			capability_set,
+			bound_at,
+			updated_at
+		FROM device_bindings
+		ORDER BY updated_at DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list all device bindings: %w", err)
+	}
+	defer rows.Close()
+
+	bindings := make([]domain.Binding, 0)
+	for rows.Next() {
+		binding, err := scanBinding(rows)
+		if err != nil {
+			return nil, err
+		}
+		bindings = append(bindings, *binding)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate all device bindings: %w", err)
 	}
 	return bindings, nil
 }

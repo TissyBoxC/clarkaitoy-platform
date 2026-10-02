@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/error/app_exception.dart';
 import '../../../shared/widgets/app_state_switcher.dart';
 import '../application/device_binding_controller.dart';
+import '../data/device_binding_api.dart';
 import '../domain/device_payload.dart';
 
 /// Guided first-run flow for a display-equipped or nearby 初芽 device.
@@ -29,6 +30,7 @@ class _DeviceProvisioningPageState
   String? _selectedDevice;
   String? _selectedSSID;
   String? _errorMessage;
+  BoundDevice? _completedBinding;
   final _passwordController = TextEditingController();
 
   @override
@@ -127,14 +129,17 @@ class _DeviceProvisioningPageState
       final bindingPayload = await ref
           .read(deviceBindingControllerProvider.notifier)
           .readBindingPayload(widget.setup);
-      await ref
+      final binding = await ref
           .read(deviceBindingControllerProvider.notifier)
           .bindToken(
             token: bindingPayload.bindingToken,
             deviceName: bindingPayload.deviceName,
           );
       if (mounted) {
-        setState(() => _step = _ProvisioningStep.done);
+        setState(() {
+          _completedBinding = binding;
+          _step = _ProvisioningStep.done;
+        });
       }
     } on Object catch (error) {
       if (mounted) {
@@ -335,6 +340,7 @@ class _DeviceProvisioningPageState
   }
 
   Widget _buildDone() {
+    final binding = _completedBinding;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -354,10 +360,18 @@ class _DeviceProvisioningPageState
           const SizedBox(height: 16),
           Text('初芽已连接', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 6),
-          const Text('现在可以在家长端查看设备状态。'),
+          Text(
+            binding == null
+                ? '现在可以在家长端查看设备状态。'
+                : '设备已加入“我的设备”，联网后会显示最新状态。',
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 20),
           FilledButton(
-            onPressed: () => context.go('/devices'),
+            onPressed: () {
+              ref.read(deviceBindingControllerProvider.notifier).refresh();
+              context.go('/devices');
+            },
             child: const Text('查看我的设备'),
           ),
         ],

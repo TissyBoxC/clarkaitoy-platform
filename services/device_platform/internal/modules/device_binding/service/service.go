@@ -396,6 +396,14 @@ func (s *Service) List(
 	return s.repository.ListByParentAccountID(ctx, parentAccountID)
 }
 
+// ListAllForAdmin returns every binding for the operations console.
+//
+// Callers must enforce administrator authorization before invoking this
+// method; the method deliberately does not expose a parent-scoped substitute.
+func (s *Service) ListAllForAdmin(ctx context.Context) ([]domain.Binding, error) {
+	return s.repository.ListAllBindings(ctx)
+}
+
 // GetByDeviceID returns one durable binding for internal relay lookups.
 //
 // Unlike List, this is not scoped to a parent account. Callers must run on the

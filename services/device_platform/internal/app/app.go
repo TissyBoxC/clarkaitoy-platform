@@ -21,6 +21,8 @@ import (
 	authService "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/service"
 	bindingRepository "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_binding/repository"
 	bindingService "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_binding/service"
+	runtimeRepository "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_runtime/repository"
+	runtimeService "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_runtime/service"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/platform/cache"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/platform/database"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/platform/security"
@@ -119,6 +121,15 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("create device binding service: %w", err)
 	}
+	deviceRuntimeService, err := runtimeService.New(runtimeService.Options{
+		Repository:       runtimeRepository.NewPostgresRepository(databaseStore.Pool()),
+		BindingService:   deviceBindingService,
+		OfflineThreshold: cfg.DeviceRuntime.OfflineThreshold,
+		CommandTTL:       cfg.DeviceRuntime.CommandTTL,
+	})
+	if err != nil {
+		return fmt.Errorf("create device runtime service: %w", err)
+	}
 
 	server := &http.Server{
 		Addr: cfg.HTTP.Address(),
@@ -128,6 +139,7 @@ func Run() error {
 			AuthService:       parentAuthService,
 			AIService:         aiAccountService,
 			BindingService:    deviceBindingService,
+			RuntimeService:    deviceRuntimeService,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
