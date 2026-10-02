@@ -5,12 +5,20 @@ set -euo pipefail
 cloud_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 compose_file="$cloud_dir/docker-compose.yml"
 env_file="$cloud_dir/.env"
+endpoints_file="$cloud_dir/../public-endpoints.env"
 
 cd "$cloud_dir"
 
 if [ ! -f "$env_file" ]; then
   echo ".env is missing; copy .env.example to .env and configure it first" >&2
   exit 1
+fi
+
+if [ -f "$endpoints_file" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$endpoints_file"
+  set +a
 fi
 
 "$cloud_dir/scripts/validate-cloud-env.sh" "$env_file"

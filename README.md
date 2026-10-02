@@ -187,6 +187,19 @@ sprout-sub2api-fork/       独立 fork 仓库，本地路径为 services/sub2api
 `firmware/` 和 `services/sub2api_fork/` 由平台根目录 `.gitignore` 排除，分别在
 各自仓库提交和推送。平台仓库不保存它们的源码副本。
 
+## 公网端点
+
+公网域名只在 `deploy/public-endpoints.env` 维护，其他文件和代码引用该配置：
+
+| 用途 | 地址 |
+| --- | --- |
+| 家长端与设备 API | `https://api.clarkhub.cn` |
+| 语音网关 | `https://voice.clarkhub.cn` |
+| AI 网关与 Sub2API | `https://sub.clarkhub.cn` |
+| 管理后台 | `https://admin.clarkhub.cn` |
+
+设备 MQTT 域名尚未确认，确认前不要在生产环境生成证书。
+
 ## 技术栈
 
 | 层级 | 技术 |

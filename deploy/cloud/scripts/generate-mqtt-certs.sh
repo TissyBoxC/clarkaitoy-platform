@@ -22,11 +22,19 @@ cert_root="$script_dir/../mosquitto/certs"
 broker_cert_dir="$cert_root/broker"
 device_cert_dir="$cert_root/device"
 env_file="$script_dir/../.env"
+endpoints_file="$script_dir/../../public-endpoints.env"
 
 if [ -f "$env_file" ]; then
   set -a
   # shellcheck disable=SC1090
   . "$env_file"
+  set +a
+fi
+
+if [ -f "$endpoints_file" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$endpoints_file"
   set +a
 fi
 

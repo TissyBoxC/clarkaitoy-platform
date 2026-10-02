@@ -48,6 +48,24 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "Preparing release $tag."
 
+      - name: Load public endpoints
+        if: steps.detect.outputs.should_release == 'true'
+        id: endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          # shellcheck disable=SC1091
+          . deploy/public-endpoints.env
+          set +a
+
+          if [[ -z "${SPROUT_API_PUBLIC_URL:-}" ]]; then
+            echo "SPROUT_API_PUBLIC_URL is missing from deploy/public-endpoints.env" >&2
+            exit 1
+          fi
+
+          echo "api_url=$SPROUT_API_PUBLIC_URL" >> "$GITHUB_OUTPUT"
+
       - name: Set up Go
         if: steps.detect.outputs.should_release == 'true'
         uses: actions/setup-go@v6
@@ -149,12 +167,14 @@ jobs:
         shell: bash
         env:
           RELEASE_VERSION: ${{ steps.detect.outputs.version }}
+          API_BASE_URL: ${{ steps.endpoints.outputs.api_url }}
         working-directory: apps/parent_app
         run: |
           set -euo pipefail
           flutter pub get
           flutter build apk \
             --release \
+            --dart-define "API_BASE_URL=$API_BASE_URL" \
             --build-name "$RELEASE_VERSION" \
             --build-number "$GITHUB_RUN_NUMBER" \
             --target-platform android-arm,android-arm64,android-x64

@@ -192,6 +192,20 @@ sprout-sub2api-fork/       separate fork repository, local path services/sub2api
 and must be committed in their own repositories. The platform repository does
 not keep duplicate source copies.
 
+## Public Endpoints
+
+Public hostnames are maintained only in `deploy/public-endpoints.env`:
+
+| Purpose | Address |
+| --- | --- |
+| Parent app and device API | `https://api.clarkhub.cn` |
+| Voice gateway | `https://voice.clarkhub.cn` |
+| AI gateway and Sub2API | `https://sub.clarkhub.cn` |
+| Admin console | `https://admin.clarkhub.cn` |
+
+The device MQTT hostname is not confirmed yet. Do not generate production
+certificates before it is defined.
+
 ## Technology
 
 | Layer | Technology |

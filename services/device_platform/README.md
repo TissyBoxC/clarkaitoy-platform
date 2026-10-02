@@ -32,7 +32,7 @@ after the service containers are healthy:
 
 ```powershell
 .\tools\initialize-admin.ps1 `
-  -Email "admin@example.com" `
+  -Email "admin@clarkhub.cn" `
   -DisplayName "本地管理员" `
   -Password "replace-with-a-strong-password"
 ```

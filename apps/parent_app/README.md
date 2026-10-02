@@ -8,6 +8,9 @@
 
 面向家长和监护人的 Flutter 应用，是芽系列·初芽平台的主要家庭入口。
 
+公网 API 地址统一维护在 `deploy/public-endpoints.env`，当前为
+`https://api.clarkhub.cn`。Release 构建必须传入该地址。
+
 ## 职责
 
 - 登录、家庭创建和监护人身份验证。

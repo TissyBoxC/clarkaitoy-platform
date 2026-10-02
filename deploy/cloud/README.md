@@ -9,6 +9,7 @@
 deploy/cloud/
 ├── docker-compose.yml
 ├── .env.example
+├── ../public-endpoints.env   # 公网域名唯一配置源
 ├── mosquitto/
 │   ├── mosquitto.conf
 │   └── certs/                 # 由证书脚本生成，不提交
@@ -87,7 +88,7 @@ docker exec -i <postgres-container> psql -U sprout -d sprout_sub2api \
 
 ```bash
 chmod +x scripts/*.sh
-./scripts/generate-mqtt-certs.sh mqtt.example.com
+./scripts/generate-mqtt-certs.sh mqtt.<待确认域名>
 ```
 
 参数必须是设备实际连接的主机名或公网 IP。不要把 `127.0.0.1` 用于生产，
@@ -146,10 +147,10 @@ Sub2API 的 `TOTP_ENCRYPTION_KEY` 必须是 64 位十六进制字符串，不能
 
 | 域名 | 上游 | 用途 |
 | --- | --- | --- |
-| `admin.example.com` | `http://127.0.0.1:8083` | 管理端 |
-| `api.example.com` | `http://127.0.0.1:8081` | 家长端和设备 API |
-| `voice.example.com` | `http://127.0.0.1:8082` | 语音网关，需开启 WebSocket |
-| `sub2api.example.com` | `http://127.0.0.1:8084` | Sub2API 管理界面和网关 API |
+| `admin.clarkhub.cn` | `http://127.0.0.1:8083` | 管理端 |
+| `api.clarkhub.cn` | `http://127.0.0.1:8081` | 家长端和设备 API |
+| `voice.clarkhub.cn` | `http://127.0.0.1:8082` | 语音网关，需开启 WebSocket |
+| `sub.clarkhub.cn` | `http://127.0.0.1:8084` | Sub2API 管理界面和网关 API |
 
 Sub2API 仅绑定宿主机回环地址，公网访问必须经过 1Panel 反向代理并使用
 HTTPS。管理端和其他服务仍通过 Compose 内网域名调用 Sub2API，不经过公网。
@@ -174,7 +175,7 @@ send_timeout 3600s;
 
 管理端镜像已内置 `/api/` 同源代理，不需要为管理端再单独配置 API 路径。
 
-设备 MQTT 使用独立域名 `mqtt.example.com`，在 1Panel 或云防火墙中放行
+设备 MQTT 使用独立域名（待确认），在 1Panel 或云防火墙中放行
 `8883/tcp`。不要对公网放行 `1883/tcp`。
 
 如果 MQTT 容器反复重启，先检查证书所有权和日志：
@@ -196,7 +197,7 @@ docker logs --tail=100 sprout-mqtt-1
 如果是旧版本生成的证书目录，执行下面命令迁移到新结构并重启：
 
 ```bash
-./scripts/generate-mqtt-certs.sh mqtt.example.com
+./scripts/generate-mqtt-certs.sh mqtt.<待确认域名>
 docker compose --env-file .env up -d --force-recreate mqtt device_platform
 ```
 
@@ -204,7 +205,7 @@ docker compose --env-file .env up -d --force-recreate mqtt device_platform
 信任根。只有明确需要轮换整个信任链时才执行：
 
 ```bash
-./scripts/generate-mqtt-certs.sh mqtt.example.com --rotate-ca
+./scripts/generate-mqtt-certs.sh mqtt.<待确认域名> --rotate-ca
 ```
 
 轮换后，已经安装旧 CA 的设备必须同步更新 `ca.crt`，否则设备会拒绝新证书。
