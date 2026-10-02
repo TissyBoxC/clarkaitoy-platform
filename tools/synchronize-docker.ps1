@@ -9,6 +9,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $workspaceRoot = Split-Path -Parent $PSScriptRoot
 $composePath = Join-Path $workspaceRoot 'deploy\docker-compose.yml'
+$environmentPath = Join-Path $workspaceRoot 'deploy\.env'
 $platformVersionPath = Join-Path $workspaceRoot 'VERSION'
 $gatewayVersionPath = Join-Path $workspaceRoot 'services\sub2api_fork\backend\cmd\server\VERSION'
 
@@ -41,6 +42,42 @@ function Invoke-DockerCompose {
     }
 }
 
+function Assert-PublishedRelease {
+    param(
+        [string]$RepositoryPath,
+        [string]$Version,
+        [string]$Label
+    )
+
+    & git -C $RepositoryPath ls-remote --exit-code --tags origin "refs/tags/v$Version" *> $null
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Label release tag does not exist: v$Version"
+    }
+}
+
+function Set-LocalEnvironmentVersion {
+    param(
+        [string]$Name,
+        [string]$Version
+    )
+
+    if (-not (Test-Path -LiteralPath $environmentPath)) {
+        throw "Local environment file not found: $environmentPath"
+    }
+
+    $content = Get-Content -LiteralPath $environmentPath -Raw
+    $line = "$Name=$Version"
+    $pattern = "(?m)^$([regex]::Escape($Name))=.*$"
+
+    if ($content -match $pattern) {
+        $content = [regex]::Replace($content, $pattern, $line)
+    } else {
+        $content = $content.TrimEnd() + [Environment]::NewLine + $line + [Environment]::NewLine
+    }
+
+    Set-Content -LiteralPath $environmentPath -Value $content -Encoding utf8 -NoNewline
+}
+
 function Test-ServiceReady {
     param(
         [string]$Name,
@@ -65,6 +102,12 @@ function Test-ServiceReady {
 
 $platformVersion = Resolve-Version -ExplicitVersion $PlatformVersion -VersionPath $platformVersionPath -Label 'Platform'
 $gatewayVersion = Resolve-Version -ExplicitVersion $GatewayVersion -VersionPath $gatewayVersionPath -Label 'AI gateway'
+
+Assert-PublishedRelease -RepositoryPath $workspaceRoot -Version $platformVersion -Label 'Platform'
+Assert-PublishedRelease -RepositoryPath (Join-Path $workspaceRoot 'services\sub2api_fork') -Version $gatewayVersion -Label 'AI gateway'
+
+Set-LocalEnvironmentVersion -Name 'SPROUT_PLATFORM_VERSION' -Version $platformVersion
+Set-LocalEnvironmentVersion -Name 'SPROUT_SUB2API_VERSION' -Version $gatewayVersion
 
 $env:SPROUT_PLATFORM_VERSION = $platformVersion
 $env:SPROUT_SUB2API_VERSION = $gatewayVersion
