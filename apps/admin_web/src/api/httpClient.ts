@@ -2,7 +2,10 @@ import axios, { type AxiosInstance } from 'axios'
 
 import { getRuntimeConfig } from '@/config/runtimeConfig'
 import { installAuthInterceptors, type RefreshSession } from '@/api/authRefresh'
-import { MemoryAuthSessionStore, type AuthSessionStore } from '@/api/authSession'
+import {
+  SessionStorageAuthSessionStore,
+  type AuthSessionStore,
+} from '@/api/authSession'
 
 /// Creates the shared HTTP client used by feature API modules.
 export function createHttpClient(options?: {
@@ -19,12 +22,24 @@ export function createHttpClient(options?: {
     },
   })
 
-  const sessionStore = options?.sessionStore ?? new MemoryAuthSessionStore()
+  const sessionStore =
+    options?.sessionStore ?? new SessionStorageAuthSessionStore()
   const refreshSession =
     options?.refreshSession ??
-    (async () => {
-      // The refresh endpoint is wired when auth API contracts are implemented.
-      throw new Error('session refresh is not configured')
+    (async (refreshToken: string) => {
+      const response = await axios.post(
+        `${runtimeConfig.apiBaseUrl}/api/v1/auth/refresh`,
+        { refresh_token: refreshToken },
+        {
+          timeout: runtimeConfig.requestTimeoutMs,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      )
+      const data = response.data?.data
+      return {
+        accessToken: String(data?.access_token ?? ''),
+        refreshToken: String(data?.refresh_token ?? ''),
+      }
     })
 
   installAuthInterceptors(httpClient, sessionStore, refreshSession)

@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import AdminLayout from '@/layouts/AdminLayout.vue'
+import { useRoute } from 'vue-router'
+import { computed } from 'vue'
+
+const route = useRoute()
+const isLoginRoute = computed(() => route.meta.public === true)
 </script>
 
 <template>
-  <AdminLayout />
+  <RouterView v-if="isLoginRoute" />
+  <AdminLayout v-else />
 </template>
 
 <style>
@@ -13,8 +19,8 @@ import AdminLayout from '@/layouts/AdminLayout.vue'
 
 body {
   margin: 0;
-  color: #20332d;
-  background: #f3f6f4;
+  color: #4a2e3b;
+  background: #fffbfc;
   font-family: Inter, 'Microsoft YaHei', sans-serif;
 }
 </style>
