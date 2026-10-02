@@ -100,6 +100,7 @@ DESCRIPTION_PHRASES = {
     "localize release note fallback": "完善发行说明的中文回退文本",
     "localize fallback summary": "补充发行说明的中文摘要",
     "localize release note descriptions": "统一发行说明的中文描述",
+    "optimize admin console and parent app interaction motion": "优化管理端与家长端的交互动效",
     "make avatar background transparent": "将品牌头像背景改为透明",
     "manage ai service access from client apps": "支持客户端管理 AI 服务权限",
     "reserve remote text modules": "预留远程文本模块",
