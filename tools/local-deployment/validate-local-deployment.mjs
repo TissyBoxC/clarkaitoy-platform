@@ -19,6 +19,7 @@ const requiredServices = [
   'sub2api',
   'device_platform',
   'voice_gateway',
+  'admin_web',
 ]
 
 for (const serviceName of requiredServices) {

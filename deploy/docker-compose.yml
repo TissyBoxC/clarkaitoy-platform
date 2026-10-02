@@ -75,11 +75,17 @@ services:
     restart: unless-stopped
 
   sub2api:
-    image: weishaw/sub2api:latest
+    build:
+      context: ../services/sub2api_fork
+      dockerfile: Dockerfile
     profiles:
       - ai
     security_opt:
       - no-new-privileges:true
+    ulimits:
+      nofile:
+        soft: 100000
+        hard: 100000
     ports:
       - "127.0.0.1:${SPROUT_SUB2API_PORT:-8080}:8080"
     volumes:
@@ -118,6 +124,39 @@ services:
       timeout: 10s
       retries: 5
       start_period: 120s
+    restart: unless-stopped
+
+  admin_web:
+    build:
+      # The console imports generated contracts from packages/, so the build
+      # context must be the platform root rather than only apps/admin_web.
+      context: ..
+      dockerfile: apps/admin_web/Dockerfile
+      args:
+        # Vite inlines this origin at build time; point it at the browser-facing
+        # device platform address, never at an in-cluster service name.
+        VITE_API_BASE_URL: ${SPROUT_ADMIN_API_BASE_URL:-http://127.0.0.1:8081}
+        VITE_API_TIMEOUT_MS: ${SPROUT_ADMIN_API_TIMEOUT_MS:-15000}
+    profiles:
+      - services
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:${SPROUT_ADMIN_WEB_PORT:-8083}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+    depends_on:
+      device_platform:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "3", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
   device_platform:

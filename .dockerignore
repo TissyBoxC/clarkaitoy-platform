@@ -1,0 +1,34 @@
+# Keep platform image contexts limited to source code and runtime assets.
+.git
+.github
+.idea
+.vscode
+AGENTS.md
+agents.md
+docs
+documentation
+openspec
+skills
+dev-docs
+firmware
+services/sub2api_fork
+
+# Local state, generated output, and secrets.
+deploy/.env
+deploy/.env.*
+!deploy/.env.example
+deploy/mosquitto/certs
+deploy/**/data
+**/node_modules
+**/dist
+**/.vite
+**/.dart_tool
+**/build
+**/.pio
+**/bgen
+**/.platformio
+**/*.log
+**/*.tmp
+**/*.temp
+**/.DS_Store
+**/Thumbs.db
