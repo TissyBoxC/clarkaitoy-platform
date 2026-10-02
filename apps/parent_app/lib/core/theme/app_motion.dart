@@ -18,9 +18,6 @@ abstract final class AppMotion {
     builders: <TargetPlatform, PageTransitionsBuilder>{
       TargetPlatform.android: _SproutPageTransitionsBuilder(),
       TargetPlatform.iOS: _SproutPageTransitionsBuilder(),
-      TargetPlatform.macOS: _SproutPageTransitionsBuilder(),
-      TargetPlatform.windows: _SproutPageTransitionsBuilder(),
-      TargetPlatform.linux: _SproutPageTransitionsBuilder(),
       TargetPlatform.fuchsia: _SproutPageTransitionsBuilder(),
     },
   );

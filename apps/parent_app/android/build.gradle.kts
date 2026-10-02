@@ -2,6 +2,15 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // Espressif publishes the Android provisioning SDK on JitPack.
+        // Restrict the repository to that group so other dependencies keep
+        // resolving from Google Maven and Maven Central.
+        maven {
+            url = uri("https://jitpack.io")
+            content {
+                includeGroup("com.github.espressif")
+            }
+        }
     }
 }
 

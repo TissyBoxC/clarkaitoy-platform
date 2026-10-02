@@ -34,8 +34,17 @@
 
 ```powershell
 flutter pub get
-flutter run
+flutter run -d android
 ```
+
+构建可安装的 Android 包：
+
+```powershell
+flutter build apk --release
+```
+
+当前维护范围只有 Android 和 iOS。Linux、Windows、macOS 和 Web
+不属于家长端交付目标，因此没有保留对应平台目录。
 
 ## 目录
 

@@ -1,0 +1,70 @@
+/// Canonical error codes emitted by native platform implementations.
+///
+/// These values are part of the plugin contract and are used by
+/// [EspProvisioningBloc] to map failures.
+class EspProvisioningErrorCodes {
+  EspProvisioningErrorCodes._();
+
+  /// Missing/invalid method-call argument.
+  static const String missingArgument = 'E0';
+
+  /// Generic Wi-Fi scan failure (legacy Android code).
+  static const String wifiScanFailed = 'E1';
+
+  /// Bluetooth permission denied.
+  static const String permission = 'E_PERMISSION';
+
+  /// Operation timed out in the Dart BLoC layer.
+  static const String timeout = 'E_TIMEOUT';
+
+  /// Operation explicitly cancelled in native layer.
+  static const String cancelled = 'E_CANCELLED';
+
+  /// Unknown/unmapped error.
+  static const String unknown = 'E_UNKNOWN';
+
+  /// Could not start BLE scan.
+  static const String bleScanStart = 'E_BLE_SCAN_START';
+
+  /// BLE scan failed while running.
+  static const String bleScan = 'E_BLE_SCAN';
+
+  /// Device lookup failed from scanned cache.
+  static const String deviceNotFound = 'E_DEVICE_NOT_FOUND';
+
+  /// Platform response payload shape/type mismatch.
+  static const String invalidResponse = 'E_INVALID_RESPONSE';
+
+  /// BLE connect attempt timed out.
+  static const String connectTimeout = 'E_CONNECT_TIMEOUT';
+
+  /// BLE connect could not be started.
+  static const String connect = 'E_CONNECT';
+
+  /// Custom provisioning endpoint request failed.
+  static const String customData = 'E_CUSTOM_DATA';
+
+  /// Provisioning session could not be established (often wrong proof of
+  /// possession).
+  static const String provisioningSessionFailed = 'E_PROV_SESSION';
+
+  /// WiFi configuration could not be sent or applied.
+  static const String provisioningConfigFailed = 'E_PROV_CONFIG';
+
+  /// Device rejected the WiFi passphrase.
+  static const String provisioningAuthFailed = 'E_PROV_AUTH';
+
+  /// Device could not find the target WiFi network.
+  static const String provisioningNetworkNotFound = 'E_PROV_NETWORK_NOT_FOUND';
+
+  /// Provisioning failed for another or unknown reason.
+  static const String provisioningFailed = 'E_PROV_FAILED';
+
+  /// iOS device creation failure.
+  static const String iosDeviceCreate = 'E_DEVICE';
+
+  /// Legacy iOS disconnect/fallback failure. No longer emitted since 0.3.1
+  /// (a disconnect during the iOS connect phase now reports [connect],
+  /// matching Android); kept for callers matching on historical codes.
+  static const String deviceDisconnected = 'DEVICE_DISCONNECTED';
+}

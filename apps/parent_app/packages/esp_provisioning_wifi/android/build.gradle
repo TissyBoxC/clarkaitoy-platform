@@ -1,0 +1,91 @@
+group 'io.github.alanmosely.esp_provisioning_wifi'
+version '1.0-SNAPSHOT'
+
+import java.util.Properties
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader ->
+        localProperties.load(reader)
+    }
+}
+
+def flutterSdkPath = localProperties.getProperty('flutter.sdk')
+if (flutterSdkPath == null || flutterSdkPath.trim().isEmpty()) {
+    flutterSdkPath = System.getenv('FLUTTER_ROOT') ?: System.getenv('FLUTTER_HOME')
+}
+if (flutterSdkPath == null || flutterSdkPath.trim().isEmpty()) {
+    try {
+        def process = ['cmd', '/c', 'where flutter'].execute()
+        process.waitFor()
+        if (process.exitValue() == 0) {
+            def first = process.in.text.readLines().find { it?.trim() }
+            if (first != null) {
+                def flutterBat = new File(first.trim())
+                flutterSdkPath = flutterBat.parentFile.parentFile.absolutePath
+            }
+        }
+    } catch (Exception ignored) {
+    }
+}
+def flutterJar = flutterSdkPath == null
+        ? null
+        : new File(flutterSdkPath, 'bin/cache/artifacts/engine/android-x64/flutter.jar')
+
+android {
+    namespace "io.github.alanmosely.esp_provisioning_wifi"
+
+    compileSdkVersion 36
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    kotlinOptions {
+        jvmTarget = '11'
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+        test.java.srcDirs += 'src/test/kotlin'
+    }
+
+    defaultConfig {
+        minSdkVersion 23
+    }
+
+    testOptions {
+        unitTests.includeAndroidResources = true
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.13.1'
+    implementation 'androidx.annotation:annotation:1.9.1'
+    implementation 'org.greenrobot:eventbus:3.3.1'
+    // tink 1.12.0 matches what upstream esp-idf-provisioning-android master
+    // pairs with this provisioning code; protobuf-javalite 3.25.5 is the
+    // patched 3.x runtime (>= the lib's protoc-3.21.9-generated classes;
+    // upstream declared only a 3.18.0 runtime) covering the parsing DoS
+    // advisories in 3.18.0.
+    implementation 'com.google.crypto.tink:tink-android:1.12.0'
+    implementation 'com.google.protobuf:protobuf-javalite:3.25.5'
+    implementation 'com.github.espressif:esp-idf-provisioning-android:lib-2.1.2'
+
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.11.1'
+
+    if (flutterJar != null && flutterJar.exists()) {
+        compileOnly files(flutterJar.absolutePath)
+        // Unit tests exercise MethodChannel.Result, so the embedding must be
+        // on the test runtime classpath too (compileOnly is compile-time only).
+        testImplementation files(flutterJar.absolutePath)
+    } else {
+        logger.warn('Flutter embedding jar was not found. Standalone Gradle compile may fail. Resolved flutterSdkPath=' + flutterSdkPath)
+    }
+}

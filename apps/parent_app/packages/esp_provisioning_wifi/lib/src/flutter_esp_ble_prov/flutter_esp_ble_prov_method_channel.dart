@@ -1,0 +1,167 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:esp_provisioning_wifi/esp_provisioning_error_codes.dart';
+import 'package:esp_provisioning_wifi/esp_security_scheme.dart';
+import 'package:esp_provisioning_wifi/esp_wifi_network.dart';
+
+import 'flutter_esp_ble_prov_method_names.dart';
+import 'flutter_esp_ble_prov_platform_interface.dart';
+
+/// An implementation of [FlutterEspBleProvPlatform] that uses method channels.
+class MethodChannelFlutterEspBleProv extends FlutterEspBleProvPlatform {
+  /// The method channel used to interact with the native platform.
+  @visibleForTesting
+  final methodChannel =
+      const MethodChannel(FlutterEspBleProvMethodNames.channel);
+
+  @override
+  Future<String?> getPlatformVersion() async {
+    final version = await methodChannel
+        .invokeMethod<String>(FlutterEspBleProvMethodNames.getPlatformVersion);
+    return version;
+  }
+
+  @override
+  Future<List<String>> scanBleDevices(String prefix) async {
+    final args = {FlutterEspBleProvMethodNames.prefixArg: prefix};
+    final raw = await methodChannel.invokeMethod<List<Object?>>(
+      FlutterEspBleProvMethodNames.scanBleDevices,
+      args,
+    );
+    return _decodeStringList(
+      methodName: FlutterEspBleProvMethodNames.scanBleDevices,
+      raw: raw,
+    );
+  }
+
+  @override
+  Future<List<EspWifiNetwork>> scanWifiNetworks(
+    String deviceName,
+    String proofOfPossession, {
+    EspSecurityScheme security = EspSecurityScheme.security1,
+    String? username,
+    Duration? connectTimeout,
+  }) async {
+    final args = {
+      FlutterEspBleProvMethodNames.deviceNameArg: deviceName,
+      FlutterEspBleProvMethodNames.proofOfPossessionArg: proofOfPossession,
+      FlutterEspBleProvMethodNames.securityArg: security.channelValue,
+      if (username != null) FlutterEspBleProvMethodNames.usernameArg: username,
+      if (connectTimeout != null)
+        FlutterEspBleProvMethodNames.connectTimeoutMsArg:
+            connectTimeout.inMilliseconds,
+    };
+    final raw = await methodChannel.invokeMethod<List<Object?>>(
+      FlutterEspBleProvMethodNames.scanWifiNetworks,
+      args,
+    );
+    return _decodeNetworkList(
+      methodName: FlutterEspBleProvMethodNames.scanWifiNetworks,
+      raw: raw,
+    );
+  }
+
+  @override
+  Future<bool> provisionWifi(
+    String deviceName,
+    String proofOfPossession,
+    String ssid,
+    String passphrase, {
+    EspSecurityScheme security = EspSecurityScheme.security1,
+    String? username,
+    Duration? connectTimeout,
+  }) async {
+    final args = {
+      FlutterEspBleProvMethodNames.deviceNameArg: deviceName,
+      FlutterEspBleProvMethodNames.proofOfPossessionArg: proofOfPossession,
+      FlutterEspBleProvMethodNames.ssidArg: ssid,
+      FlutterEspBleProvMethodNames.passphraseArg: passphrase,
+      FlutterEspBleProvMethodNames.securityArg: security.channelValue,
+      if (username != null) FlutterEspBleProvMethodNames.usernameArg: username,
+      if (connectTimeout != null)
+        FlutterEspBleProvMethodNames.connectTimeoutMsArg:
+            connectTimeout.inMilliseconds,
+    };
+    final result = await methodChannel.invokeMethod<bool?>(
+      FlutterEspBleProvMethodNames.provisionWifi,
+      args,
+    );
+    return result ?? false;
+  }
+
+  @override
+  Future<bool> cancelOperations() async {
+    final result = await methodChannel.invokeMethod<bool?>(
+      FlutterEspBleProvMethodNames.cancelOperations,
+    );
+    return result ?? true;
+  }
+
+  @override
+  Future<String?> fetchCustomData(
+    String deviceName,
+    String proofOfPossession, {
+    String endpoint = 'custom-data',
+    String payload = '',
+    EspSecurityScheme security = EspSecurityScheme.security1,
+    String? username,
+    Duration? connectTimeout,
+  }) {
+    final args = {
+      FlutterEspBleProvMethodNames.deviceNameArg: deviceName,
+      FlutterEspBleProvMethodNames.proofOfPossessionArg: proofOfPossession,
+      FlutterEspBleProvMethodNames.endpointArg: endpoint,
+      FlutterEspBleProvMethodNames.payloadArg: payload,
+      FlutterEspBleProvMethodNames.securityArg: security.channelValue,
+      if (username != null) FlutterEspBleProvMethodNames.usernameArg: username,
+      if (connectTimeout != null)
+        FlutterEspBleProvMethodNames.connectTimeoutMsArg:
+            connectTimeout.inMilliseconds,
+    };
+    return methodChannel.invokeMethod<String?>(
+      FlutterEspBleProvMethodNames.fetchCustomData,
+      args,
+    );
+  }
+
+  List<String> _decodeStringList({
+    required String methodName,
+    required List<Object?>? raw,
+  }) {
+    if (raw == null) {
+      return const <String>[];
+    }
+    for (final item in raw) {
+      if (item is! String) {
+        throw PlatformException(
+          code: EspProvisioningErrorCodes.invalidResponse,
+          message: 'Invalid response type from $methodName',
+          details: 'Expected a list of strings from platform channel.',
+        );
+      }
+    }
+    return List<String>.from(raw);
+  }
+
+  List<EspWifiNetwork> _decodeNetworkList({
+    required String methodName,
+    required List<Object?>? raw,
+  }) {
+    if (raw == null) {
+      return const <EspWifiNetwork>[];
+    }
+    final networks = <EspWifiNetwork>[];
+    for (final item in raw) {
+      if (item is! Map<Object?, Object?> || item['ssid'] is! String) {
+        throw PlatformException(
+          code: EspProvisioningErrorCodes.invalidResponse,
+          message: 'Invalid response type from $methodName',
+          details:
+              'Expected a list of network maps with an ssid string from platform channel.',
+        );
+      }
+      networks.add(EspWifiNetwork.fromMap(item));
+    }
+    return networks;
+  }
+}

@@ -252,11 +252,10 @@ packages:
   esp_provisioning_wifi:
     dependency: "direct main"
     description:
-      name: esp_provisioning_wifi
-      sha256: b254a8b72f6a9810020f7fbb31855bbed9ebd02c3cf31e103c17d9e0891b9b4c
-      url: "https://pub.flutter-io.cn"
-    source: hosted
-    version: "0.3.1"
+      path: "packages/esp_provisioning_wifi"
+      relative: true
+    source: path
+    version: "0.3.1+sprout.1"
   fake_async:
     dependency: transitive
     description:

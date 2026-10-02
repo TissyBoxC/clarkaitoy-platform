@@ -41,7 +41,8 @@ dependencies:
   mobile_scanner: ^7.0.1
   permission_handler: ^12.0.1
   wifi_iot: ^0.3.19+2
-  esp_provisioning_wifi: 0.3.1
+  esp_provisioning_wifi:
+    path: packages/esp_provisioning_wifi
 
 dev_dependencies:
   build_runner: ^2.10.4
@@ -78,18 +79,6 @@ flutter_launcher_icons:
   image_path: assets/brand/sprout/app_icon.png
   adaptive_icon_background: "#F8B8CA"
   adaptive_icon_foreground: assets/brand/sprout/app_icon.png
-  web:
-    generate: true
-    image_path: assets/brand/sprout/app_icon.png
-    background_color: "#F8B8CA"
-    theme_color: "#F8B8CA"
-  windows:
-    generate: true
-    image_path: assets/brand/sprout/app_icon.png
-    icon_size: 256
-  macos:
-    generate: true
-    image_path: assets/brand/sprout/app_icon.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

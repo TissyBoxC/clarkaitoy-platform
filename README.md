@@ -250,6 +250,9 @@ flutter test
 flutter build apk --release
 ```
 
+家长端当前只维护 Android 和 iOS；Android 发布包会随平台 Release
+以 `sprout-parent-app-vX.Y.Z.apk` 附件提供。桌面端和 Web 不属于交付范围。
+
 如需重新生成应用图标，在 Flutter 环境可用时执行：
 
 ```powershell
@@ -556,7 +559,8 @@ $env:VOICE_GATEWAY_SUB2API_API_KEY = "<local-api-key>"
 - `.github/workflows/ci.yml`：校验部署文件、契约、生成类型、Go 服务、Vue 管理端
   和 Flutter 家长端。
 - `.github/workflows/release.yml`：监听 `main` 分支上的 `VERSION` 变更，构建
-  Go 服务、管理端和契约归档，生成中文 Release 说明并创建 GitHub Release。
+  Go 服务、管理端、Android 安装包和契约归档，生成中文 Release 说明并创建
+  GitHub Release。
 
 发布平台版本时只修改根目录 `VERSION`，格式固定为 `X.Y.Z`，提交并推送到 `main`。
 标签由工作流自动生成和使用。`firmware`、`sprout-sub2api-fork` 在各自仓库独立
