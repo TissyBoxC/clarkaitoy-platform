@@ -131,6 +131,15 @@ docker compose -f docker-compose.yml up -d
 
 脚本只读取状态、日志和数据卷目录，不会停止容器或修改数据。
 
+Sub2API 的 `TOTP_ENCRYPTION_KEY` 必须是 64 位十六进制字符串，不能保留
+`.env.example` 中的 `replace-with...` 文本。启动前可以先执行：
+
+```bash
+./scripts/validate-cloud-env.sh
+```
+
+校验失败时脚本会明确指出缺少或格式错误的变量，不会启动容器。
+
 ## 3. 反向代理
 
 在 1Panel“网站”中创建以下反向代理：
@@ -259,7 +268,7 @@ docker compose --env-file .env up -d --force-recreate mqtt device_platform
 | `SPROUT_SUB2API_ADMIN_EMAIL` | Sub2API 初始化管理员邮箱 | 使用真实可用邮箱 |
 | `SPROUT_SUB2API_ADMIN_PASSWORD` | Sub2API 管理员密码 | 强随机密码 |
 | `SPROUT_SUB2API_JWT_SECRET` | Sub2API 会话签名密钥 | 32 位以上随机值 |
-| `SPROUT_SUB2API_TOTP_ENCRYPTION_KEY` | Sub2API 的 TOTP 加密密钥 | 32 位以上随机值，必须固定 |
+| `SPROUT_SUB2API_TOTP_ENCRYPTION_KEY` | Sub2API 的 TOTP 加密密钥 | 必须为 64 位十六进制字符串，且必须固定 |
 | `SPROUT_TIMEZONE` | 容器时区 | `Asia/Shanghai` |
 
 ## 5. 升级方式

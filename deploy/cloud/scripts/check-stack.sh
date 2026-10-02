@@ -13,6 +13,8 @@ if [ ! -f "$env_file" ]; then
   exit 1
 fi
 
+"$cloud_dir/scripts/validate-cloud-env.sh" "$env_file"
+
 docker compose -f "$compose_file" --env-file "$env_file" ps
 
 check_service() {

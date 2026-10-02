@@ -11,6 +11,12 @@ container_name="${project_name}-sub2api-1"
 
 cd "$cloud_dir"
 
+echo "== environment validation =="
+if ! "$cloud_dir/scripts/validate-cloud-env.sh" "$env_file"; then
+  echo "Fix the environment validation errors above before diagnosing the service." >&2
+fi
+
+echo
 echo "== compose status =="
 docker compose --env-file "$env_file" ps sub2api postgres redis
 
