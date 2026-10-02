@@ -28,7 +28,7 @@ func (s *Service) BootstrapAdmin(
 		strings.HasPrefix(email, "@") || strings.HasSuffix(email, "@") {
 		return "", domain.ErrInvalidEmail
 	}
-	if len(password) < 12 || len(password) > 128 ||
+	if len(password) < 8 || len(password) > 128 ||
 		!containsLetterAndNumber(password) {
 		return "", domain.ErrWeakPassword
 	}
@@ -91,7 +91,7 @@ func (s *Service) ResetAdminPassword(
 		strings.HasPrefix(email, "@") || strings.HasSuffix(email, "@") {
 		return domain.ErrInvalidEmail
 	}
-	if len(password) < 12 || len(password) > 128 ||
+	if len(password) < 8 || len(password) > 128 ||
 		!containsLetterAndNumber(password) {
 		return domain.ErrWeakPassword
 	}
