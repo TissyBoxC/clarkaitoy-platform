@@ -101,23 +101,26 @@ func (r *PostgresRepository) GetByProviderAccountID(
 func (r *PostgresRepository) List(ctx context.Context) ([]domain.Account, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT
-			id,
-			parent_account_id,
-			provider_account_id,
-			provider_account_email,
-			credential_ciphertext,
-			credential_nonce,
-			provider_api_key_id,
-			credential_key_version,
-			status,
-			balance_usd,
-			concurrency_limit,
-			available_models,
-			selected_models,
-			allowed_models,
-			created_at,
-			updated_at
+			ai_accounts.id,
+			ai_accounts.parent_account_id,
+			ai_accounts.provider_account_id,
+			ai_accounts.provider_account_email,
+			ai_accounts.credential_ciphertext,
+			ai_accounts.credential_nonce,
+			ai_accounts.provider_api_key_id,
+			ai_accounts.credential_key_version,
+			ai_accounts.status,
+			ai_accounts.balance_usd,
+			ai_accounts.concurrency_limit,
+			ai_accounts.available_models,
+			ai_accounts.selected_models,
+			ai_accounts.allowed_models,
+			ai_accounts.created_at,
+			ai_accounts.updated_at,
+			parent_accounts.email,
+			parent_accounts.display_name
 		FROM ai_accounts
+		JOIN parent_accounts ON parent_accounts.id = ai_accounts.parent_account_id
 		ORDER BY updated_at DESC
 	`)
 	if err != nil {
@@ -127,7 +130,7 @@ func (r *PostgresRepository) List(ctx context.Context) ([]domain.Account, error)
 
 	accounts := make([]domain.Account, 0)
 	for rows.Next() {
-		account, err := scanAccount(rows)
+		account, err := scanAccountWithParent(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -275,6 +278,39 @@ func scanAccount(row accountScanner) (*domain.Account, error) {
 		&account.AllowedModels,
 		&account.CreatedAt,
 		&account.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrAccountNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get AI account: %w", err)
+	}
+	return &account, nil
+}
+
+// scanAccountWithParent reads the operations list projection, which joins the
+// owning guardian so operators can identify an account without internal ids.
+func scanAccountWithParent(row accountScanner) (*domain.Account, error) {
+	var account domain.Account
+	err := row.Scan(
+		&account.ID,
+		&account.ParentAccountID,
+		&account.ProviderAccountID,
+		&account.ProviderAccountEmail,
+		&account.APIKeyCiphertext,
+		&account.APIKeyNonce,
+		&account.ProviderAPIKeyID,
+		&account.CredentialKeyVersion,
+		&account.Status,
+		&account.BalanceUSD,
+		&account.ConcurrencyLimit,
+		&account.AvailableModels,
+		&account.SelectedModels,
+		&account.AllowedModels,
+		&account.CreatedAt,
+		&account.UpdatedAt,
+		&account.ParentEmail,
+		&account.ParentDisplayName,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrAccountNotFound

@@ -18,6 +18,8 @@ var (
 type Account struct {
 	ID                   string
 	ParentAccountID      string
+	ParentEmail          string
+	ParentDisplayName    string
 	ProviderAccountID    string
 	ProviderAccountEmail string
 	APIKeyCiphertext     []byte

@@ -133,6 +133,9 @@ func (handler adminHandler) updateParentAIModels(
 
 func aiAccountAdminResponse(account *gatewaydomain.Account) map[string]any {
 	return map[string]any{
+		"parent_account_id":   account.ParentAccountID,
+		"parent_email":        account.ParentEmail,
+		"parent_display_name": account.ParentDisplayName,
 		"provider_account_id": account.ProviderAccountID,
 		"status":              account.Status,
 		"balance_usd":         account.BalanceUSD,

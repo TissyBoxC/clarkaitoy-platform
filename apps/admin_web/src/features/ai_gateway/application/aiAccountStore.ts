@@ -6,6 +6,9 @@ import { mapApiError, type ApiError } from '@/api/apiError'
 
 /// Platform-safe AI account projection for operations staff.
 export interface AdminAiAccount {
+  parentAccountId: string
+  parentEmail: string
+  parentDisplayName: string
   providerAccountId: string
   status: string
   balanceUsd: number
@@ -66,6 +69,9 @@ export const useAiAccountStore = defineStore('admin-ai-accounts', () => {
 
 function toAccount(value: Record<string, unknown>): AdminAiAccount {
   return {
+    parentAccountId: String(value.parent_account_id ?? ''),
+    parentEmail: String(value.parent_email ?? ''),
+    parentDisplayName: String(value.parent_display_name ?? ''),
     providerAccountId: String(value.provider_account_id ?? ''),
     status: String(value.status ?? ''),
     balanceUsd: Number(value.balance_usd ?? 0),

@@ -61,7 +61,7 @@ async function save(): Promise<void> {
       <table>
         <thead>
           <tr>
-            <th>家长账号</th>
+            <th>家长</th>
             <th>状态</th>
             <th>余额</th>
             <th>同时对话</th>
@@ -73,7 +73,16 @@ async function save(): Promise<void> {
         </thead>
         <tbody>
           <tr v-for="account in store.accounts" :key="account.providerAccountId">
-            <td class="account-id">{{ account.providerAccountId }}</td>
+            <td>
+              <span class="parent-name">
+                {{
+                  account.parentDisplayName ||
+                  account.parentEmail ||
+                  '未提供称呼'
+                }}
+              </span>
+              <span class="parent-email">{{ account.parentEmail }}</span>
+            </td>
             <td>
               <span :class="['status', account.status]">
                 {{ account.status === 'active' ? '可用' : '已暂停' }}
@@ -101,7 +110,13 @@ async function save(): Promise<void> {
     <div v-if="editing" class="dialog-backdrop" @click.self="editing = null">
       <form class="dialog" @submit.prevent="save">
         <h2>调整家长 AI 额度</h2>
-        <p class="account-id">{{ editing.providerAccountId }}</p>
+        <p class="account-id">
+          {{
+            editing.parentDisplayName ||
+            editing.parentEmail ||
+            editing.providerAccountId
+          }}
+        </p>
         <label>
           <span>账号状态</span>
           <select v-model="editing.status">
@@ -212,6 +227,19 @@ tbody tr:last-child td {
 
 .account-id {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.parent-name {
+  display: block;
+  font-weight: 600;
+}
+
+.parent-email {
+  display: block;
+  margin-top: 2px;
+  color: #6b4f5a;
   font-size: 13px;
   overflow-wrap: anywhere;
 }
