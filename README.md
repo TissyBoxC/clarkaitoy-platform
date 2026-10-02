@@ -348,6 +348,29 @@ Compose 文件位于 `deploy/docker-compose.yml`，支持以下配置：
 | 平台服务 | 默认服务加两个 Go 服务 | `docker compose -f deploy/docker-compose.yml --profile services up -d --build` |
 | 全量 | 默认、AI 和平台服务 | `docker compose -f deploy/docker-compose.yml --profile ai --profile services up -d --build` |
 
+平台和 AI 网关的发布与本地 Docker 必须同步。日常升级不需要手工拼 Compose
+参数，在平台根目录执行：
+
+```powershell
+.\tools\synchronize-docker.ps1
+```
+
+脚本会从根目录 `VERSION` 和 `services/sub2api_fork/backend/cmd/server/VERSION`
+读取已发布版本，构建 `sprout-local-*:<版本>` 镜像，重建应用容器并检查实际健康
+接口。PostgreSQL、Redis、MQTT 和 AI 网关的数据卷保留，不会因升级被删除。
+
+发布平台或 AI 网关版本时，CI 会同时推送同版本 GHCR 镜像：
+
+| 组件 | GHCR 镜像 |
+| --- | --- |
+| 设备与家庭业务服务 | `ghcr.io/tissyboxc/sprout-device-platform` |
+| 实时语音服务 | `ghcr.io/tissyboxc/sprout-voice-gateway` |
+| 后台管理端 | `ghcr.io/tissyboxc/sprout-admin-web` |
+| AI 网关 | `ghcr.io/tissyboxc/sub2api` |
+
+任何一侧更新后都要核对另一侧：Docker 镜像标签必须对应已发布 tag，Release
+必须包含对应容器镜像版本。
+
 Docker Desktop 需要先启动并确认 Compose 可用：
 
 ```powershell

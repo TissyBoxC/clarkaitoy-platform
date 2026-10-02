@@ -78,6 +78,7 @@ services:
     build:
       context: ../services/sub2api_fork
       dockerfile: Dockerfile
+    image: sprout-local-sub2api:${SPROUT_SUB2API_VERSION:-local}
     profiles:
       - ai
     security_opt:
@@ -139,6 +140,7 @@ services:
         # device platform address, never at an in-cluster service name.
         VITE_API_BASE_URL: ${SPROUT_ADMIN_API_BASE_URL:-http://127.0.0.1:8081}
         VITE_API_TIMEOUT_MS: ${SPROUT_ADMIN_API_TIMEOUT_MS:-15000}
+    image: sprout-local-admin_web:${SPROUT_PLATFORM_VERSION:-local}
     profiles:
       - services
     security_opt:
@@ -165,6 +167,7 @@ services:
     build:
       context: ..
       dockerfile: services/device_platform/Dockerfile
+    image: sprout-local-device_platform:${SPROUT_PLATFORM_VERSION:-local}
     profiles:
       - services
     ports:
@@ -210,6 +213,7 @@ services:
     build:
       context: ..
       dockerfile: services/voice_gateway/Dockerfile
+    image: sprout-local-voice_gateway:${SPROUT_PLATFORM_VERSION:-local}
     profiles:
       - services
     ports:

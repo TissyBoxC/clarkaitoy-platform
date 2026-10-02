@@ -33,6 +33,7 @@ $replacements = [ordered]@{
     'replace-with-local-admin-password' = New-HexSecret -ByteCount 24
     'replace-with-local-sub2api-key' = New-HexSecret -ByteCount 24
     'replace-with-at-least-32-random-hex-characters' = New-HexSecret -ByteCount 32
+    'replace-with-a-different-32-character-secret' = New-HexSecret -ByteCount 32
 }
 
 $environmentLines = Get-Content -LiteralPath $examplePath
