@@ -282,6 +282,18 @@ docker compose --env-file .env up -d --force-recreate mqtt device_platform
 | `SPROUT_AI_DEFAULT_CONCURRENCY` | 新 AI 账号默认并发 | 建议从 `1` 开始 |
 | `SPROUT_AI_DEFAULT_MODELS` | 新账号默认允许的模型，逗号分隔 | 留空表示不额外限制 |
 
+### Sub2API 出站域名白名单
+
+`SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS` 是 Sub2API 允许连接的上游域名列表。
+该变量是完整覆盖而非追加，多个域名使用英文逗号分隔，不能包含协议、端口或
+路径。新增中转站时必须保留当前正在使用的全部域名，否则其他账号会立即失效。
+
+```env
+SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS=sub.unsee.you,api.openai.com,api.anthropic.com,api.kimi.com,api.moonshot.ai,api.moonshot.cn,open.bigmodel.cn,api.minimaxi.com,api.minimax.io,opencode.ai,generativelanguage.googleapis.com,cloudcode-pa.googleapis.com,*.openai.azure.com
+```
+
+修改后必须重建 Sub2API 容器，环境变量不会在运行中的容器内自动刷新。
+
 ### Sub2API
 
 | 变量 | 作用 | 生产建议 |

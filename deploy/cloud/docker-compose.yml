@@ -111,6 +111,7 @@ services:
       SECURITY_URL_ALLOWLIST_ENABLED: "true"
       SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP: "false"
       SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS: "false"
+      SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS: "${SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS:-sub.unsee.you,api.openai.com,api.anthropic.com,api.kimi.com,api.moonshot.ai,api.moonshot.cn,open.bigmodel.cn,api.minimaxi.com,api.minimax.io,opencode.ai,generativelanguage.googleapis.com,cloudcode-pa.googleapis.com,*.openai.azure.com}"
       SPROUT_INTERNAL_API_ENABLED: "true"
       SPROUT_INTERNAL_API_TOKEN: ${SPROUT_INTERNAL_SERVICE_TOKEN}
     depends_on:
