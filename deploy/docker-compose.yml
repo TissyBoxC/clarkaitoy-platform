@@ -113,6 +113,8 @@ services:
       SECURITY_URL_ALLOWLIST_ENABLED: "true"
       SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP: "false"
       SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS: "false"
+      SPROUT_INTERNAL_API_ENABLED: "true"
+      SPROUT_INTERNAL_API_TOKEN: ${SPROUT_INTERNAL_SERVICE_TOKEN:?set SPROUT_INTERNAL_SERVICE_TOKEN in deploy/.env}
     depends_on:
       postgres:
         condition: service_healthy
@@ -180,6 +182,15 @@ services:
       DEVICE_PLATFORM_MQTT_CLIENT_CERTIFICATE_FILE: "/run/sprout/mqtt/device.crt"
       DEVICE_PLATFORM_MQTT_CLIENT_KEY_FILE: "/run/sprout/mqtt/device.key"
       DEVICE_PLATFORM_MQTT_INSECURE_SKIP_VERIFY: "false"
+      DEVICE_PLATFORM_AUTH_ACCESS_TOKEN_SECRET: ${SPROUT_AUTH_ACCESS_TOKEN_SECRET:?set SPROUT_AUTH_ACCESS_TOKEN_SECRET in deploy/.env}
+      DEVICE_PLATFORM_AUTH_ACCESS_TOKEN_TTL: ${SPROUT_AUTH_ACCESS_TOKEN_TTL:-15m}
+      DEVICE_PLATFORM_AUTH_REFRESH_TOKEN_TTL: ${SPROUT_AUTH_REFRESH_TOKEN_TTL:-720h}
+      DEVICE_PLATFORM_AI_CREDENTIAL_KEY: ${SPROUT_AI_CREDENTIAL_KEY:?set SPROUT_AI_CREDENTIAL_KEY in deploy/.env}
+      DEVICE_PLATFORM_SUB2API_BASE_URL: "http://sub2api:8080"
+      DEVICE_PLATFORM_SUB2API_SERVICE_TOKEN: ${SPROUT_INTERNAL_SERVICE_TOKEN:?set SPROUT_INTERNAL_SERVICE_TOKEN in deploy/.env}
+      DEVICE_PLATFORM_AI_DEFAULT_BALANCE_USD: ${SPROUT_AI_DEFAULT_BALANCE_USD:-0}
+      DEVICE_PLATFORM_AI_DEFAULT_CONCURRENCY: ${SPROUT_AI_DEFAULT_CONCURRENCY:-1}
+      DEVICE_PLATFORM_AI_DEFAULT_MODELS: ${SPROUT_AI_DEFAULT_MODELS:-}
     volumes:
       - ./mosquitto/certs:/run/sprout/mqtt:ro
     depends_on:
@@ -188,6 +199,8 @@ services:
       redis:
         condition: service_healthy
       mqtt:
+        condition: service_healthy
+      sub2api:
         condition: service_healthy
     restart: unless-stopped
 
