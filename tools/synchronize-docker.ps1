@@ -119,7 +119,8 @@ if (-not $SkipBuild) {
         $profileArguments + @(
             'build',
             '--pull',
-            '--build-arg:VITE_API_BASE_URL=',
+            '--build-arg',
+            'VITE_API_BASE_URL=',
             'admin_web'
         )
     )
