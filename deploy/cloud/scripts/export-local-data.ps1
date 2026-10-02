@@ -61,6 +61,7 @@ $lines = foreach ($file in $files) {
     $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
     "$hash  $($file.Name)"
 }
-Set-Content -LiteralPath $checksumPath -Value $lines -Encoding ascii
+$checksumText = ($lines -join "`n") + "`n"
+[System.IO.File]::WriteAllText($checksumPath, $checksumText, [System.Text.Encoding]::ASCII)
 
 Write-Host "Export complete: $outputPath"
