@@ -91,11 +91,19 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("create AI account service: %w", err)
 	}
+	var phoneVerifier authService.PhoneVerifier
+	if cfg.Auth.PhoneVerificationMode == "local" {
+		phoneVerifier = authService.NewLocalPhoneVerifier(
+			authRepository.NewPostgresRepository(databaseStore.Pool()),
+			nil,
+		)
+	}
 	parentAuthService, err := authService.New(authService.Options{
 		Repository:      authRepository.NewPostgresRepository(databaseStore.Pool()),
 		TokenIssuer:     tokenIssuer,
 		AIProvisioner:   aiAccountService,
 		MFACipher:       mfaCipher,
+		PhoneVerifier:   phoneVerifier,
 		MFAChallengeTTL: cfg.Auth.MFAChallengeTTL,
 		AccessTTL:       cfg.Auth.AccessTokenTTL,
 		RefreshTTL:      cfg.Auth.RefreshTokenTTL,

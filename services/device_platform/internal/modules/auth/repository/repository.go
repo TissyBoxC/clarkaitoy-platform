@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/domain"
@@ -17,8 +18,10 @@ import (
 type Repository interface {
 	CreateParentAccount(ctx context.Context, account *domain.ParentAccount) error
 	GetParentAccountByEmail(ctx context.Context, email string) (*domain.ParentAccount, error)
+	GetParentAccountByPhone(ctx context.Context, phone string) (*domain.ParentAccount, error)
 	GetParentAccountByID(ctx context.Context, accountID string) (*domain.ParentAccount, error)
 	UpdatePasswordHash(ctx context.Context, accountID string, passwordHash string) error
+	UpdateEmail(ctx context.Context, accountID string, email string) error
 	UpdateLastLogin(ctx context.Context, accountID string) error
 	CreateSession(ctx context.Context, session *domain.Session) error
 	GetSessionByRefreshTokenHash(
@@ -44,6 +47,16 @@ type Repository interface {
 		parentAccountID string,
 	) (*domain.TOTPCredential, error)
 	UpsertTOTPCredential(ctx context.Context, credential *domain.TOTPCredential) error
+	CreatePhoneVerificationCode(
+		ctx context.Context,
+		verification *domain.PhoneVerificationCode,
+	) error
+	ConsumePhoneVerificationCode(
+		ctx context.Context,
+		phone string,
+		purpose string,
+		codeHash string,
+	) error
 }
 
 // PostgresRepository is the PostgreSQL-backed authentication repository.
@@ -68,25 +81,38 @@ func (r *PostgresRepository) CreateParentAccount(
 			phone,
 			password_hash,
 			display_name,
+			guardian_family_name,
+			child_nickname,
+			child_birthday,
 			status,
 			role,
 			guardian_consent_version,
 			guardian_consented_at,
+			phone_verified_at,
+			email_verified_at,
 			last_login_at,
 			created_at,
 			updated_at
 		)
-		VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		VALUES (
+			$1, NULLIF($2, ''), $3, $4, $5, $6, $7, NULLIF($8, '')::date, $9, $10,
+			$11, $12, $13, $14, $15, $16, $17
+		)
 	`,
 		account.ID,
 		account.Email,
 		account.Phone,
 		account.PasswordHash,
 		account.DisplayName,
+		account.GuardianFamilyName,
+		account.ChildNickname,
+		account.ChildBirthday,
 		account.Status,
 		account.Role,
 		account.GuardianConsentVersion,
 		account.GuardianConsentedAt,
+		account.PhoneVerifiedAt,
+		account.EmailVerifiedAt,
 		account.LastLoginAt,
 		account.CreatedAt,
 		account.UpdatedAt,
@@ -94,9 +120,39 @@ func (r *PostgresRepository) CreateParentAccount(
 	if err != nil {
 		var pgError *pgconn.PgError
 		if errors.As(err, &pgError) && pgError.Code == "23505" {
+			if strings.Contains(pgError.ConstraintName, "phone") {
+				return domain.ErrPhoneExists
+			}
 			return domain.ErrEmailExists
 		}
 		return fmt.Errorf("insert parent account: %w", err)
+	}
+	return nil
+}
+
+// UpdateEmail binds a recovery email and marks it verified because the caller
+// proved control of the existing account with its password.
+func (r *PostgresRepository) UpdateEmail(
+	ctx context.Context,
+	accountID string,
+	email string,
+) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE parent_accounts
+		SET email = $2,
+		    email_verified_at = NOW(),
+		    updated_at = NOW()
+		WHERE id = $1
+	`, accountID, email)
+	if err != nil {
+		var pgError *pgconn.PgError
+		if errors.As(err, &pgError) && pgError.Code == "23505" {
+			return domain.ErrEmailExists
+		}
+		return fmt.Errorf("update parent email: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrAccountNotFound
 	}
 	return nil
 }
@@ -109,20 +165,56 @@ func (r *PostgresRepository) GetParentAccountByEmail(
 	row := r.pool.QueryRow(ctx, `
 		SELECT
 			id,
-			email,
+			COALESCE(email, ''),
 			COALESCE(phone, ''),
 			password_hash,
 			display_name,
+			guardian_family_name,
+			COALESCE(child_nickname, ''),
+			COALESCE(child_birthday::text, ''),
 			status,
 			role,
 			guardian_consent_version,
 			guardian_consented_at,
+			phone_verified_at,
+			email_verified_at,
 			last_login_at,
 			created_at,
 			updated_at
 		FROM parent_accounts
-		WHERE email = $1
+		WHERE email IS NOT NULL
+		  AND email = $1
 	`, email)
+	return scanParentAccount(row)
+}
+
+// GetParentAccountByPhone loads one account by normalized mobile number.
+func (r *PostgresRepository) GetParentAccountByPhone(
+	ctx context.Context,
+	phone string,
+) (*domain.ParentAccount, error) {
+	row := r.pool.QueryRow(ctx, `
+		SELECT
+			id,
+			COALESCE(email, ''),
+			COALESCE(phone, ''),
+			password_hash,
+			display_name,
+			guardian_family_name,
+			COALESCE(child_nickname, ''),
+			COALESCE(child_birthday::text, ''),
+			status,
+			role,
+			guardian_consent_version,
+			guardian_consented_at,
+			phone_verified_at,
+			email_verified_at,
+			last_login_at,
+			created_at,
+			updated_at
+		FROM parent_accounts
+		WHERE phone = $1
+	`, phone)
 	return scanParentAccount(row)
 }
 
@@ -134,14 +226,19 @@ func (r *PostgresRepository) GetParentAccountByID(
 	row := r.pool.QueryRow(ctx, `
 		SELECT
 			id,
-			email,
+			COALESCE(email, ''),
 			COALESCE(phone, ''),
 			password_hash,
 			display_name,
+			guardian_family_name,
+			COALESCE(child_nickname, ''),
+			COALESCE(child_birthday::text, ''),
 			status,
 			role,
 			guardian_consent_version,
 			guardian_consented_at,
+			phone_verified_at,
+			email_verified_at,
 			last_login_at,
 			created_at,
 			updated_at
@@ -495,6 +592,66 @@ func (r *PostgresRepository) UpsertTOTPCredential(
 	return nil
 }
 
+// CreatePhoneVerificationCode stores one hashed, short-lived SMS code.
+func (r *PostgresRepository) CreatePhoneVerificationCode(
+	ctx context.Context,
+	verification *domain.PhoneVerificationCode,
+) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO phone_verification_codes (
+			id,
+			phone,
+			purpose,
+			code_hash,
+			expires_at,
+			created_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`,
+		verification.ID,
+		verification.Phone,
+		verification.Purpose,
+		verification.CodeHash,
+		verification.ExpiresAt,
+		verification.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("insert phone verification code: %w", err)
+	}
+	return nil
+}
+
+// ConsumePhoneVerificationCode atomically validates and consumes one SMS code.
+func (r *PostgresRepository) ConsumePhoneVerificationCode(
+	ctx context.Context,
+	phone string,
+	purpose string,
+	codeHash string,
+) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE phone_verification_codes
+		SET consumed_at = NOW()
+		WHERE id = (
+			SELECT id
+			FROM phone_verification_codes
+			WHERE phone = $1
+			  AND purpose = $2
+			  AND code_hash = $3
+			  AND consumed_at IS NULL
+			  AND expires_at > NOW()
+			ORDER BY created_at DESC
+			LIMIT 1
+		)
+	`, phone, purpose, codeHash)
+	if err != nil {
+		return fmt.Errorf("consume phone verification code: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrInvalidVerification
+	}
+	return nil
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }
@@ -507,10 +664,15 @@ func scanParentAccount(row rowScanner) (*domain.ParentAccount, error) {
 		&account.Phone,
 		&account.PasswordHash,
 		&account.DisplayName,
+		&account.GuardianFamilyName,
+		&account.ChildNickname,
+		&account.ChildBirthday,
 		&account.Status,
 		&account.Role,
 		&account.GuardianConsentVersion,
 		&account.GuardianConsentedAt,
+		&account.PhoneVerifiedAt,
+		&account.EmailVerifiedAt,
 		&account.LastLoginAt,
 		&account.CreatedAt,
 		&account.UpdatedAt,

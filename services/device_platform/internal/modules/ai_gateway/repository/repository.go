@@ -117,7 +117,7 @@ func (r *PostgresRepository) List(ctx context.Context) ([]domain.Account, error)
 			ai_accounts.allowed_models,
 			ai_accounts.created_at,
 			ai_accounts.updated_at,
-			parent_accounts.email,
+			COALESCE(parent_accounts.email, ''),
 			parent_accounts.display_name
 		FROM ai_accounts
 		JOIN parent_accounts ON parent_accounts.id = ai_accounts.parent_account_id

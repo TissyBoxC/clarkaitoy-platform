@@ -57,9 +57,11 @@ func (s *Service) BootstrapAdmin(
 		return "", fmt.Errorf("hash administrator password: %w", err)
 	}
 	now := s.timeSource.Now().UTC()
+	accountID := uuid.NewString()
 	account := &domain.ParentAccount{
-		ID:           uuid.NewString(),
+		ID:           accountID,
 		Email:        email,
+		Phone:        "admin:" + accountID,
 		PasswordHash: string(passwordHash),
 		DisplayName:  displayName,
 		Status:       accountStatusActive,

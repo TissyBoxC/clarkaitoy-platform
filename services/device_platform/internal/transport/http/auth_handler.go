@@ -17,16 +17,33 @@ type authHandler struct {
 }
 
 type registerRequest struct {
-	Email                  string `json:"email"`
-	Password               string `json:"password"`
-	DisplayName            string `json:"display_name"`
 	Phone                  string `json:"phone"`
+	PhoneVerificationCode  string `json:"phone_verification_code"`
+	Password               string `json:"password"`
+	GuardianFamilyName     string `json:"guardian_family_name"`
+	ChildNickname          string `json:"child_nickname"`
+	ChildBirthday          string `json:"child_birthday"`
 	GuardianConsentVersion string `json:"guardian_consent_version"`
 }
 
 type loginRequest struct {
+	Identifier string `json:"identifier"`
+	Password   string `json:"password"`
+}
+
+type adminLoginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+}
+
+type bindEmailRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type sendPhoneVerificationRequest struct {
+	Phone   string `json:"phone"`
+	Purpose string `json:"purpose"`
 }
 
 type adminMFALoginRequest struct {
@@ -45,10 +62,12 @@ func (handler authHandler) register(response http.ResponseWriter, request *http.
 		return
 	}
 	account, pair, summary, err := handler.service.Register(request.Context(), authdomain.RegisterInput{
-		Email:                  payload.Email,
-		Password:               payload.Password,
-		DisplayName:            payload.DisplayName,
 		Phone:                  payload.Phone,
+		PhoneVerificationCode:  payload.PhoneVerificationCode,
+		Password:               payload.Password,
+		GuardianFamilyName:     payload.GuardianFamilyName,
+		ChildNickname:          payload.ChildNickname,
+		ChildBirthday:          payload.ChildBirthday,
 		GuardianConsentVersion: payload.GuardianConsentVersion,
 	})
 	if err != nil {
@@ -65,8 +84,8 @@ func (handler authHandler) login(response http.ResponseWriter, request *http.Req
 		return
 	}
 	account, pair, summary, err := handler.service.Login(request.Context(), authdomain.LoginInput{
-		Email:    payload.Email,
-		Password: payload.Password,
+		Identifier: payload.Identifier,
+		Password:   payload.Password,
 	})
 	if err != nil {
 		writeAuthServiceError(response, request, err)
@@ -75,13 +94,37 @@ func (handler authHandler) login(response http.ResponseWriter, request *http.Req
 	writeSuccess(response, request, http.StatusOK, authResponse(account, pair, summary))
 }
 
+// sendPhoneVerification creates a short-lived code request. The local
+// development verifier accepts 000000 until an SMS provider is configured.
+func (handler authHandler) sendPhoneVerification(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	var payload sendPhoneVerificationRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(response, request, http.StatusBadRequest, "invalid_request", "请检查填写的内容")
+		return
+	}
+	if err := handler.service.SendPhoneVerificationCode(
+		request.Context(),
+		payload.Phone,
+		payload.Purpose,
+	); err != nil {
+		writeAuthServiceError(response, request, err)
+		return
+	}
+	writeSuccess(response, request, http.StatusOK, map[string]any{
+		"sent": true,
+	})
+}
+
 // startAdminLogin validates the password and returns a short-lived MFA
 // challenge. It never returns a session token before TOTP succeeds.
 func (handler authHandler) startAdminLogin(
 	response http.ResponseWriter,
 	request *http.Request,
 ) {
-	var payload loginRequest
+	var payload adminLoginRequest
 	if err := decodeJSON(request, &payload); err != nil {
 		writeError(response, request, http.StatusBadRequest, "invalid_request", "请检查填写的内容")
 		return
@@ -89,8 +132,8 @@ func (handler authHandler) startAdminLogin(
 	challengeToken, account, err := handler.service.StartAdminLogin(
 		request.Context(),
 		authdomain.LoginInput{
-			Email:    payload.Email,
-			Password: payload.Password,
+			Identifier: payload.Email,
+			Password:   payload.Password,
 		},
 	)
 	if err != nil {
@@ -101,11 +144,15 @@ func (handler authHandler) startAdminLogin(
 		"status":          "mfa_required",
 		"challenge_token": challengeToken,
 		"account": map[string]any{
-			"id":           account.ID,
-			"email":        account.Email,
-			"display_name": account.DisplayName,
-			"role":         account.Role,
-			"status":       account.Status,
+			"id":                   account.ID,
+			"email":                account.Email,
+			"phone":                account.Phone,
+			"display_name":         account.DisplayName,
+			"guardian_family_name": account.GuardianFamilyName,
+			"child_nickname":       account.ChildNickname,
+			"child_birthday":       account.ChildBirthday,
+			"role":                 account.Role,
+			"status":               account.Status,
 		},
 	})
 }
@@ -132,6 +179,32 @@ func (handler authHandler) completeAdminLogin(
 		return
 	}
 	writeSuccess(response, request, http.StatusOK, authResponse(account, pair, nil))
+}
+
+func (handler authHandler) bindEmail(response http.ResponseWriter, request *http.Request) {
+	accountID, ok := authenticatedAccountID(request)
+	if !ok {
+		writeError(response, request, http.StatusUnauthorized, "unauthenticated", "请重新登录")
+		return
+	}
+	var payload bindEmailRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(response, request, http.StatusBadRequest, "invalid_request", "请检查填写的内容")
+		return
+	}
+	account, err := handler.service.BindEmail(
+		request.Context(),
+		accountID,
+		authdomain.BindEmailInput{
+			Email:    payload.Email,
+			Password: payload.Password,
+		},
+	)
+	if err != nil {
+		writeAuthServiceError(response, request, err)
+		return
+	}
+	writeSuccess(response, request, http.StatusOK, accountResponse(account, nil))
 }
 
 func (handler authHandler) refresh(response http.ResponseWriter, request *http.Request) {
@@ -241,11 +314,15 @@ func accountResponse(
 ) map[string]any {
 	response := map[string]any{
 		"account": map[string]any{
-			"id":           account.ID,
-			"email":        account.Email,
-			"display_name": account.DisplayName,
-			"role":         account.Role,
-			"status":       account.Status,
+			"id":                   account.ID,
+			"email":                account.Email,
+			"phone":                account.Phone,
+			"display_name":         account.DisplayName,
+			"guardian_family_name": account.GuardianFamilyName,
+			"child_nickname":       account.ChildNickname,
+			"child_birthday":       account.ChildBirthday,
+			"role":                 account.Role,
+			"status":               account.Status,
 		},
 		"ai_account": nil,
 	}
@@ -271,14 +348,28 @@ func writeAuthServiceError(
 	switch {
 	case errors.Is(err, authdomain.ErrEmailExists):
 		writeError(response, request, http.StatusConflict, "email_exists", "这个邮箱已经注册过")
+	case errors.Is(err, authdomain.ErrPhoneExists):
+		writeError(response, request, http.StatusConflict, "phone_exists", "这个手机号已经注册过")
 	case errors.Is(err, authdomain.ErrInvalidEmail):
 		writeError(response, request, http.StatusUnprocessableEntity, "invalid_email", "请输入有效的邮箱")
+	case errors.Is(err, authdomain.ErrInvalidPhone):
+		writeError(response, request, http.StatusUnprocessableEntity, "invalid_phone", "请输入有效的手机号")
+	case errors.Is(err, authdomain.ErrPhoneVerification):
+		writeError(response, request, http.StatusServiceUnavailable, "phone_verification_unavailable", "短信验证暂时不可用，请稍后重试")
 	case errors.Is(err, authdomain.ErrWeakPassword):
 		writeError(response, request, http.StatusUnprocessableEntity, "weak_password", "密码至少 8 位，并同时包含字母和数字")
 	case errors.Is(err, authdomain.ErrInvalidDisplayName):
 		writeError(response, request, http.StatusUnprocessableEntity, "invalid_display_name", "请输入家长称呼")
+	case errors.Is(err, authdomain.ErrInvalidGuardianName):
+		writeError(response, request, http.StatusUnprocessableEntity, "invalid_guardian_name", "家长姓氏不能超过 40 个字")
+	case errors.Is(err, authdomain.ErrInvalidChildNickname):
+		writeError(response, request, http.StatusUnprocessableEntity, "invalid_child_nickname", "宝贝姓名不能超过 40 个字")
+	case errors.Is(err, authdomain.ErrInvalidChildBirthday):
+		writeError(response, request, http.StatusUnprocessableEntity, "invalid_child_birthday", "请输入有效日期，例如 2021-06-01")
 	case errors.Is(err, authdomain.ErrInvalidCredentials):
-		writeError(response, request, http.StatusUnauthorized, "invalid_credentials", "邮箱或密码不正确")
+		writeError(response, request, http.StatusUnauthorized, "invalid_credentials", "手机号、邮箱或密码不正确")
+	case errors.Is(err, authdomain.ErrInvalidVerification):
+		writeError(response, request, http.StatusUnauthorized, "invalid_verification_code", "验证码不正确，请重新输入")
 	case errors.Is(err, authdomain.ErrAccountDisabled):
 		writeError(response, request, http.StatusForbidden, "account_disabled", "这个账号当前无法登录")
 	case errors.Is(err, authdomain.ErrMFANotConfigured):

@@ -7,7 +7,7 @@
   "required": [
     "schema_version",
     "user_id",
-    "email",
+    "phone",
     "display_name",
     "roles",
     "status",
@@ -25,6 +25,10 @@
       "type": "string",
       "format": "email",
       "maxLength": 254
+    },
+    "phone": {
+      "type": "string",
+      "pattern": "^1[0-9]{10}$"
     },
     "display_name": {
       "type": "string",

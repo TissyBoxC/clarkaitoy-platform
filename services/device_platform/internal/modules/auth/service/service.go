@@ -23,11 +23,14 @@ import (
 )
 
 const (
-	accountStatusActive      = "active"
-	defaultConsent           = "2026-01"
-	defaultMFAChallengeTTL   = 5 * time.Minute
-	defaultTOTPKeyVersion    = 1
-	defaultTOTPPeriodSeconds = 30
+	accountStatusActive              = "active"
+	defaultConsent                   = "2026-01"
+	defaultMFAChallengeTTL           = 5 * time.Minute
+	defaultTOTPKeyVersion            = 1
+	defaultTOTPPeriodSeconds         = 30
+	phoneVerificationPurposeRegister = "register"
+	phoneVerificationPurposeLogin    = "login"
+	phoneVerificationCodeTTL         = 5 * time.Minute
 )
 
 // AIAccountProvisioner creates or repairs the parent's AI execution account.
@@ -50,10 +53,21 @@ type Service struct {
 	tokenIssuer     security.TokenIssuer
 	aiProvisioner   AIAccountProvisioner
 	mfaCipher       MFACipher
+	phoneVerifier   PhoneVerifier
 	timeSource      clock.Clock
 	accessTTL       time.Duration
 	refreshTTL      time.Duration
 	mfaChallengeTTL time.Duration
+}
+
+// PhoneVerifier sends and validates guardian mobile verification codes.
+//
+// The local verifier is enabled only through an explicit development setting.
+// It accepts an empty code or 000000 while SMS delivery is not configured, but
+// keeps the send/verify contract ready for a real provider.
+type PhoneVerifier interface {
+	SendVerificationCode(ctx context.Context, phone string, purpose string) error
+	VerifyCode(ctx context.Context, phone string, purpose string, code string) error
 }
 
 // MFACipher encrypts administrator TOTP secrets before persistence.
@@ -68,6 +82,7 @@ type Options struct {
 	TokenIssuer     security.TokenIssuer
 	AIProvisioner   AIAccountProvisioner
 	MFACipher       MFACipher
+	PhoneVerifier   PhoneVerifier
 	MFAChallengeTTL time.Duration
 	Clock           clock.Clock
 	AccessTTL       time.Duration
@@ -98,6 +113,7 @@ func New(options Options) (*Service, error) {
 		tokenIssuer:     options.TokenIssuer,
 		aiProvisioner:   options.AIProvisioner,
 		mfaCipher:       options.MFACipher,
+		phoneVerifier:   options.PhoneVerifier,
 		timeSource:      timeSource,
 		accessTTL:       options.AccessTTL,
 		refreshTTL:      options.RefreshTTL,
@@ -114,14 +130,23 @@ func (s *Service) Register(
 	ctx context.Context,
 	input domain.RegisterInput,
 ) (*domain.ParentAccount, *domain.TokenPair, *domain.AIAccountSummary, error) {
-	input.Email = normalizeEmail(input.Email)
-	input.DisplayName = strings.TrimSpace(input.DisplayName)
 	input.Phone = strings.TrimSpace(input.Phone)
+	input.GuardianFamilyName = strings.TrimSpace(input.GuardianFamilyName)
+	input.ChildNickname = strings.TrimSpace(input.ChildNickname)
+	input.ChildBirthday = strings.TrimSpace(input.ChildBirthday)
 	input.GuardianConsentVersion = strings.TrimSpace(input.GuardianConsentVersion)
 	if input.GuardianConsentVersion == "" {
 		input.GuardianConsentVersion = defaultConsent
 	}
 	if err := validateRegistration(input); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := s.verifyPhoneCode(
+		ctx,
+		input.Phone,
+		phoneVerificationPurposeRegister,
+		input.PhoneVerificationCode,
+	); err != nil {
 		return nil, nil, nil, err
 	}
 
@@ -136,14 +161,17 @@ func (s *Service) Register(
 	now := s.timeSource.Now().UTC()
 	account := &domain.ParentAccount{
 		ID:                     uuid.NewString(),
-		Email:                  input.Email,
 		Phone:                  input.Phone,
 		PasswordHash:           string(passwordHash),
-		DisplayName:            input.DisplayName,
+		DisplayName:            guardianDisplayName(input),
+		GuardianFamilyName:     input.GuardianFamilyName,
+		ChildNickname:          input.ChildNickname,
+		ChildBirthday:          input.ChildBirthday,
 		Status:                 accountStatusActive,
 		Role:                   domain.RoleParent,
 		GuardianConsentVersion: input.GuardianConsentVersion,
 		GuardianConsentedAt:    now,
+		PhoneVerifiedAt:        &now,
 		CreatedAt:              now,
 		UpdatedAt:              now,
 	}
@@ -170,11 +198,11 @@ func (s *Service) Login(
 	ctx context.Context,
 	input domain.LoginInput,
 ) (*domain.ParentAccount, *domain.TokenPair, *domain.AIAccountSummary, error) {
-	email := normalizeEmail(input.Email)
-	if email == "" || input.Password == "" {
+	identifier := strings.TrimSpace(input.Identifier)
+	if identifier == "" || input.Password == "" {
 		return nil, nil, nil, domain.ErrInvalidCredentials
 	}
-	account, err := s.repository.GetParentAccountByEmail(ctx, email)
+	account, err := s.resolveParentAccountByIdentifier(ctx, identifier)
 	if err != nil {
 		if errors.Is(err, domain.ErrAccountNotFound) {
 			return nil, nil, nil, domain.ErrInvalidCredentials
@@ -205,17 +233,83 @@ func (s *Service) Login(
 	return account, tokenPair, summary, nil
 }
 
+// SendPhoneVerificationCode requests an SMS verification code for registration
+// or future phone-based sign-in. The verifier may be a real provider or the
+// development bypass; neither exposes the code to callers.
+func (s *Service) SendPhoneVerificationCode(
+	ctx context.Context,
+	phone string,
+	purpose string,
+) error {
+	if !isValidPhone(phone) {
+		return domain.ErrInvalidPhone
+	}
+	if purpose == "" {
+		purpose = phoneVerificationPurposeRegister
+	}
+	if purpose != phoneVerificationPurposeRegister &&
+		purpose != phoneVerificationPurposeLogin {
+		return domain.ErrInvalidVerification
+	}
+	if s.phoneVerifier == nil {
+		return domain.ErrPhoneVerification
+	}
+	return s.phoneVerifier.SendVerificationCode(
+		ctx,
+		normalizePhone(phone),
+		purpose,
+	)
+}
+
+// BindEmail adds an optional email sign-in identifier to one authenticated
+// guardian. The email is unique across all account roles so it cannot be
+// claimed by two accounts.
+func (s *Service) BindEmail(
+	ctx context.Context,
+	accountID string,
+	input domain.BindEmailInput,
+) (*domain.ParentAccount, error) {
+	email := normalizeEmail(input.Email)
+	if !isValidEmail(email) {
+		return nil, domain.ErrInvalidEmail
+	}
+	if input.Password == "" {
+		return nil, domain.ErrInvalidCredentials
+	}
+	account, err := s.repository.GetParentAccountByID(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if account.Status != accountStatusActive {
+		return nil, domain.ErrAccountDisabled
+	}
+	if err := bcrypt.CompareHashAndPassword(
+		[]byte(account.PasswordHash),
+		[]byte(input.Password),
+	); err != nil {
+		return nil, domain.ErrInvalidCredentials
+	}
+	if err := s.repository.UpdateEmail(ctx, account.ID, email); err != nil {
+		return nil, err
+	}
+	account.Email = email
+	now := s.timeSource.Now().UTC()
+	account.EmailVerifiedAt = &now
+	account.UpdatedAt = now
+	return account, nil
+}
+
 // StartAdminLogin validates an administrator password and creates a
 // short-lived MFA challenge. No access token is issued before TOTP succeeds.
 func (s *Service) StartAdminLogin(
 	ctx context.Context,
 	input domain.LoginInput,
 ) (string, *domain.ParentAccount, error) {
-	email := normalizeEmail(input.Email)
-	if email == "" || input.Password == "" {
+	identifier := strings.TrimSpace(input.Identifier)
+	if identifier == "" || input.Password == "" {
 		return "", nil, domain.ErrInvalidCredentials
 	}
-	account, err := s.repository.GetParentAccountByEmail(ctx, email)
+	account, err := s.resolveParentAccountByIdentifier(ctx, identifier)
 	if err != nil {
 		if errors.Is(err, domain.ErrAccountNotFound) {
 			return "", nil, domain.ErrInvalidCredentials
@@ -528,19 +622,144 @@ func (s *Service) issueAccessToken(parentAccountID string) (string, error) {
 }
 
 func validateRegistration(input domain.RegisterInput) error {
-	if input.Email == "" || !strings.Contains(input.Email, "@") ||
-		strings.HasPrefix(input.Email, "@") || strings.HasSuffix(input.Email, "@") {
-		return domain.ErrInvalidEmail
+	if !isValidPhone(input.Phone) {
+		return domain.ErrInvalidPhone
 	}
 	if len(input.Password) < 8 || len(input.Password) > 128 ||
 		!containsLetterAndNumber(input.Password) {
 		return domain.ErrWeakPassword
 	}
-	if input.DisplayName == "" || len([]rune(input.DisplayName)) > 40 {
-		return domain.ErrInvalidDisplayName
+	if len([]rune(input.GuardianFamilyName)) > 40 {
+		return domain.ErrInvalidGuardianName
+	}
+	if len([]rune(input.ChildNickname)) > 40 {
+		return domain.ErrInvalidChildNickname
+	}
+	if input.ChildBirthday != "" {
+		birthday, err := time.Parse("2006-01-02", input.ChildBirthday)
+		if err != nil || birthday.After(time.Now().UTC()) {
+			return domain.ErrInvalidChildBirthday
+		}
 	}
 	if input.GuardianConsentVersion == "" {
 		return domain.ErrGuardianConsent
+	}
+	return nil
+}
+
+func guardianDisplayName(input domain.RegisterInput) string {
+	familyName := strings.TrimSpace(input.GuardianFamilyName)
+	if familyName != "" {
+		return familyName + "家长"
+	}
+	if strings.TrimSpace(input.ChildNickname) != "" {
+		return strings.TrimSpace(input.ChildNickname) + "家长"
+	}
+	return "家长"
+}
+
+func (s *Service) resolveParentAccountByIdentifier(
+	ctx context.Context,
+	identifier string,
+) (*domain.ParentAccount, error) {
+	if isValidPhone(identifier) {
+		return s.repository.GetParentAccountByPhone(ctx, normalizePhone(identifier))
+	}
+	if isValidEmail(identifier) {
+		return s.repository.GetParentAccountByEmail(ctx, normalizeEmail(identifier))
+	}
+	return nil, domain.ErrInvalidCredentials
+}
+
+func (s *Service) verifyPhoneCode(
+	ctx context.Context,
+	phone string,
+	purpose string,
+	code string,
+) error {
+	if s.phoneVerifier == nil {
+		return domain.ErrPhoneVerification
+	}
+	return s.phoneVerifier.VerifyCode(ctx, normalizePhone(phone), purpose, strings.TrimSpace(code))
+}
+
+func isValidPhone(value string) bool {
+	normalized := normalizePhone(value)
+	if len(normalized) != 11 || normalized[0] != '1' {
+		return false
+	}
+	for _, character := range normalized {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizePhone(value string) string {
+	replacer := strings.NewReplacer(" ", "", "-", "", "(", "", ")", "")
+	return replacer.Replace(strings.TrimSpace(value))
+}
+
+func isValidEmail(value string) bool {
+	value = strings.TrimSpace(value)
+	return value != "" && strings.Contains(value, "@") &&
+		!strings.HasPrefix(value, "@") && !strings.HasSuffix(value, "@")
+}
+
+// LocalPhoneVerifier keeps the SMS flow usable before a provider is configured.
+// It stores code hashes and accepts the development bypass code `000000`.
+type LocalPhoneVerifier struct {
+	repository repository.Repository
+	timeSource clock.Clock
+}
+
+// NewLocalPhoneVerifier creates the development SMS verifier.
+func NewLocalPhoneVerifier(
+	repository repository.Repository,
+	timeSource clock.Clock,
+) *LocalPhoneVerifier {
+	if timeSource == nil {
+		timeSource = clock.SystemClock{}
+	}
+	return &LocalPhoneVerifier{
+		repository: repository,
+		timeSource: timeSource,
+	}
+}
+
+// SendVerificationCode records a code request for the enabled local bypass.
+func (v *LocalPhoneVerifier) SendVerificationCode(
+	ctx context.Context,
+	phone string,
+	purpose string,
+) error {
+	if !isValidPhone(phone) {
+		return domain.ErrInvalidPhone
+	}
+	now := v.timeSource.Now().UTC()
+	return v.repository.CreatePhoneVerificationCode(ctx, &domain.PhoneVerificationCode{
+		ID:        uuid.NewString(),
+		Phone:     normalizePhone(phone),
+		Purpose:   purpose,
+		CodeHash:  hashRefreshToken("000000"),
+		ExpiresAt: now.Add(phoneVerificationCodeTTL),
+		CreatedAt: now,
+	})
+}
+
+// VerifyCode accepts the development bypass while preserving real validation.
+func (v *LocalPhoneVerifier) VerifyCode(
+	ctx context.Context,
+	phone string,
+	purpose string,
+	code string,
+) error {
+	if strings.TrimSpace(code) == "" {
+		return nil
+	}
+	if code != "000000" {
+		return domain.ErrInvalidVerification
 	}
 	return nil
 }

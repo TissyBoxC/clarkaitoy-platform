@@ -250,6 +250,12 @@ flutter test
 flutter build apk --release
 ```
 
+本地联调时需把服务地址编译进应用，例如：
+
+```powershell
+flutter run -d android --dart-define=API_BASE_URL=http://10.0.2.2:8081
+```
+
 家长端当前只维护 Android 和 iOS；Android 发布包会随平台 Release
 以 `sprout-parent-app-vX.Y.Z.apk` 附件提供。桌面端和 Web 不属于交付范围。
 
@@ -537,6 +543,8 @@ $env:DEVICE_PLATFORM_MQTT_BROKER = "tls://127.0.0.1:8883"
 $env:DEVICE_PLATFORM_MQTT_CA_FILE = "deploy/mosquitto/certs/ca.crt"
 $env:DEVICE_PLATFORM_MQTT_CLIENT_CERTIFICATE_FILE = "deploy/mosquitto/certs/device.crt"
 $env:DEVICE_PLATFORM_MQTT_CLIENT_KEY_FILE = "deploy/mosquitto/certs/device.key"
+$env:DEVICE_PLATFORM_PHONE_VERIFICATION_MODE = "local"
+$env:DEVICE_PLATFORM_ALLOW_LOCAL_SMS_BYPASS = "true"
 ```
 
 ### `voice_gateway`

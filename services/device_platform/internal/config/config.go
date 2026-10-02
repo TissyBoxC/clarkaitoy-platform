@@ -48,6 +48,9 @@ type AuthConfig struct {
 	CredentialKeyID   int
 	MFACredentialKey  string
 	MFAChallengeTTL   time.Duration
+	// PhoneVerificationMode is disabled by default. Local mode is an explicit
+	// development bypass; production must configure a real provider.
+	PhoneVerificationMode string
 }
 
 // AIConfig contains the internal sub2api account provisioning settings.
@@ -121,6 +124,10 @@ func Load() (Config, error) {
 			CredentialKeyID:   envInt("DEVICE_PLATFORM_AI_CREDENTIAL_KEY_ID", 1),
 			MFACredentialKey:  env("DEVICE_PLATFORM_MFA_CREDENTIAL_KEY", ""),
 			MFAChallengeTTL:   envDuration("DEVICE_PLATFORM_MFA_CHALLENGE_TTL", 5*time.Minute),
+			PhoneVerificationMode: env(
+				"DEVICE_PLATFORM_PHONE_VERIFICATION_MODE",
+				"disabled",
+			),
 		},
 		AI: AIConfig{
 			BaseURL:            env("DEVICE_PLATFORM_SUB2API_BASE_URL", "http://127.0.0.1:8080"),
@@ -169,6 +176,19 @@ func Load() (Config, error) {
 	}
 	if cfg.Auth.MFAChallengeTTL <= 0 {
 		return Config{}, fmt.Errorf("DEVICE_PLATFORM_MFA_CHALLENGE_TTL must be positive")
+	}
+	switch cfg.Auth.PhoneVerificationMode {
+	case "disabled", "local":
+	default:
+		return Config{}, fmt.Errorf(
+			"DEVICE_PLATFORM_PHONE_VERIFICATION_MODE must be disabled or local",
+		)
+	}
+	if cfg.Auth.PhoneVerificationMode == "local" &&
+		strings.TrimSpace(os.Getenv("DEVICE_PLATFORM_ALLOW_LOCAL_SMS_BYPASS")) != "true" {
+		return Config{}, fmt.Errorf(
+			"DEVICE_PLATFORM_PHONE_VERIFICATION_MODE=local requires DEVICE_PLATFORM_ALLOW_LOCAL_SMS_BYPASS=true",
+		)
 	}
 	if cfg.AI.DefaultConcurrency < 1 {
 		return Config{}, fmt.Errorf("DEVICE_PLATFORM_AI_DEFAULT_CONCURRENCY must be greater than zero")

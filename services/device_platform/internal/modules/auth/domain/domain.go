@@ -8,6 +8,7 @@ import (
 
 var (
 	ErrEmailExists           = errors.New("email already exists")
+	ErrPhoneExists           = errors.New("phone already exists")
 	ErrAccountNotFound       = errors.New("parent account not found")
 	ErrInvalidCredentials    = errors.New("invalid credentials")
 	ErrAccountDisabled       = errors.New("parent account is disabled")
@@ -22,8 +23,15 @@ var (
 	ErrTOTPAlreadyConfigured = errors.New("administrator TOTP is already configured")
 	ErrGuardianConsent       = errors.New("guardian consent is required")
 	ErrInvalidEmail          = errors.New("invalid email")
+	ErrInvalidPhone          = errors.New("invalid phone")
+	ErrPhoneNotBound         = errors.New("phone is not bound")
+	ErrPhoneVerification     = errors.New("phone verification is unavailable")
+	ErrInvalidVerification   = errors.New("verification code is invalid")
 	ErrWeakPassword          = errors.New("password does not meet requirements")
 	ErrInvalidDisplayName    = errors.New("display name is required")
+	ErrInvalidGuardianName   = errors.New("guardian family name is invalid")
+	ErrInvalidChildNickname  = errors.New("child nickname is invalid")
+	ErrInvalidChildBirthday  = errors.New("child birthday is invalid")
 	ErrAIAccountUnavailable  = errors.New("AI account is unavailable")
 	ErrInsufficientPrivilege = errors.New("insufficient privilege")
 )
@@ -40,9 +48,14 @@ type ParentAccount struct {
 	Phone                  string
 	PasswordHash           string
 	DisplayName            string
+	GuardianFamilyName     string
+	ChildNickname          string
+	ChildBirthday          string
 	Status                 string
 	GuardianConsentVersion string
 	GuardianConsentedAt    time.Time
+	PhoneVerifiedAt        *time.Time
+	EmailVerifiedAt        *time.Time
 	Role                   string
 	LastLoginAt            *time.Time
 	CreatedAt              time.Time
@@ -69,15 +82,25 @@ type TokenPair struct {
 
 // RegisterInput contains the minimum data allowed during parent registration.
 type RegisterInput struct {
-	Email                  string
-	Password               string
-	DisplayName            string
 	Phone                  string
+	PhoneVerificationCode  string
+	Password               string
+	GuardianFamilyName     string
+	ChildNickname          string
+	ChildBirthday          string
 	GuardianConsentVersion string
 }
 
-// LoginInput contains credentials for one parent login attempt.
+// LoginInput accepts either a phone number or a bound email as identifier.
 type LoginInput struct {
+	Identifier string
+	Password   string
+}
+
+// BindEmailInput binds an optional email to an already authenticated guardian.
+// Re-entering the password prevents a stolen session from silently adding a
+// recovery address that can later be used for sign-in.
+type BindEmailInput struct {
 	Email    string
 	Password string
 }
@@ -98,6 +121,16 @@ type MFAChallenge struct {
 	ExpiresAt       time.Time
 	ConsumedAt      *time.Time
 	CreatedAt       time.Time
+}
+
+// PhoneVerificationCode stores only a hash of a short-lived SMS code.
+type PhoneVerificationCode struct {
+	ID        string
+	Phone     string
+	Purpose   string
+	CodeHash  string
+	ExpiresAt time.Time
+	CreatedAt time.Time
 }
 
 // TOTPCredential is the encrypted TOTP secret enrolled for one administrator.
@@ -130,6 +163,6 @@ type AIAccountSummary struct {
 	// SelectedModels is the guardian's explicit choice; empty means all.
 	SelectedModels []string
 	// AllowedModels is the effective model allowlist pushed to the provider.
-	AllowedModels    []string
-	ProviderReady    bool
+	AllowedModels []string
+	ProviderReady bool
 }

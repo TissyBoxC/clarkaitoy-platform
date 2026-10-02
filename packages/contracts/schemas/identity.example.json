@@ -1,6 +1,7 @@
 {
   "schema_version": "1.0.0",
   "user_id": "user_guardian_001",
+  "phone": "13800138000",
   "email": "guardian@example.com",
   "display_name": "家长一号",
   "roles": [
