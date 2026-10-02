@@ -6,6 +6,7 @@ require (
 	github.com/TissyBoxC/sprout-platform/packages/go/httpapi v0.0.0
 	github.com/TissyBoxC/sprout-platform/packages/go/observability v0.0.0
 	github.com/redis/go-redis/v9 v9.22.0
+	github.com/thesyncim/gopus v0.1.2
 )
 
 require (
