@@ -12,7 +12,23 @@ fi
 
 mqtt_host="$1"
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-cert_dir="$script_dir/../mosquitto/certs"
+cert_root="$script_dir/../mosquitto/certs"
+broker_cert_dir="$cert_root/broker"
+device_cert_dir="$cert_root/device"
+env_file="$script_dir/../.env"
+
+if [ -f "$env_file" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$env_file"
+  set +a
+fi
+
+# The official Mosquitto image runs as this fixed UID/GID.
+mqtt_uid="${SPROUT_MQTT_UID:-1883}"
+mqtt_gid="${SPROUT_MQTT_GID:-1883}"
+device_uid="${SPROUT_DEVICE_PLATFORM_UID:-65532}"
+device_gid="${SPROUT_DEVICE_PLATFORM_GID:-65532}"
 
 case "$mqtt_host" in
   *[!0-9.]*)
@@ -23,43 +39,77 @@ case "$mqtt_host" in
     ;;
 esac
 
-mkdir -p "$cert_dir"
+mkdir -p "$broker_cert_dir" "$device_cert_dir"
 rm -f \
-  "$cert_dir/ca.crt" "$cert_dir/ca.key" \
-  "$cert_dir/server.crt" "$cert_dir/server.key" "$cert_dir/server.csr" \
-  "$cert_dir/device.crt" "$cert_dir/device.key" "$cert_dir/device.csr"
+  "$broker_cert_dir/ca.crt" "$broker_cert_dir/ca.key" \
+  "$broker_cert_dir/server.crt" "$broker_cert_dir/server.key" "$broker_cert_dir/server.csr" \
+  "$broker_cert_dir/healthcheck.crt" "$broker_cert_dir/healthcheck.key" \
+  "$broker_cert_dir/healthcheck.csr" \
+  "$device_cert_dir/ca.crt" "$device_cert_dir/device.crt" \
+  "$device_cert_dir/device.key" "$device_cert_dir/device.csr"
 
-openssl genrsa -out "$cert_dir/ca.key" 4096
-openssl req -x509 -new -nodes -key "$cert_dir/ca.key" -sha256 -days 3650 \
-  -subj "/CN=Sprout Cloud MQTT CA" -out "$cert_dir/ca.crt"
+openssl genrsa -out "$broker_cert_dir/ca.key" 4096
+openssl req -x509 -new -nodes -key "$broker_cert_dir/ca.key" \
+  -sha256 -days 3650 -subj "/CN=Sprout Cloud MQTT CA" \
+  -out "$broker_cert_dir/ca.crt"
+cp "$broker_cert_dir/ca.crt" "$device_cert_dir/ca.crt"
 
-openssl genrsa -out "$cert_dir/server.key" 2048
-openssl req -new -key "$cert_dir/server.key" \
-  -subj "/CN=$mqtt_host" -out "$cert_dir/server.csr"
-cat > "$cert_dir/server.ext" <<EOF
+openssl genrsa -out "$broker_cert_dir/server.key" 2048
+openssl req -new -key "$broker_cert_dir/server.key" \
+  -subj "/CN=$mqtt_host" -out "$broker_cert_dir/server.csr"
+cat > "$broker_cert_dir/server.ext" <<EOF
 basicConstraints=CA:FALSE
 keyUsage=digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth
 subjectAltName=DNS:mqtt,IP:127.0.0.1,$public_san
 EOF
-openssl x509 -req -in "$cert_dir/server.csr" -CA "$cert_dir/ca.crt" \
-  -CAkey "$cert_dir/ca.key" -CAcreateserial -out "$cert_dir/server.crt" \
-  -days 825 -sha256 -extfile "$cert_dir/server.ext"
+openssl x509 -req -in "$broker_cert_dir/server.csr" \
+  -CA "$broker_cert_dir/ca.crt" -CAkey "$broker_cert_dir/ca.key" \
+  -CAcreateserial -out "$broker_cert_dir/server.crt" \
+  -days 825 -sha256 -extfile "$broker_cert_dir/server.ext"
 
-openssl genrsa -out "$cert_dir/device.key" 2048
-openssl req -new -key "$cert_dir/device.key" \
-  -subj "/CN=sprout-device" -out "$cert_dir/device.csr"
-cat > "$cert_dir/device.ext" <<EOF
+openssl genrsa -out "$broker_cert_dir/healthcheck.key" 2048
+openssl req -new -key "$broker_cert_dir/healthcheck.key" \
+  -subj "/CN=sprout-healthcheck" -out "$broker_cert_dir/healthcheck.csr"
+cat > "$broker_cert_dir/healthcheck.ext" <<EOF
 basicConstraints=CA:FALSE
 keyUsage=digitalSignature,keyEncipherment
 extendedKeyUsage=clientAuth
 EOF
-openssl x509 -req -in "$cert_dir/device.csr" -CA "$cert_dir/ca.crt" \
-  -CAkey "$cert_dir/ca.key" -CAcreateserial -out "$cert_dir/device.crt" \
-  -days 825 -sha256 -extfile "$cert_dir/device.ext"
+openssl x509 -req -in "$broker_cert_dir/healthcheck.csr" \
+  -CA "$broker_cert_dir/ca.crt" -CAkey "$broker_cert_dir/ca.key" \
+  -CAcreateserial -out "$broker_cert_dir/healthcheck.crt" \
+  -days 825 -sha256 -extfile "$broker_cert_dir/healthcheck.ext"
 
-rm -f "$cert_dir"/*.csr "$cert_dir"/*.ext "$cert_dir"/*.srl
-chmod 600 "$cert_dir"/*.key
-chmod 644 "$cert_dir"/*.crt
+openssl genrsa -out "$device_cert_dir/device.key" 2048
+openssl req -new -key "$device_cert_dir/device.key" \
+  -subj "/CN=sprout-device" -out "$device_cert_dir/device.csr"
+cat > "$device_cert_dir/device.ext" <<EOF
+basicConstraints=CA:FALSE
+keyUsage=digitalSignature,keyEncipherment
+extendedKeyUsage=clientAuth
+EOF
+openssl x509 -req -in "$device_cert_dir/device.csr" \
+  -CA "$broker_cert_dir/ca.crt" -CAkey "$broker_cert_dir/ca.key" \
+  -CAcreateserial -out "$device_cert_dir/device.crt" \
+  -days 825 -sha256 -extfile "$device_cert_dir/device.ext"
+
+rm -f "$broker_cert_dir"/*.csr "$broker_cert_dir"/*.ext "$broker_cert_dir"/*.srl
+rm -f "$device_cert_dir"/*.csr "$device_cert_dir"/*.ext
+
+# The broker and device platform run as different users. Keep each private
+# key readable only by the process that actually needs it.
+chown "$mqtt_uid:$mqtt_gid" \
+  "$broker_cert_dir/server.key" "$broker_cert_dir/server.crt" \
+  "$broker_cert_dir/healthcheck.key" "$broker_cert_dir/healthcheck.crt"
+chown "$device_uid:$device_gid" \
+  "$device_cert_dir/device.key" "$device_cert_dir/device.crt"
+chmod 600 "$broker_cert_dir/ca.key"
+chmod 640 "$broker_cert_dir/server.key" "$broker_cert_dir/healthcheck.key"
+chmod 644 \
+  "$broker_cert_dir/server.crt" "$broker_cert_dir/healthcheck.crt" \
+  "$broker_cert_dir/ca.crt"
+chmod 640 "$device_cert_dir/device.key"
+chmod 644 "$device_cert_dir/device.crt" "$device_cert_dir/ca.crt"
 
 echo "MQTT certificates generated for host: $mqtt_host"

@@ -138,6 +138,32 @@ docker compose -f docker-compose.yml up -d
 设备 MQTT 使用独立域名 `mqtt.example.com`，在 1Panel 或云防火墙中放行
 `8883/tcp`。不要对公网放行 `1883/tcp`。
 
+如果 MQTT 容器反复重启，先检查证书所有权和日志：
+
+```bash
+find mosquitto/certs -maxdepth 2 -type f -printf '%M %u:%g %p\n'
+docker logs --tail=100 sprout-mqtt-1
+```
+
+证书按使用方分开存放：
+
+- `mosquitto/certs/broker/server.key` 归 MQTT 用户所有，默认 UID/GID `1883`
+- `mosquitto/certs/broker/healthcheck.key` 是本地健康检查证书，同样归 MQTT 用户
+- `mosquitto/certs/device/device.key` 归平台服务用户所有，默认 UID/GID `65532`
+
+两组私钥权限都是 `640`，证书是 `644`。不要把两组私钥放在同一个目录后
+统一 `chown`，否则 broker 和平台服务之间必有一方无法读取。
+
+如果是旧版本生成的证书目录，执行下面命令迁移到新结构并重启：
+
+```bash
+./scripts/generate-mqtt-certs.sh mqtt.example.com
+docker compose --env-file .env up -d --force-recreate mqtt device_platform
+```
+
+证书目录中的私钥不应进入 Git。重新签发后，已经安装旧 CA 的设备必须同步
+更新 `ca.crt`，否则设备会拒绝新证书。
+
 ## 4. 环境变量逐行说明
 
 ### PostgreSQL
@@ -163,6 +189,10 @@ docker compose -f docker-compose.yml up -d
 | `SPROUT_SERVICE_BIND_ADDRESS` | HTTP 服务的宿主监听地址 | 保持 `127.0.0.1`，由 1Panel 反代 |
 | `SPROUT_MQTT_BIND_ADDRESS` | 明文 MQTT 的宿主监听地址 | 保持 `127.0.0.1`，禁止暴露公网 |
 | `SPROUT_MQTTS_BIND_ADDRESS` | 加密 MQTT 的宿主监听地址 | `0.0.0.0`，公网只放行 8883 |
+| `SPROUT_MQTT_UID` | 证书私钥归属的宿主 UID | 官方 Mosquitto 镜像默认 `1883` |
+| `SPROUT_MQTT_GID` | 证书私钥归属的宿主 GID | 官方 Mosquitto 镜像默认 `1883` |
+| `SPROUT_DEVICE_PLATFORM_UID` | 设备证书私钥归属的宿主 UID | 平台镜像默认 `65532` |
+| `SPROUT_DEVICE_PLATFORM_GID` | 设备证书私钥归属的宿主 GID | 平台镜像默认 `65532` |
 | `SPROUT_DEVICE_PLATFORM_PORT` | 设备平台宿主端口 | `8081` |
 | `SPROUT_VOICE_GATEWAY_PORT` | 语音网关宿主端口 | `8082` |
 | `SPROUT_ADMIN_WEB_PORT` | 管理端宿主端口 | `8083` |

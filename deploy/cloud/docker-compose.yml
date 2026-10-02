@@ -61,14 +61,14 @@ services:
       - "${SPROUT_MQTTS_BIND_ADDRESS}:${SPROUT_MQTTS_PORT}:8883"
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-      - ./mosquitto/certs:/mosquitto/certs:ro
+      - ./mosquitto/certs/broker:/mosquitto/certs:ro
       - sprout_mqtt_data:/mosquitto/data
       - sprout_mqtt_log:/mosquitto/log
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "mosquitto_sub -h 127.0.0.1 -p 8883 --cafile /mosquitto/certs/ca.crt --cert /mosquitto/certs/device.crt --key /mosquitto/certs/device.key -t '$$SYS/broker/version' -C 1 -W 3 >/dev/null 2>&1",
+          "mosquitto_sub -h 127.0.0.1 -p 8883 --cafile /mosquitto/certs/ca.crt --cert /mosquitto/certs/healthcheck.crt --key /mosquitto/certs/healthcheck.key -t '$$SYS/broker/version' -C 1 -W 3 >/dev/null 2>&1",
         ]
       interval: 15s
       timeout: 5s
@@ -157,7 +157,7 @@ services:
       DEVICE_PLATFORM_AI_DEFAULT_CONCURRENCY: ${SPROUT_AI_DEFAULT_CONCURRENCY}
       DEVICE_PLATFORM_AI_DEFAULT_MODELS: ${SPROUT_AI_DEFAULT_MODELS}
     volumes:
-      - ./mosquitto/certs:/run/sprout/mqtt:ro
+      - ./mosquitto/certs/device:/run/sprout/mqtt:ro
     depends_on:
       postgres:
         condition: service_healthy
