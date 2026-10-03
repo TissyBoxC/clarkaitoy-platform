@@ -237,19 +237,34 @@ send_timeout 3600s;
 
 `api.clarkhub.cn` 还要承载发布流水线的文件上传，单个 APK 体积远大于 Nginx
 默认的 1 MB 请求体上限。如果只配置普通反向代理，上传会在 TLS 握手后被
-连接重置，`SPROUT_RELEASE_UPLOAD_TOKEN` 正确也无法成功。在 1Panel 站点
-`api.clarkhub.cn` 的反向代理目录新增 `release-upload.conf`：
+连接重置，`SPROUT_RELEASE_UPLOAD_TOKEN` 正确也无法成功。
+
+1Panel 已经在 `server` 上下文写入了 `client_max_body_size`，同一上下文重复
+声明会让 `nginx -t` 直接报 `directive is duplicate`。因此放宽上限必须放在
+`location` 块内，用就近覆盖取代重复声明。在 `/www/sites/api.clarkhub.cn/proxy/`
+下新增 `release-upload.conf`：
 
 ```nginx
-client_max_body_size 512m;
-proxy_request_buffering off;
-proxy_read_timeout 600s;
-proxy_send_timeout 600s;
-send_timeout 600s;
+location ^~ /api/v1/release-publication/ {
+    client_max_body_size 512m;
+    client_body_timeout 600s;
+    proxy_http_version 1.1;
+    proxy_request_buffering off;
+    proxy_read_timeout 600s;
+    proxy_send_timeout 600s;
+    send_timeout 600s;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_pass http://127.0.0.1:8081;
+}
 ```
 
-该文件由站点配置末尾的 `include .../proxy/*.conf;` 加载，保存后重载 Nginx
-即可生效。此配置只放宽请求体上限，不改变 `/api/` 的鉴权规则。
+`proxy_pass` 的地址要与其他反向代理片段里的上游保持一致；如果面板已经为
+该站点生成上游，可以把该值改成面板使用的 `upstream` 名称。该 `location`
+只覆盖发布接口前缀，其余路径仍由面板生成的反向代理处理。保存后执行
+`nginx -t && nginx -s reload`；此配置不改变鉴权规则。
 
 设备 MQTT 使用独立域名（待确认），在 1Panel 或云防火墙中放行
 `8883/tcp`。不要对公网放行 `1883/tcp`。
