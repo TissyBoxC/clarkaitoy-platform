@@ -285,7 +285,7 @@ class _DashboardCard extends StatelessWidget {
                     Expanded(
                       child: _MetricTile(
                         label: '今日消耗',
-                        value: '\$${overview.todaySpentUsd.toStringAsFixed(2)}',
+                        value: overview.todaySpentUsd.toStringAsFixed(2),
                         unit: '',
                         icon: Icons.trending_up_rounded,
                       ),
@@ -382,7 +382,7 @@ class _BalanceBar extends StatelessWidget {
             Text('剩余额度', style: Theme.of(context).textTheme.bodySmall),
             const Spacer(),
             Text(
-              '\$${remaining.toStringAsFixed(2)}',
+              remaining.toStringAsFixed(2),
               style: Theme.of(
                 context,
               ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),

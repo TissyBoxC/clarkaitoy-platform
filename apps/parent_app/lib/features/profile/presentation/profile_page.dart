@@ -257,8 +257,8 @@ class _AiAccountCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: _SummaryMetric(
-                    label: '可用余额',
-                    value: '\$${account.balanceUsd.toStringAsFixed(2)}',
+                    label: '可用额度',
+                    value: account.balanceUsd.toStringAsFixed(2),
                   ),
                 ),
                 Container(
