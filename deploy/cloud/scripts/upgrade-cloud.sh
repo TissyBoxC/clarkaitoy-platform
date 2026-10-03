@@ -21,8 +21,8 @@ usage() {
 用法: upgrade-cloud.sh <平台版本> [Sub2API 版本]
 
 示例:
-  ./scripts/upgrade-cloud.sh 0.8.0 0.2.15
-  ./scripts/upgrade-cloud.sh 0.8.0
+  ./scripts/upgrade-cloud.sh 0.8.1 0.2.15
+  ./scripts/upgrade-cloud.sh 0.8.1
 
 省略 Sub2API 版本时保留当前 .env 中的版本。
 EOF
