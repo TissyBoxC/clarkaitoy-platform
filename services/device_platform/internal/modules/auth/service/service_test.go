@@ -90,6 +90,44 @@ func TestRegisterRejectsInvalidChildBirthday(t *testing.T) {
 	}
 }
 
+func TestCreateParentSkipsSMSButKeepsGuardianRoleAndPasswordRules(t *testing.T) {
+	repository := &memoryRepository{}
+	service, err := New(Options{
+		Repository:  repository,
+		TokenIssuer: mustTokenIssuer(t),
+		AccessTTL:   time.Minute,
+		RefreshTTL:  time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("create authentication service: %v", err)
+	}
+
+	account, _, err := service.CreateParent(context.Background(), domain.RegisterInput{
+		Phone:                  "13800138000",
+		Password:               "sprout123",
+		GuardianFamilyName:     "林",
+		ChildNickname:          "小芽",
+		GuardianConsentVersion: defaultConsent,
+	})
+	if err != nil {
+		t.Fatalf("create parent through maintenance flow: %v", err)
+	}
+	if account.Role != domain.RoleParent {
+		t.Fatalf("expected parent role, got %q", account.Role)
+	}
+	if account.PhoneVerifiedAt == nil || account.GuardianConsentedAt.IsZero() {
+		t.Fatal("maintenance-created parent must record verification and consent")
+	}
+
+	_, _, err = service.CreateParent(context.Background(), domain.RegisterInput{
+		Phone:    "13800138001",
+		Password: "weak",
+	})
+	if !errors.Is(err, domain.ErrWeakPassword) {
+		t.Fatalf("expected weak password rejection, got %v", err)
+	}
+}
+
 func TestBindEmailAcceptsAnEmailAsAnAlternateLoginIdentifier(t *testing.T) {
 	account := &domain.ParentAccount{
 		ID:           "parent-001",

@@ -11,6 +11,67 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// CreateParent creates one guardian account through a trusted maintenance
+// path.
+//
+// This exists for support and acceptance testing when SMS delivery is not yet
+// configured. It still enforces the normal phone, password, consent, and
+// profile rules, but intentionally does not issue a session because the
+// maintenance command is not a user login flow.
+func (s *Service) CreateParent(
+	ctx context.Context,
+	input domain.RegisterInput,
+) (*domain.ParentAccount, *domain.AIAccountSummary, error) {
+	input.Phone = strings.TrimSpace(input.Phone)
+	input.GuardianFamilyName = strings.TrimSpace(input.GuardianFamilyName)
+	input.ChildNickname = strings.TrimSpace(input.ChildNickname)
+	input.ChildBirthday = strings.TrimSpace(input.ChildBirthday)
+	input.GuardianConsentVersion = strings.TrimSpace(input.GuardianConsentVersion)
+	if input.GuardianConsentVersion == "" {
+		input.GuardianConsentVersion = defaultConsent
+	}
+	if err := validateRegistration(input); err != nil {
+		return nil, nil, err
+	}
+
+	passwordHash, err := bcrypt.GenerateFromPassword(
+		[]byte(input.Password),
+		bcrypt.DefaultCost,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("hash password: %w", err)
+	}
+
+	now := s.timeSource.Now().UTC()
+	account := &domain.ParentAccount{
+		ID:                     uuid.NewString(),
+		Phone:                  normalizePhone(input.Phone),
+		PasswordHash:           string(passwordHash),
+		DisplayName:            guardianDisplayName(input),
+		GuardianFamilyName:     input.GuardianFamilyName,
+		ChildNickname:          input.ChildNickname,
+		ChildBirthday:          input.ChildBirthday,
+		Status:                 accountStatusActive,
+		Role:                   domain.RoleParent,
+		GuardianConsentVersion: input.GuardianConsentVersion,
+		GuardianConsentedAt:    now,
+		PhoneVerifiedAt:        &now,
+		CreatedAt:              now,
+		UpdatedAt:              now,
+	}
+	if err := s.repository.CreateParentAccount(ctx, account); err != nil {
+		return nil, nil, err
+	}
+
+	var summary *domain.AIAccountSummary
+	if s.aiProvisioner != nil {
+		// Keep the account usable when the AI gateway is temporarily down; a
+		// later login repairs the provider projection.
+		summary, _ = s.aiProvisioner.EnsureForParent(ctx, account.ID, account.Email)
+	}
+	return account, summary, nil
+}
+
 // BootstrapAdmin creates one initial administrator and enrolls TOTP.
 //
 // This operation is intended for a trusted local maintenance command. It

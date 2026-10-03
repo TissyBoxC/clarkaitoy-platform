@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	authdomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/domain"
 	authrepository "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/repository"
 	authservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/service"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/platform/database"
@@ -25,14 +26,20 @@ func main() {
 
 func run(arguments []string) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: device-platform-admin <bootstrap|reset-password>")
+		return errors.New(
+			"usage: device-platform-admin <bootstrap|reset-password|create-parent>",
+		)
 	}
 	command := strings.TrimSpace(arguments[0])
-	if command != "bootstrap" && command != "reset-password" {
-		return errors.New("usage: device-platform-admin <bootstrap|reset-password>")
+	if command != "bootstrap" &&
+		command != "reset-password" &&
+		command != "create-parent" {
+		return errors.New(
+			"usage: device-platform-admin <bootstrap|reset-password|create-parent>",
+		)
 	}
 
-	email, displayName, err := parseAdminArguments(command, arguments[1:])
+	accountArguments, err := parseAdminArguments(command, arguments[1:])
 	if err != nil {
 		return err
 	}
@@ -88,14 +95,45 @@ func run(arguments []string) error {
 		return err
 	}
 	if command == "reset-password" {
-		if err := service.ResetAdminPassword(ctx, email, password); err != nil {
+		if err := service.ResetAdminPassword(ctx, accountArguments.email, password); err != nil {
 			return err
 		}
 		_, _ = fmt.Fprintln(os.Stdout, "管理员密码已重置，原有登录会话已失效。")
 		return nil
 	}
 
-	uri, err := service.BootstrapAdmin(ctx, email, password, displayName)
+	if command == "create-parent" {
+		account, summary, err := service.CreateParent(ctx, authdomain.RegisterInput{
+			Phone:                  accountArguments.phone,
+			Password:               password,
+			GuardianFamilyName:     accountArguments.guardianFamilyName,
+			ChildNickname:          accountArguments.childNickname,
+			ChildBirthday:          accountArguments.childBirthday,
+			GuardianConsentVersion: "2026-01",
+		})
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(
+			os.Stdout,
+			"家长账号已创建：%s（%s）\n",
+			account.DisplayName,
+			account.Phone,
+		)
+		if summary == nil {
+			_, _ = fmt.Fprintln(os.Stdout, "AI 账户暂未开通，登录后会自动重试。")
+		} else {
+			_, _ = fmt.Fprintf(os.Stdout, "AI 账户状态：%s\n", summary.Status)
+		}
+		return nil
+	}
+
+	uri, err := service.BootstrapAdmin(
+		ctx,
+		accountArguments.email,
+		password,
+		accountArguments.displayName,
+	)
 	if err != nil {
 		return err
 	}
@@ -105,35 +143,111 @@ func run(arguments []string) error {
 	return nil
 }
 
-func parseAdminArguments(command string, arguments []string) (string, string, error) {
+type adminArguments struct {
+	email              string
+	displayName        string
+	phone              string
+	guardianFamilyName string
+	childNickname      string
+	childBirthday      string
+}
+
+func parseAdminArguments(
+	command string,
+	arguments []string,
+) (adminArguments, error) {
+	var parsed adminArguments
 	email := ""
 	displayName := ""
 	for index := 0; index < len(arguments); index++ {
 		switch arguments[index] {
 		case "--email":
 			if index+1 >= len(arguments) {
-				return "", "", errors.New("--email requires a value")
+				return adminArguments{}, errors.New("--email requires a value")
 			}
 			email = strings.TrimSpace(arguments[index+1])
 			index++
 		case "--display-name":
 			if command != "bootstrap" {
-				return "", "", errors.New("--display-name is only valid for bootstrap")
+				return adminArguments{}, errors.New(
+					"--display-name is only valid for bootstrap",
+				)
 			}
 			if index+1 >= len(arguments) {
-				return "", "", errors.New("--display-name requires a value")
+				return adminArguments{}, errors.New("--display-name requires a value")
 			}
 			displayName = strings.TrimSpace(arguments[index+1])
 			index++
+		case "--phone":
+			if command != "create-parent" {
+				return adminArguments{}, errors.New(
+					"--phone is only valid for create-parent",
+				)
+			}
+			if index+1 >= len(arguments) {
+				return adminArguments{}, errors.New("--phone requires a value")
+			}
+			parsed.phone = strings.TrimSpace(arguments[index+1])
+			index++
+		case "--guardian-family-name":
+			if command != "create-parent" {
+				return adminArguments{}, errors.New(
+					"--guardian-family-name is only valid for create-parent",
+				)
+			}
+			if index+1 >= len(arguments) {
+				return adminArguments{}, errors.New(
+					"--guardian-family-name requires a value",
+				)
+			}
+			parsed.guardianFamilyName = strings.TrimSpace(arguments[index+1])
+			index++
+		case "--child-nickname":
+			if command != "create-parent" {
+				return adminArguments{}, errors.New(
+					"--child-nickname is only valid for create-parent",
+				)
+			}
+			if index+1 >= len(arguments) {
+				return adminArguments{}, errors.New(
+					"--child-nickname requires a value",
+				)
+			}
+			parsed.childNickname = strings.TrimSpace(arguments[index+1])
+			index++
+		case "--child-birthday":
+			if command != "create-parent" {
+				return adminArguments{}, errors.New(
+					"--child-birthday is only valid for create-parent",
+				)
+			}
+			if index+1 >= len(arguments) {
+				return adminArguments{}, errors.New(
+					"--child-birthday requires a value",
+				)
+			}
+			parsed.childBirthday = strings.TrimSpace(arguments[index+1])
+			index++
 		default:
-			return "", "", fmt.Errorf("unknown argument %q", arguments[index])
+			return adminArguments{}, fmt.Errorf(
+				"unknown argument %q",
+				arguments[index],
+			)
 		}
 	}
+	if command == "create-parent" {
+		if parsed.phone == "" {
+			return adminArguments{}, errors.New("--phone is required")
+		}
+		return parsed, nil
+	}
 	if email == "" {
-		return "", "", errors.New("--email is required")
+		return adminArguments{}, errors.New("--email is required")
 	}
 	if command == "bootstrap" && displayName == "" {
-		return "", "", errors.New("--display-name is required for bootstrap")
+		return adminArguments{}, errors.New("--display-name is required for bootstrap")
 	}
-	return email, displayName, nil
+	parsed.email = email
+	parsed.displayName = displayName
+	return parsed, nil
 }
