@@ -176,9 +176,9 @@ func (r *PostgresRepository) Create(ctx context.Context, account *domain.Account
 		account.Status,
 		account.BalanceUSD,
 		account.ConcurrencyLimit,
-		account.AvailableModels,
-		account.SelectedModels,
-		account.AllowedModels,
+		nonNilStrings(account.AvailableModels),
+		nonNilStrings(account.SelectedModels),
+		nonNilStrings(account.AllowedModels),
 		account.CreatedAt,
 		account.UpdatedAt,
 	)
@@ -213,9 +213,9 @@ func (r *PostgresRepository) UpdateFromProvider(
 		account.Status,
 		account.BalanceUSD,
 		account.ConcurrencyLimit,
-		account.AvailableModels,
-		account.SelectedModels,
-		account.AllowedModels,
+		nonNilStrings(account.AvailableModels),
+		nonNilStrings(account.SelectedModels),
+		nonNilStrings(account.AllowedModels),
 		account.APIKeyCiphertext,
 		account.APIKeyNonce,
 		account.ProviderAPIKeyID,
@@ -226,6 +226,15 @@ func (r *PostgresRepository) UpdateFromProvider(
 		return fmt.Errorf("update AI account: %w", err)
 	}
 	return nil
+}
+
+// nonNilStrings preserves "no models" as an empty database array. pgx binds a
+// nil slice as SQL NULL, which violates the NOT NULL model-pool columns.
+func nonNilStrings(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
 }
 
 // UpdateStatus changes only the platform-side lifecycle state.
