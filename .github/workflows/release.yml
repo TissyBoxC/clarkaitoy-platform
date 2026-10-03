@@ -222,9 +222,8 @@ jobs:
             --public-base-url "$download_base_url" \
             --title "如此萌屋平台 ${{ steps.detect.outputs.version }}"
 
-      - name: Check release upload credentials
+      - name: Require release upload credentials
         if: steps.detect.outputs.should_release == 'true'
-        id: upload_credentials
         shell: bash
         env:
           SFTP_PRIVATE_KEY: ${{ secrets.SPROUT_DOWNLOAD_SFTP_PRIVATE_KEY }}
@@ -237,14 +236,13 @@ jobs:
                 -n "${SFTP_HOST:-}" &&
                 -n "${SFTP_PORT:-}" &&
                 -n "${SFTP_USER:-}" ]]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Download upload credentials are incomplete; skipping download service upload."
+            exit 0
           fi
+          echo "::error::Download upload credentials are incomplete. Configure SPROUT_DOWNLOAD_SFTP_PRIVATE_KEY, SPROUT_DOWNLOAD_SFTP_HOST, SPROUT_DOWNLOAD_SFTP_PORT, and SPROUT_DOWNLOAD_SFTP_USER before releasing."
+          exit 1
 
       - name: Configure SFTP
-        if: steps.detect.outputs.should_release == 'true' && steps.upload_credentials.outputs.available == 'true'
+        if: steps.detect.outputs.should_release == 'true'
         shell: bash
         env:
           SFTP_PRIVATE_KEY: ${{ secrets.SPROUT_DOWNLOAD_SFTP_PRIVATE_KEY }}
@@ -261,7 +259,7 @@ jobs:
           test -s "$RUNNER_TEMP/sprout-sftp/known_hosts"
 
       - name: Upload release artifacts
-        if: steps.detect.outputs.should_release == 'true' && steps.upload_credentials.outputs.available == 'true'
+        if: steps.detect.outputs.should_release == 'true'
         shell: bash
         env:
           SFTP_HOST: ${{ secrets.SPROUT_DOWNLOAD_SFTP_HOST }}
@@ -288,7 +286,7 @@ jobs:
             --published-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
       - name: Verify published download service
-        if: steps.detect.outputs.should_release == 'true' && steps.upload_credentials.outputs.available == 'true'
+        if: steps.detect.outputs.should_release == 'true'
         shell: bash
         env:
           DOWNLOAD_BASE_URL: ${{ steps.endpoints.outputs.download_url }}

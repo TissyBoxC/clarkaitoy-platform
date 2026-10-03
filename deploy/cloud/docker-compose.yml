@@ -263,8 +263,14 @@ services:
       - ./download/sftp/ssh_host_ed25519_key:/etc/ssh/ssh_host_ed25519_key:ro
       - ./download/sftp/ssh_host_rsa_key:/etc/ssh/ssh_host_rsa_key:ro
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -x sshd >/dev/null"]
-      interval: 30s
+      # Validate the configuration and a real local SSH handshake. The image
+      # starts sshd as a PAM binary whose process name is not reliably "sshd".
+      test:
+        [
+          "CMD-SHELL",
+          "sshd -T >/dev/null 2>&1 && timeout 3 sh -c 'nc 127.0.0.1 22 </dev/null | grep -q \"^SSH-\"'",
+        ]
+      interval: 15s
       timeout: 5s
       retries: 5
       start_period: 10s
@@ -296,8 +302,10 @@ services:
       retries: 5
       start_period: 10s
     depends_on:
-      download_ftp:
-        condition: service_healthy
+      # HTTP only needs the shared download volume prepared by download_init.
+      # Upload authorization must not prevent read-only release downloads.
+      download_init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   upgrade_worker:

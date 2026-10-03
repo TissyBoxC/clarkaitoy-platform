@@ -94,20 +94,34 @@ merge_missing_env_keys() {
   fi
 }
 
-# ensure_download_host_keys creates stable SFTP host keys when absent.
+# ensure_download_credentials creates the stable SFTP host keys and upload
+# keypair when absent. Compose bind-mounts the host keys as files; a missing
+# file makes Docker create a directory and sshd cannot start. An empty
+# authorized_keys directory also makes atmoz/sftp initialization fail.
 #
-# Compose bind-mounts these files read-only; a missing file makes Docker
-# create a directory and sshd cannot start.
-ensure_download_host_keys() {
-  key_script="$cloud_dir/scripts/generate-download-ssh-host-keys.sh"
+# Both scripts are idempotent and keep existing credentials intact.
+ensure_download_credentials() {
+  host_key_script="$cloud_dir/scripts/generate-download-ssh-host-keys.sh"
+  release_key_script="$cloud_dir/scripts/generate-download-release-key.sh"
   key_dir="$cloud_dir/download/sftp"
+
   if [ ! -f "$key_dir/ssh_host_ed25519_key" ] ||
     [ ! -f "$key_dir/ssh_host_rsa_key" ]; then
-    if [ ! -x "$key_script" ]; then
-      echo "缺少发布文件服务主机密钥，且无法自动生成: $key_script" >&2
+    if [ ! -x "$host_key_script" ]; then
+      echo "缺少发布文件服务主机密钥，且无法自动生成: $host_key_script" >&2
       return 1
     fi
-    "$key_script"
+    "$host_key_script"
+  fi
+
+  download_credentials_recreated="false"
+  if [ ! -s "$key_dir/authorized_keys/release.pub" ]; then
+    if [ ! -x "$release_key_script" ]; then
+      echo "缺少发布文件上传密钥，且无法自动生成: $release_key_script" >&2
+      return 1
+    fi
+    "$release_key_script"
+    download_credentials_recreated="true"
   fi
 }
 
@@ -296,7 +310,7 @@ else
 fi
 
 merge_missing_env_keys
-ensure_download_host_keys
+ensure_download_credentials
 
 "$cloud_dir/scripts/validate-cloud-env.sh" "$env_file"
 
@@ -325,6 +339,13 @@ echo "版本已原子切换到 platform=$platform_version sub2api=$sub2api_versi
 
 docker compose -f "$compose_file" --env-file "$env_file" pull \
   device_platform voice_gateway admin_web sub2api
+if [ "$download_credentials_recreated" = "true" ]; then
+  # A running container that failed the first user initialization stores its
+  # marker in the container filesystem. Recreate the stateless download
+  # services so the newly generated public key is imported.
+  docker compose -f "$compose_file" --env-file "$env_file" \
+    up -d --force-recreate download_init download_ftp download_http
+fi
 docker compose -f "$compose_file" --env-file "$env_file" up -d --remove-orphans
 "$cloud_dir/scripts/check-stack.sh"
 

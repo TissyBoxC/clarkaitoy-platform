@@ -158,17 +158,24 @@ Sub2API 的 `TOTP_ENCRYPTION_KEY` 必须是 64 位十六进制字符串，不能
 - `download_ftp`：仅用于 GitHub Actions 上传，使用密钥认证；
 - `download_http`：只读 Nginx，公网只经 1Panel 反向代理访问。
 
-首次部署先生成稳定的 SFTP 主机密钥，把 CI 公钥放到允许列表中：
+首次部署先生成稳定的 SFTP 主机密钥和上传密钥：
 
 ```bash
 ./scripts/generate-download-ssh-host-keys.sh
-ssh-keygen -t ed25519 -f /tmp/sprout-release-key -N ''
-cp /tmp/sprout-release-key.pub download/sftp/authorized_keys/release.pub
+./scripts/generate-download-release-key.sh
 ```
 
-`SPROUT_DOWNLOAD_SFTP_BIND_ADDRESS` 应限制为 CI 可访问的地址，不要把 SFTP
-端口开放给家庭网络或设备。发布工作流会先写入不可变版本目录，最后原子替换
-`index.json`，因此管理端不会读取到半成品版本。
+第二个脚本会把公钥放入 `download/sftp/authorized_keys/release.pub`，并输出
+只在本机保存的私钥路径。将私钥内容写入 GitHub Secret
+`SPROUT_DOWNLOAD_SFTP_PRIVATE_KEY`，不要把私钥提交到仓库或写入 `.env`。
+`upgrade-cloud.sh` 会在首次升级时自动补齐这两个密钥文件；请务必把生成的私钥
+同步到 GitHub Secret，否则发布流水线会按安全门禁直接失败。
+
+`SPROUT_DOWNLOAD_SFTP_BIND_ADDRESS` 默认只监听 `127.0.0.1`。GitHub Actions
+需要使用公网出口访问时，请在云防火墙或 1Panel 只允许 GitHub Actions 出口
+地址访问 `SPROUT_DOWNLOAD_SFTP_PORT`，再绑定对应的公网网卡地址；不要直接对
+所有来源开放。发布工作流会先写入不可变版本目录，最后原子替换 `index.json`，
+因此管理端不会读取到半成品版本。
 
 在 1Panel 中为 `download.clarkhub.cn` 创建 HTTPS 反向代理，上游为
 `http://127.0.0.1:8085`。Nginx 已关闭目录枚举，根路径返回 `404`，单个版本

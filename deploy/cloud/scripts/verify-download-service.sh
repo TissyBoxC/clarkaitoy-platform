@@ -36,11 +36,14 @@ if [ -z "$public_base_url" ]; then
 fi
 
 public_base_url="${public_base_url%/}"
-index_payload="$(curl --fail --silent --show-error --retry 5 --retry-delay 2 "$public_base_url/index.json")"
-printf '%s\n' "$index_payload" | grep -q '"schema_version"' || {
-  echo "Download index is not valid JSON." >&2
+http_port="$(read_value SPROUT_DOWNLOAD_HTTP_PORT)"
+if [ -z "$http_port" ]; then
+  echo "SPROUT_DOWNLOAD_HTTP_PORT is not configured." >&2
   exit 1
-}
+fi
+
+curl --fail --silent --show-error --retry 5 --retry-delay 2 \
+  "http://127.0.0.1:$http_port/healthz" >/dev/null
 
 status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --head "$public_base_url/")"
 if [ "$status" != "404" ]; then
@@ -48,4 +51,21 @@ if [ "$status" != "404" ]; then
   exit 1
 fi
 
-echo "Download service is healthy: $public_base_url/index.json"
+index_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "$public_base_url/index.json")"
+case "$index_status" in
+  200)
+    index_payload="$(curl --fail --silent --show-error --retry 5 --retry-delay 2 "$public_base_url/index.json")"
+    printf '%s\n' "$index_payload" | grep -q '"schema_version"' || {
+      echo "Download index is not valid JSON." >&2
+      exit 1
+    }
+    echo "Download service is healthy: $public_base_url/index.json"
+    ;;
+  404)
+    echo "下载服务已就绪；尚未发布任何版本，发布版本后请重新执行本脚本。"
+    ;;
+  *)
+    echo "Download index returned HTTP $index_status." >&2
+    exit 1
+    ;;
+esac
