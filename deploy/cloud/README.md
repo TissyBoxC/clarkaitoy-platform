@@ -155,10 +155,10 @@ Sub2API 的 `TOTP_ENCRYPTION_KEY` 必须是 64 位十六进制字符串，不能
 
 发布文件服务由两个容器组成：
 
-- `download_ftp`：仅用于 GitHub Actions 上传，使用密钥认证；
+- `download_ftp`：离线发布回退通道，使用密钥认证；默认只监听本机；
 - `download_http`：只读 Nginx，公网只经 1Panel 反向代理访问。
 
-首次部署先生成稳定的 SFTP 主机密钥和上传密钥：
+首次部署先生成稳定的 SFTP 主机密钥和可选回退密钥：
 
 ```bash
 ./scripts/generate-download-ssh-host-keys.sh
@@ -166,16 +166,15 @@ Sub2API 的 `TOTP_ENCRYPTION_KEY` 必须是 64 位十六进制字符串，不能
 ```
 
 第二个脚本会把公钥放入 `download/sftp/authorized_keys/release.pub`，并输出
-只在本机保存的私钥路径。将私钥内容写入 GitHub Secret
-`SPROUT_DOWNLOAD_SFTP_PRIVATE_KEY`，不要把私钥提交到仓库或写入 `.env`。
-`upgrade-cloud.sh` 会在首次升级时自动补齐这两个密钥文件；请务必把生成的私钥
-同步到 GitHub Secret，否则发布流水线会按安全门禁直接失败。
+只在本机保存的私钥路径。GitHub Actions 默认通过 `api.clarkhub.cn` 的
+受控内部发布接口上传，不需要公网开放 SFTP；如果管理端暂时不可达，才使用
+`SPROUT_DOWNLOAD_SFTP_*` Secrets 执行离线回退上传。
 
-`SPROUT_DOWNLOAD_SFTP_BIND_ADDRESS` 默认只监听 `127.0.0.1`。GitHub Actions
-需要使用公网出口访问时，请在云防火墙或 1Panel 只允许 GitHub Actions 出口
-地址访问 `SPROUT_DOWNLOAD_SFTP_PORT`，再绑定对应的公网网卡地址；不要直接对
-所有来源开放。发布工作流会先写入不可变版本目录，最后原子替换 `index.json`，
-因此管理端不会读取到半成品版本。
+`SPROUT_RELEASE_UPLOAD_TOKEN` 是发布流水线专用令牌。它只能调用
+`/internal/v1/release-files` 和 `/internal/v1/release-index/refresh`，
+不能读取家长账号、设备状态或 AI 凭据。将同一个值写入服务器 `.env` 和
+GitHub Secret `SPROUT_RELEASE_UPLOAD_TOKEN`。发布工作流会先写入不可变
+版本目录，最后原子替换 `index.json`，因此管理端和客户端不会读取到半成品版本。
 
 在 1Panel 中为 `download.clarkhub.cn` 创建 HTTPS 反向代理，上游为
 `http://127.0.0.1:8085`。Nginx 已关闭目录枚举，根路径返回 `404`，单个版本
@@ -329,6 +328,7 @@ docker compose --env-file .env up -d --force-recreate mqtt device_platform
 | 变量 | 作用 | 生产建议 |
 | --- | --- | --- |
 | `SPROUT_INTERNAL_SERVICE_TOKEN` | device_platform 调用 sub2api 内部接口的令牌 | 32 位以上随机值，绝不能下发到客户端 |
+| `SPROUT_RELEASE_UPLOAD_TOKEN` | 发布流水线上传 release 文件和刷新索引的令牌 | 只授予发布权限，32 位以上随机值 |
 | `SPROUT_AUTH_ACCESS_TOKEN_SECRET` | 家长登录访问令牌的签名密钥 | 32 位以上随机值 |
 | `SPROUT_AI_CREDENTIAL_KEY` | AI 账号凭据的加密密钥 | 32 位以上随机值 |
 | `SPROUT_MFA_CREDENTIAL_KEY` | 管理端 MFA 凭据的加密密钥 | 与 AI 密钥不同，32 位以上 |
@@ -489,14 +489,11 @@ docker compose down -v
 下载服务关闭目录枚举，SFTP 私钥只存在 GitHub Actions Secret 和服务器公钥
 目录中，不能写入 `.env` 下发给设备或家长端。
 
-在 GitHub 仓库中配置以下 Secrets：
+在 GitHub 仓库中配置以下 Secret：
 
 | Secret | 用途 |
 | --- | --- |
-| `SPROUT_DOWNLOAD_SFTP_HOST` | SFTP 服务器地址 |
-| `SPROUT_DOWNLOAD_SFTP_PORT` | SFTP 端口，示例 `2022` |
-| `SPROUT_DOWNLOAD_SFTP_USER` | SFTP 用户，示例 `sprout-release` |
-| `SPROUT_DOWNLOAD_SFTP_PRIVATE_KEY` | CI 私钥全文，不写入仓库 |
+| `SPROUT_RELEASE_UPLOAD_TOKEN` | HTTPS 管理端发布令牌，必须与服务器 `.env` 一致 |
 
 `SPROUT_DOWNLOAD_PUBLIC_URL` 不是 Secret，集中维护在
 `deploy/public-endpoints.env`。

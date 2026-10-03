@@ -584,12 +584,17 @@ $env:VOICE_GATEWAY_DATABASE_DSN = "postgres://sprout:<password>@127.0.0.1:5432/s
 - `.github/workflows/ci.yml`：校验部署文件、契约、生成类型、Go 服务、Vue 管理端
   和 Flutter 家长端。
 - `.github/workflows/release.yml`：监听 `main` 分支上的 `VERSION` 变更，构建
-  Go 服务、管理端、Android 安装包和契约归档，生成中文 Release 说明并创建
-  GitHub Release。
+  Go 服务、管理端、Android 安装包和契约归档，生成中文 Release 说明，并把
+  发布文件同步到下载服务器后创建 GitHub Release 和对应镜像标签。
 
 发布平台版本时只修改根目录 `VERSION`，格式固定为 `X.Y.Z`，提交并推送到 `main`。
 标签由工作流自动生成和使用。`firmware`、`sprout-sub2api-fork` 在各自仓库独立
 执行 CI 和 Release，不混入平台发布。
+
+发布流水线通过 `SPROUT_RELEASE_UPLOAD_TOKEN` 调用管理端的内部发布接口，
+将 APK、管理端包、契约包、服务二进制和校验文件写入下载服务器，并刷新
+`index.json`。该令牌只能发布下载文件，不能读取家长账号、设备或 AI 数据。
+GitHub 仓库和云端 `.env` 必须使用同一个令牌值。
 
 ## 模块化约束
 
