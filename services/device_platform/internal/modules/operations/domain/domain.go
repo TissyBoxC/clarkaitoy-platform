@@ -182,6 +182,17 @@ type ReleaseInput struct {
 	MinSupportedVersion string
 }
 
+// ReleaseArtifact identifies one downloadable release file for the management
+// console. It is resolved from persisted release records by version, kind, and
+// platform; callers never supply the URL themselves.
+type ReleaseArtifact struct {
+	Version     string `json:"version"`
+	Kind        string `json:"kind"`
+	Platform    string `json:"platform"`
+	DownloadURL string `json:"download_url"`
+	SHA256      string `json:"sha256"`
+}
+
 // CompareVersions compares dotted semantic versions numerically. A release
 // without a pre-release suffix sorts after the same release with one.
 func CompareVersions(left string, right string) int {

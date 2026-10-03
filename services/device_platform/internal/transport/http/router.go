@@ -165,6 +165,14 @@ func NewRouter(options RouterOptions) http.Handler {
 				authHandler.requireAdmin(adminHandler.listAIAccounts),
 			)
 			mux.HandleFunc(
+				"GET /api/v1/admin/ai-account-defaults",
+				authHandler.requireAdmin(adminHandler.getAIAccountDefaults),
+			)
+			mux.HandleFunc(
+				"GET /api/v1/admin/ai-models",
+				authHandler.requireAdmin(adminHandler.listAIModels),
+			)
+			mux.HandleFunc(
 				"PUT /api/v1/admin/ai-accounts/{provider_account_id}",
 				authHandler.requireAdmin(adminHandler.updateAIAccount),
 			)
@@ -196,6 +204,10 @@ func NewRouter(options RouterOptions) http.Handler {
 				mux.HandleFunc(
 					"DELETE /api/v1/admin/releases/{version}",
 					authHandler.requireAdmin(adminHandler.deleteRelease),
+				)
+				mux.HandleFunc(
+					"GET /api/v1/admin/release-artifacts/{version}",
+					authHandler.requireAdmin(adminHandler.getReleaseArtifact),
 				)
 				mux.HandleFunc(
 					"GET /api/v1/app/update",

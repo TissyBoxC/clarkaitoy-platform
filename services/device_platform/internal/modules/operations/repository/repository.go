@@ -40,11 +40,51 @@ type Repository interface {
 	CreateRelease(ctx context.Context, release *domain.Release) error
 	PublishRelease(ctx context.Context, version string, actorAccountID string) error
 	DeleteRelease(ctx context.Context, version string) error
+	FindReleaseArtifact(
+		ctx context.Context,
+		version string,
+		kind string,
+		platform string,
+	) (*domain.ReleaseArtifact, error)
 	LatestPublishedUpdate(
 		ctx context.Context,
 		platform string,
 		channel string,
 	) (*domain.Release, error)
+}
+
+// FindReleaseArtifact returns the newest matching registration for a single
+// version. Draft records are included because the console resolves the file
+// before publishing the release.
+func (r *PostgresRepository) FindReleaseArtifact(
+	ctx context.Context,
+	version string,
+	kind string,
+	platform string,
+) (*domain.ReleaseArtifact, error) {
+	var artifact domain.ReleaseArtifact
+	err := r.pool.QueryRow(ctx, `
+		SELECT version, kind, platform, download_url, sha256
+		FROM platform_releases
+		WHERE version = $1
+		  AND kind = $2
+		  AND platform = $3
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, version, kind, platform).Scan(
+		&artifact.Version,
+		&artifact.Kind,
+		&artifact.Platform,
+		&artifact.DownloadURL,
+		&artifact.SHA256,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrReleaseNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find release artifact: %w", err)
+	}
+	return &artifact, nil
 }
 
 // RuntimePolicy loads the narrow policy used by registration and AI account

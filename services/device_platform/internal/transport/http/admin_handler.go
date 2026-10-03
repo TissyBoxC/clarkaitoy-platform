@@ -51,6 +51,12 @@ type operationsAdminService interface {
 		actorAccountID string,
 	) error
 	DeleteRelease(ctx context.Context, version string) error
+	FindReleaseArtifact(
+		ctx context.Context,
+		version string,
+		kind string,
+		platform string,
+	) (*operationsdomain.ReleaseArtifact, error)
 	AppUpdate(
 		ctx context.Context,
 		platform string,
@@ -69,6 +75,17 @@ type updateAIAccountRequest struct {
 
 type updateAIModelsRequest struct {
 	SelectedModels []string `json:"selected_models"`
+}
+
+type aiAccountDefaultsResponse struct {
+	DefaultBalanceUSD  float64 `json:"default_balance_usd"`
+	DefaultConcurrency int     `json:"default_concurrency"`
+	Source             string  `json:"source"`
+}
+
+type aiModelResponse struct {
+	ID        string `json:"id"`
+	LatencyMS *int   `json:"latency_ms"`
 }
 
 type createParentRequest struct {
@@ -177,6 +194,69 @@ func (handler adminHandler) listAIAccounts(
 		result = append(result, aiAccountAdminResponse(&accounts[index]))
 	}
 	writeSuccess(response, request, http.StatusOK, map[string]any{"accounts": result})
+}
+
+func (handler adminHandler) getReleaseArtifact(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	artifact, err := handler.operationsService.FindReleaseArtifact(
+		request.Context(),
+		request.PathValue("version"),
+		request.URL.Query().Get("kind"),
+		request.URL.Query().Get("platform"),
+	)
+	if err != nil {
+		if errors.Is(err, operationsdomain.ErrReleaseNotFound) {
+			writeError(response, request, http.StatusNotFound, "release_artifact_not_found", "没有找到对应的更新文件")
+			return
+		}
+		writeError(response, request, http.StatusInternalServerError, "service_error", "暂时无法读取更新文件")
+		return
+	}
+	writeSuccess(response, request, http.StatusOK, map[string]any{"artifact": artifact})
+}
+
+// getAIAccountDefaults exposes the gateway's current defaults instead of the
+// management console's saved copy, so the two systems cannot drift.
+func (handler adminHandler) getAIAccountDefaults(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	config, err := handler.service.RuntimeConfigForAdmin(request.Context())
+	if err != nil {
+		writeError(response, request, http.StatusBadGateway, "provider_error", "暂时无法读取 AI 服务默认设置")
+		return
+	}
+	writeSuccess(response, request, http.StatusOK, aiAccountDefaultsResponse{
+		DefaultBalanceUSD:  config.DefaultBalanceUSD,
+		DefaultConcurrency: config.DefaultConcurrency,
+		Source:             "sub2api",
+	})
+}
+
+// listAIModels returns the gateway's measured models. Unknown latency remains
+// null so an operator can distinguish "not measured" from "zero latency".
+func (handler adminHandler) listAIModels(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	config, err := handler.service.RuntimeConfigForAdmin(request.Context())
+	if err != nil {
+		writeError(response, request, http.StatusBadGateway, "provider_error", "暂时无法读取可用模型")
+		return
+	}
+	models := make([]aiModelResponse, 0, len(config.Models))
+	for _, model := range config.Models {
+		if strings.TrimSpace(model.Model) == "" {
+			continue
+		}
+		models = append(models, aiModelResponse{
+			ID:        model.Model,
+			LatencyMS: model.PrimaryLatencyMs,
+		})
+	}
+	writeSuccess(response, request, http.StatusOK, map[string]any{"models": models})
 }
 
 func (handler adminHandler) updateAIAccount(

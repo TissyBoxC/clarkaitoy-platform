@@ -201,6 +201,26 @@ func (s *Service) ListReleases(
 	return s.repository.ListReleases(ctx)
 }
 
+// FindReleaseArtifact resolves a downloadable release file from the persisted
+// release registration; operators never need to paste the URL or checksum.
+func (s *Service) FindReleaseArtifact(
+	ctx context.Context,
+	version string,
+	kind string,
+	platform string,
+) (*domain.ReleaseArtifact, error) {
+	version = strings.TrimSpace(version)
+	kind = strings.TrimSpace(kind)
+	platform = strings.TrimSpace(platform)
+	if !versionPattern.MatchString(version) ||
+		!isReleaseKind(kind) ||
+		platform == "all" ||
+		!isReleasePlatform(platform) {
+		return nil, domain.ErrReleaseNotFound
+	}
+	return s.repository.FindReleaseArtifact(ctx, version, kind, platform)
+}
+
 // CreateRelease validates and stores a draft delivery.
 func (s *Service) CreateRelease(
 	ctx context.Context,
