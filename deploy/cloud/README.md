@@ -10,6 +10,9 @@ deploy/cloud/
 ├── docker-compose.yml
 ├── .env.example
 ├── ../public-endpoints.env   # 公网域名唯一配置源
+├── download/
+│   ├── nginx/default.conf      # 只读下载入口，不开启目录索引
+│   └── sftp/sshd_config        # 上传端只允许密钥认证和 SFTP
 ├── mosquitto/
 │   ├── mosquitto.conf
 │   └── certs/                 # 由证书脚本生成，不提交
@@ -23,6 +26,8 @@ deploy/cloud/
     ├── create-parent-account.sh
     ├── check-family-ai-account.sh
     ├── upgrade-cloud.sh
+    ├── generate-download-ssh-host-keys.sh
+    ├── verify-download-service.sh
     └── check-stack.sh
 ```
 
@@ -144,6 +149,36 @@ Sub2API 的 `TOTP_ENCRYPTION_KEY` 必须是 64 位十六进制字符串，不能
 
 校验失败时脚本会明确指出缺少或格式错误的变量，不会启动容器。
 
+### 2.6 配置发布文件服务
+
+发布文件服务由两个容器组成：
+
+- `download_ftp`：仅用于 GitHub Actions 上传，使用密钥认证；
+- `download_http`：只读 Nginx，公网只经 1Panel 反向代理访问。
+
+首次部署先生成稳定的 SFTP 主机密钥，把 CI 公钥放到允许列表中：
+
+```bash
+./scripts/generate-download-ssh-host-keys.sh
+ssh-keygen -t ed25519 -f /tmp/sprout-release-key -N ''
+cp /tmp/sprout-release-key.pub download/sftp/authorized_keys/release.pub
+```
+
+`SPROUT_DOWNLOAD_SFTP_BIND_ADDRESS` 应限制为 CI 可访问的地址，不要把 SFTP
+端口开放给家庭网络或设备。发布工作流会先写入不可变版本目录，最后原子替换
+`index.json`，因此管理端不会读取到半成品版本。
+
+在 1Panel 中为 `download.clarkhub.cn` 创建 HTTPS 反向代理，上游为
+`http://127.0.0.1:8085`。Nginx 已关闭目录枚举，根路径返回 `404`，单个版本
+清单和文件仍可下载。管理端只读取 `index.json` 和版本 `manifest.json`，
+SFTP 凭据不会下发到客户端。
+
+启动后执行：
+
+```bash
+./scripts/verify-download-service.sh
+```
+
 ## 3. 反向代理
 
 在 1Panel“网站”中创建以下反向代理：
@@ -154,6 +189,7 @@ Sub2API 的 `TOTP_ENCRYPTION_KEY` 必须是 64 位十六进制字符串，不能
 | `api.clarkhub.cn` | `http://127.0.0.1:8081` | 家长端和设备 API |
 | `voice.clarkhub.cn` | `http://127.0.0.1:8082` | 语音网关，需开启 WebSocket |
 | `sub.clarkhub.cn` | `http://127.0.0.1:8084` | Sub2API 管理界面和网关 API |
+| `download.clarkhub.cn` | `http://127.0.0.1:8085` | 只读发布文件与版本索引 |
 
 Sub2API 仅绑定宿主机回环地址，公网访问必须经过 1Panel 反向代理并使用
 HTTPS。管理端和其他服务仍通过 Compose 内网域名调用 Sub2API，不经过公网。
@@ -249,6 +285,15 @@ docker compose --env-file .env up -d --force-recreate mqtt device_platform
 | `SPROUT_SUB2API_PORT` | Sub2API 宿主端口，仅用于 1Panel 反向代理 | `8084` |
 | `SPROUT_MQTT_PORT` | 明文 MQTT 端口 | 仅内网或其他服务使用 |
 | `SPROUT_MQTTS_PORT` | 双向 TLS MQTT 端口 | 设备连接的端口，放行 8883 |
+| `SPROUT_DOWNLOAD_SFTP_BIND_ADDRESS` | SFTP 上传端监听地址 | 只允许 CI 出口访问，禁止对公网开放 |
+| `SPROUT_DOWNLOAD_SFTP_PORT` | SFTP 上传端端口 | 示例 `2022` |
+| `SPROUT_DOWNLOAD_HTTP_BIND_ADDRESS` | 文件下载容器监听地址 | 保持 `127.0.0.1`，由 1Panel 反代 |
+| `SPROUT_DOWNLOAD_HTTP_PORT` | 文件下载容器端口 | `8085` |
+| `SPROUT_DOWNLOAD_SFTP_USER` | SFTP 上传用户 | 不要复用系统用户 |
+| `SPROUT_DOWNLOAD_SFTP_UID` | SFTP 用户 UID | 与卷所有权保持一致，示例 `1001` |
+| `SPROUT_DOWNLOAD_SFTP_GID` | SFTP 用户 GID | 与卷所有权保持一致，示例 `1001` |
+| `SPROUT_DOWNLOAD_SFTP_AUTHORIZED_KEYS_DIR` | CI 公钥目录 | 只放发布公钥，不提交私钥 |
+| `SPROUT_DOWNLOAD_PUBLIC_BASE_URL` | 下载文件公开地址 | 必须使用 HTTPS，示例 `https://download.clarkhub.cn` |
 
 ### 镜像版本
 
@@ -414,9 +459,25 @@ docker compose down -v
 | `SPROUT_OTA_RESOURCE_BASE_URL` | 资源包入口，用于文案、主题和内容资源的小升级 |
 | `SPROUT_OTA_CLIENT_BASE_URL` | APK 或客户端安装包入口，用于大升级下载 |
 
-这些地址必须是 HTTPS。实际下载 URL 应由后端在鉴权后生成短期签名地址，
-对象存储关闭公共列举，私钥只放在服务端密钥管理中，不能写入 `.env` 下发给
-设备或家长端。
+这些地址必须是 HTTPS，默认都指向 `https://download.clarkhub.cn`。发布流水线
+会在每次版本 Release 后上传 APK、管理端包、契约包、服务二进制和
+`SHA256SUMS`，并生成带有版本标签的 `index.json` 与 `manifest.json`。管理端
+通过索引自动取得链接和校验值，不需要运营人员手工填写。
+
+下载服务关闭目录枚举，SFTP 私钥只存在 GitHub Actions Secret 和服务器公钥
+目录中，不能写入 `.env` 下发给设备或家长端。
+
+在 GitHub 仓库中配置以下 Secrets：
+
+| Secret | 用途 |
+| --- | --- |
+| `SPROUT_DOWNLOAD_SFTP_HOST` | SFTP 服务器地址 |
+| `SPROUT_DOWNLOAD_SFTP_PORT` | SFTP 端口，示例 `2022` |
+| `SPROUT_DOWNLOAD_SFTP_USER` | SFTP 用户，示例 `sprout-release` |
+| `SPROUT_DOWNLOAD_SFTP_PRIVATE_KEY` | CI 私钥全文，不写入仓库 |
+
+`SPROUT_DOWNLOAD_PUBLIC_URL` 不是 Secret，集中维护在
+`deploy/public-endpoints.env`。
 
 ### 5.3 云端一键升级
 

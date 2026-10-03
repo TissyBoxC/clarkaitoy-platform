@@ -230,9 +230,77 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  download_init:
+    image: alpine:3.22@sha256:3e9b4b680bfc9fb5269227cffbd6d42be39fbf7c0b908123913864aa4447e764
+    user: "0:0"
+    security_opt:
+      - no-new-privileges:true
+    command:
+      [
+        "sh",
+        "-c",
+        "chown -R ${SPROUT_DOWNLOAD_SFTP_UID}:${SPROUT_DOWNLOAD_SFTP_GID} /srv/releases && chmod 750 /srv/releases",
+      ]
+    volumes:
+      - sprout_download_data:/srv/releases
+    restart: "no"
+
+  download_ftp:
+    image: atmoz/sftp:alpine@sha256:6d41b9200f8115ce925bbd295376cb3c6b72634a267f41946e5aee4efe482186
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "${SPROUT_DOWNLOAD_SFTP_BIND_ADDRESS}:${SPROUT_DOWNLOAD_SFTP_PORT}:22"
+    command:
+      - "${SPROUT_DOWNLOAD_SFTP_USER}::${SPROUT_DOWNLOAD_SFTP_UID}:${SPROUT_DOWNLOAD_SFTP_GID}"
+    volumes:
+      - sprout_download_data:/home/${SPROUT_DOWNLOAD_SFTP_USER}/releases
+      - "${SPROUT_DOWNLOAD_SFTP_AUTHORIZED_KEYS_DIR}:/home/${SPROUT_DOWNLOAD_SFTP_USER}/.ssh/keys:ro"
+      - ./download/sftp/sshd_config:/etc/ssh/sshd_config:ro
+      - ./download/sftp/ssh_host_ed25519_key:/etc/ssh/ssh_host_ed25519_key:ro
+      - ./download/sftp/ssh_host_rsa_key:/etc/ssh/ssh_host_rsa_key:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x sshd >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      download_init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  download_http:
+    image: nginx:1.27-alpine@sha256:62223d644fa234c3a1cc785ee14242ec47a77364226f1c811d2f669f96dc2ac8
+    entrypoint: ["nginx", "-g", "daemon off;"]
+    user: "101:101"
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+    ports:
+      - "${SPROUT_DOWNLOAD_HTTP_BIND_ADDRESS}:${SPROUT_DOWNLOAD_HTTP_PORT}:8080"
+    volumes:
+      - sprout_download_data:/srv/releases:ro
+      - ./download/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "3", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      download_ftp:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   sprout_postgres_data:
   sprout_redis_data:
   sprout_mqtt_data:
   sprout_mqtt_log:
   sprout_sub2api_data:
+  sprout_download_data:
