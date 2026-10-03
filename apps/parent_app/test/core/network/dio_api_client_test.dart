@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -41,6 +42,99 @@ void main() {
     expect(response, isNotEmpty);
     expect(refreshCount, 1);
     expect(await secureStore.read(DioApiClient.accessTokenKey), 'renewed');
+    expect(await secureStore.read(DioApiClient.refreshTokenKey), 'refresh-2');
+  });
+
+  test('concurrent refresh callers share one refresh', () async {
+    final gate = SessionRefreshGate();
+    var refreshCount = 0;
+    final refreshStarted = Completer<void>();
+    final refreshCompleter = Completer<String>();
+
+    Future<String> refresh() {
+      refreshCount += 1;
+      if (!refreshStarted.isCompleted) {
+        refreshStarted.complete();
+      }
+      return refreshCompleter.future;
+    }
+
+    final firstResponse = gate.run(refresh);
+    await refreshStarted.future;
+    final secondResponse = gate.run(refresh);
+
+    refreshCompleter.complete('renewed');
+
+    final resolved = await Future.wait([firstResponse, secondResponse]);
+    expect(resolved, ['renewed', 'renewed']);
+    expect(refreshCount, 1);
+  });
+
+  test('keeps the refresh token when refresh fails transiently', () async {
+    final secureStore = InMemorySecureStore();
+    await secureStore.write(DioApiClient.accessTokenKey, 'expired');
+    await secureStore.write(DioApiClient.refreshTokenKey, 'refresh');
+
+    final dio = Dio(BaseOptions(baseUrl: 'https://api.example.test'));
+    dio.httpClientAdapter = _UnauthorizedAdapter();
+
+    final client = DioApiClient(
+      config: ApiClientConfig(
+        appConfig: AppConfig(
+          apiBaseUrl: Uri.parse('https://api.example.test'),
+          requestTimeout: const Duration(seconds: 1),
+        ),
+      ),
+      secureStore: secureStore,
+      refreshSession: (refreshToken) {
+        throw const AppException(
+          kind: AppErrorKind.network,
+          message: '网络连接不稳定，请检查后重试',
+          retryable: true,
+        );
+      },
+      dio: dio,
+    );
+
+    await expectLater(
+      client.get('/api/parent/v1/devices'),
+      throwsA(isA<AppException>()),
+    );
+    expect(await secureStore.read(DioApiClient.refreshTokenKey), 'refresh');
+  });
+
+  test('clears the session when the refresh token is rejected', () async {
+    final secureStore = InMemorySecureStore();
+    await secureStore.write(DioApiClient.accessTokenKey, 'expired');
+    await secureStore.write(DioApiClient.refreshTokenKey, 'refresh');
+
+    final dio = Dio(BaseOptions(baseUrl: 'https://api.example.test'));
+    dio.httpClientAdapter = _UnauthorizedAdapter();
+
+    final client = DioApiClient(
+      config: ApiClientConfig(
+        appConfig: AppConfig(
+          apiBaseUrl: Uri.parse('https://api.example.test'),
+          requestTimeout: const Duration(seconds: 1),
+        ),
+      ),
+      secureStore: secureStore,
+      refreshSession: (refreshToken) {
+        throw const AppException(
+          kind: AppErrorKind.unauthenticated,
+          message: '登录已过期，请重新登录',
+          retryable: false,
+        );
+      },
+      dio: dio,
+    );
+
+    await expectLater(
+      client.get('/api/parent/v1/devices'),
+      throwsA(isA<AppException>()),
+    );
+    expect(await secureStore.read(DioApiClient.refreshTokenKey), isNull);
+    expect(await secureStore.read(DioApiClient.accessTokenKey), isNull);
   });
 
   test('does not refresh a public login failure', () async {
@@ -82,6 +176,39 @@ void main() {
     );
     expect(refreshCount, 0);
   });
+}
+
+class _UnauthorizedAdapter implements HttpClientAdapter {
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    return _unauthorizedResponse();
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+ResponseBody _unauthorizedResponse() {
+  return ResponseBody.fromString(
+    jsonEncode(<String, Object?>{
+      'schema_version': '1.0.0',
+      'request_id': 'request-unauthorized',
+      'data': null,
+      'error': <String, Object?>{
+        'code': 'session_expired',
+        'message': '登录已过期，请重新登录',
+        'retryable': false,
+      },
+    }),
+    401,
+    headers: <String, List<String>>{
+      Headers.contentTypeHeader: <String>[Headers.jsonContentType],
+    },
+  );
 }
 
 class InMemorySecureStore implements SecureStore {

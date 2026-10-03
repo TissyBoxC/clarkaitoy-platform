@@ -57,7 +57,12 @@ class _FamilyHomePageState extends ConsumerState<FamilyHomePage> {
       ),
       body: AppStateSwitcher(
         stateKey: auth.when(
-          data: (value) => value.account == null ? 'signed-out' : 'content',
+          data: (value) {
+            if (value.canRetryRestore) {
+              return 'restore-failed';
+            }
+            return value.account == null ? 'signed-out' : 'content';
+          },
           error: (_, _) => 'error',
           loading: () => 'loading',
         ),
@@ -73,6 +78,14 @@ class _FamilyHomePageState extends ConsumerState<FamilyHomePage> {
                 ref.read(authControllerProvider.notifier).refreshAccount(),
           ),
           data: (state) {
+            if (state.canRetryRestore) {
+              return _RestoreErrorState(
+                key: const ValueKey<String>('restore-failed'),
+                message: state.errorMessage ?? '暂时无法恢复登录，请检查网络后重试',
+                onRetry: () =>
+                    ref.read(authControllerProvider.notifier).retryRestore(),
+              );
+            }
             final account = state.account;
             if (account == null) {
               return const _SignInPrompt(key: ValueKey<String>('signed-out'));
@@ -556,6 +569,36 @@ class _ErrorState extends StatelessWidget {
             Text(message, textAlign: TextAlign.center),
             const SizedBox(height: 12),
             FilledButton(onPressed: onRetry, child: const Text('重新加载')),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RestoreErrorState extends StatelessWidget {
+  const _RestoreErrorState({
+    required this.message,
+    required this.onRetry,
+    super.key,
+  });
+
+  final String message;
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.cloud_off_outlined, size: 40),
+            const SizedBox(height: 12),
+            Text(message, textAlign: TextAlign.center),
+            const SizedBox(height: 16),
+            FilledButton(onPressed: onRetry, child: const Text('重新恢复登录')),
           ],
         ),
       ),

@@ -15,6 +15,7 @@ class AuthState {
     this.account,
     this.aiAccount,
     this.errorMessage,
+    this.canRetryRestore = false,
   });
 
   const AuthState.loading() : this(isLoading: true);
@@ -22,12 +23,20 @@ class AuthState {
   const AuthState.signedOut({this.errorMessage})
     : isLoading = false,
       account = null,
-      aiAccount = null;
+      aiAccount = null,
+      canRetryRestore = false;
+
+  const AuthState.restoreFailed({this.errorMessage})
+    : isLoading = false,
+      account = null,
+      aiAccount = null,
+      canRetryRestore = true;
 
   final bool isLoading;
   final ParentAccount? account;
   final AiAccount? aiAccount;
   final String? errorMessage;
+  final bool canRetryRestore;
 
   bool get isSignedIn => account != null;
 
@@ -36,12 +45,14 @@ class AuthState {
     ParentAccount? account,
     AiAccount? aiAccount,
     String? errorMessage,
+    bool? canRetryRestore,
   }) {
     return AuthState(
       isLoading: isLoading ?? this.isLoading,
       account: account ?? this.account,
       aiAccount: aiAccount ?? this.aiAccount,
       errorMessage: errorMessage,
+      canRetryRestore: canRetryRestore ?? this.canRetryRestore,
     );
   }
 }
@@ -59,18 +70,44 @@ class AuthController extends AsyncNotifier<AuthState> {
     if (refreshToken == null || refreshToken.isEmpty) {
       return const AuthState.signedOut();
     }
+    return _restoreSession(refreshToken);
+  }
+
+  /// Retries startup recovery without discarding a valid local session.
+  ///
+  /// Transient network and server failures leave the stored refresh token in
+  /// place. Only an explicit authentication rejection clears it.
+  Future<AuthState> retryRestore() async {
+    state = const AsyncLoading();
+    final nextState = await AsyncValue.guard(() async {
+      final refreshToken = await _secureStore.read(
+        DioApiClient.refreshTokenKey,
+      );
+      if (refreshToken == null || refreshToken.isEmpty) {
+        return const AuthState.signedOut();
+      }
+      return _restoreSession(refreshToken);
+    });
+    state = nextState;
+    return nextState.value ?? const AuthState.restoreFailed();
+  }
+
+  Future<AuthState> _restoreSession(String refreshToken) async {
     try {
       final session = await _authApi.refresh(refreshToken);
-      final account = await _authApi.me();
       await _saveSession(session);
+      final account = await _authApi.me();
       return AuthState(
         isLoading: false,
         account: account.account,
         aiAccount: account.aiAccount,
       );
-    } on Object {
-      await _clearSession();
-      return const AuthState.signedOut();
+    } on Object catch (error) {
+      if (isSessionRejected(error)) {
+        await _clearSession();
+        return AuthState.signedOut(errorMessage: authErrorMessage(error));
+      }
+      return AuthState.restoreFailed(errorMessage: authErrorMessage(error));
     }
   }
 

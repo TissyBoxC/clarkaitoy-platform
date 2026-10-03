@@ -25,9 +25,14 @@ GoRouter createAppRouter(ProviderContainer container) {
       if (authState.isLoading) {
         return null;
       }
-      final isSignedIn = authState.value?.isSignedIn ?? false;
+      final authValue = authState.value;
+      final canRetryRestore = authValue?.canRetryRestore ?? false;
       final location = state.matchedLocation;
       final isPublicRoute = location == '/login' || location == '/register';
+      if (canRetryRestore && !isPublicRoute) {
+        return null;
+      }
+      final isSignedIn = authValue?.isSignedIn ?? false;
       if (!isSignedIn && !isPublicRoute) {
         return '/login';
       }

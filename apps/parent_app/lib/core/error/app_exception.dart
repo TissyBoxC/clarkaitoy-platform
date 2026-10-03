@@ -27,3 +27,15 @@ class AppException implements Exception {
   @override
   String toString() => 'AppException($kind)';
 }
+
+/// Returns whether the server explicitly rejected the current session.
+///
+/// Network failures, timeouts, and server errors are transient and must keep
+/// the local session so the user can retry without signing in again.
+bool isSessionRejected(Object error) {
+  if (error is! AppException) {
+    return false;
+  }
+  return error.kind == AppErrorKind.unauthenticated ||
+      error.kind == AppErrorKind.insufficientPermission;
+}

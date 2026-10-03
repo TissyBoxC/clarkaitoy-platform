@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 
 import '../config/app_config.dart';
@@ -43,6 +45,28 @@ class AuthSession {
   final String refreshToken;
 }
 
+/// Runs at most one session refresh and shares its result with concurrent
+/// unauthorized requests.
+class SessionRefreshGate {
+  Future<T> run<T>(Future<T> Function() refresh) async {
+    final pending = _pending;
+    if (pending != null) {
+      return (await pending) as T;
+    }
+    final current = refresh();
+    _pending = current;
+    try {
+      return await current;
+    } finally {
+      if (identical(_pending, current)) {
+        _pending = null;
+      }
+    }
+  }
+
+  Future<dynamic>? _pending;
+}
+
 /// Dio-backed API client with authentication refresh and error mapping.
 class DioApiClient implements ApiClient {
   DioApiClient({
@@ -78,7 +102,7 @@ class DioApiClient implements ApiClient {
   final Dio _dio;
   final SecureStore _secureStore;
   final RefreshSession _refreshSession;
-  Future<String>? _pendingRefresh;
+  final _refreshGate = SessionRefreshGate();
 
   @override
   Future<Map<String, Object?>> get(
@@ -180,48 +204,42 @@ class DioApiClient implements ApiClient {
     }
 
     try {
-      final accessToken = await _refreshOnce();
+      final outcome = await _refreshOnce();
+      if (!outcome.didSucceed) {
+        handler.next(error);
+        return;
+      }
+      final accessToken = outcome.accessToken!;
       request.extra['auth_retried'] = true;
       request.headers['Authorization'] = 'Bearer $accessToken';
       final response = await _dio.fetch<Object?>(request);
       handler.resolve(response);
-    } on Object catch (refreshError) {
-      handler.next(refreshError is DioException ? refreshError : error);
+    } on Object {
+      handler.next(error);
     }
   }
 
-  Future<String> _refreshOnce() {
-    final pendingRefresh = _pendingRefresh;
-    if (pendingRefresh != null) {
-      return pendingRefresh;
-    }
-
-    final refresh = _performRefresh();
-    _pendingRefresh = refresh;
-    return refresh.whenComplete(() {
-      _pendingRefresh = null;
-    });
+  Future<_RefreshOutcome> _refreshOnce() async {
+    return _refreshGate.run(_performRefresh);
   }
 
-  Future<String> _performRefresh() async {
+  Future<_RefreshOutcome> _performRefresh() async {
     final refreshToken = await _secureStore.read(refreshTokenKey);
-    if (refreshToken == null) {
+    if (refreshToken == null || refreshToken.isEmpty) {
       await _clearSession();
-      throw const AppException(
-        kind: AppErrorKind.unauthenticated,
-        message: '登录已过期，请重新登录',
-        retryable: false,
-      );
+      return const _RefreshOutcome.failed();
     }
 
     try {
       final session = await _refreshSession(refreshToken);
       await _secureStore.write(accessTokenKey, session.accessToken);
       await _secureStore.write(refreshTokenKey, session.refreshToken);
-      return session.accessToken;
-    } on Object {
-      await _clearSession();
-      rethrow;
+      return _RefreshOutcome.succeeded(session.accessToken);
+    } on Object catch (error) {
+      if (isSessionRejected(error)) {
+        await _clearSession();
+      }
+      return const _RefreshOutcome.failed();
     }
   }
 
@@ -256,4 +274,16 @@ class DioApiClient implements ApiClient {
     }
     return Options();
   }
+}
+
+class _RefreshOutcome {
+  const _RefreshOutcome._({required this.didSucceed, this.accessToken});
+
+  const _RefreshOutcome.succeeded(String accessToken)
+    : this._(didSucceed: true, accessToken: accessToken);
+
+  const _RefreshOutcome.failed() : this._(didSucceed: false);
+
+  final bool didSucceed;
+  final String? accessToken;
 }
