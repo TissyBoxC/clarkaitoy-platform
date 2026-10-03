@@ -311,7 +311,7 @@ services:
     restart: unless-stopped
 
   upgrade_worker:
-    image: alpine:3.22@sha256:3e9b4b680bfc9fb5269227cffbd6d42be39fbf7c0b908123913864aa4447e764
+    image: ghcr.io/tissyboxc/sprout-upgrade-worker:${SPROUT_PLATFORM_VERSION}
     user: "0:0"
     security_opt:
       - no-new-privileges:true
@@ -338,9 +338,8 @@ services:
       - ../..:/opt/sprout-source
     command:
       [
-        "/bin/sh",
-        "-c",
-        "apk add --no-cache bash docker-cli docker-cli-compose git jq curl util-linux && exec bash /opt/sprout-source/deploy/cloud/scripts/service-upgrade-worker.sh",
+        "bash",
+        "/opt/sprout-source/deploy/cloud/scripts/service-upgrade-worker.sh",
       ]
     restart: unless-stopped
 

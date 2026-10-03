@@ -250,7 +250,7 @@ print_rollback_instructions() {
   echo "   SPROUT_PLATFORM_VERSION=$previous_platform_version" >&2
   echo "   SPROUT_SUB2API_VERSION=$previous_sub2api_version" >&2
   echo "2. cd $cloud_dir" >&2
-  echo "3. docker compose -f docker-compose.yml --env-file .env pull device_platform voice_gateway admin_web sub2api" >&2
+  echo "3. docker compose -f docker-compose.yml --env-file .env pull device_platform voice_gateway admin_web upgrade_worker sub2api" >&2
   echo "4. docker compose -f docker-compose.yml --env-file .env up -d --remove-orphans" >&2
   echo "5. ./scripts/check-stack.sh" >&2
   echo "" >&2
@@ -338,7 +338,7 @@ write_env_versions
 echo "版本已原子切换到 platform=$platform_version sub2api=$sub2api_version"
 
 docker compose -f "$compose_file" --env-file "$env_file" pull \
-  device_platform voice_gateway admin_web sub2api
+  device_platform voice_gateway admin_web upgrade_worker sub2api
 if [ "$download_credentials_recreated" = "true" ]; then
   # A running container that failed the first user initialization stores its
   # marker in the container filesystem. Recreate the stateless download

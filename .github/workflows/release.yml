@@ -131,12 +131,17 @@ jobs:
           flutter-version: '3.41.9'
           cache: true
 
+      - name: Set up Gradle cache
+        if: steps.detect.outputs.should_release == 'true'
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Build parent app APK
         if: steps.detect.outputs.should_release == 'true'
         shell: bash
         env:
           RELEASE_VERSION: ${{ steps.detect.outputs.version }}
           API_BASE_URL: ${{ steps.endpoints.outputs.api_url }}
+          GRADLE_OPTS: -Xmx4g -XX:MaxMetaspaceSize=1g -Dorg.gradle.daemon=false
         working-directory: apps/parent_app
         run: |
           set -euo pipefail
@@ -147,7 +152,7 @@ jobs:
             --dart-define "APP_VERSION=$RELEASE_VERSION" \
             --build-name "$RELEASE_VERSION" \
             --build-number "$GITHUB_RUN_NUMBER" \
-            --target-platform android-arm,android-arm64,android-x64
+            --target-platform android-arm,android-arm64
           cp build/app/outputs/flutter-apk/app-release.apk \
             "../../dist/stage/sprout-parent-app-${{ steps.detect.outputs.tag }}.apk"
           cp build/app/outputs/flutter-apk/app-release.apk \
@@ -370,6 +375,13 @@ jobs:
             --tag "ghcr.io/$owner/sprout-admin-web:latest" \
             --file apps/admin_web/Dockerfile \
             --build-arg "VITE_API_BASE_URL=" \
+            .
+
+          docker buildx build \
+            --push \
+            --tag "ghcr.io/$owner/sprout-upgrade-worker:$RELEASE_VERSION" \
+            --tag "ghcr.io/$owner/sprout-upgrade-worker:latest" \
+            --file deploy/cloud/upgrade_worker/Dockerfile \
             .
 
       - name: Publish GitHub release
