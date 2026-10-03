@@ -47,7 +47,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         return;
       }
       if (succeeded) {
-        context.go('/family');
+        context.go('/home');
         return;
       }
       setState(() {

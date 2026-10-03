@@ -97,7 +97,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
         return;
       }
       if (succeeded) {
-        context.go('/family');
+        context.go('/home');
         return;
       }
       setState(() {

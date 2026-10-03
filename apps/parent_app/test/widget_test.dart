@@ -179,6 +179,38 @@ class _FailingAuthApi implements AuthApi {
   Future<AiAccount> updateSelectedModels(List<String> selectedModels) {
     throw UnimplementedError();
   }
+
+  @override
+  Future<ParentOverview> overview() {
+    return Future<ParentOverview>.value(
+      const ParentOverview(
+        todayConversationCount: 0,
+        todaySpentUsd: 0,
+        remainingBalanceUsd: 0,
+        balanceUsd: 0,
+        deviceCount: 0,
+        onlineDeviceCount: 0,
+      ),
+    );
+  }
+
+  @override
+  Future<ParentAccount> updateProfile({
+    required String displayName,
+    required String guardianFamilyName,
+    required String childNickname,
+    required String childBirthday,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<AppUpdateInfo?> appUpdate({
+    required String platform,
+    required String currentVersion,
+  }) {
+    throw UnimplementedError();
+  }
 }
 
 class _InvalidCredentialsAuthApi implements AuthApi {
@@ -242,6 +274,38 @@ class _InvalidCredentialsAuthApi implements AuthApi {
   Future<AiAccount> updateSelectedModels(List<String> selectedModels) {
     throw UnimplementedError();
   }
+
+  @override
+  Future<ParentOverview> overview() {
+    return Future<ParentOverview>.value(
+      const ParentOverview(
+        todayConversationCount: 0,
+        todaySpentUsd: 0,
+        remainingBalanceUsd: 0,
+        balanceUsd: 0,
+        deviceCount: 0,
+        onlineDeviceCount: 0,
+      ),
+    );
+  }
+
+  @override
+  Future<ParentAccount> updateProfile({
+    required String displayName,
+    required String guardianFamilyName,
+    required String childNickname,
+    required String childBirthday,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<AppUpdateInfo?> appUpdate({
+    required String platform,
+    required String currentVersion,
+  }) {
+    throw UnimplementedError();
+  }
 }
 
 class _FailingRegisterAuthApi implements AuthApi {
@@ -303,6 +367,38 @@ class _FailingRegisterAuthApi implements AuthApi {
 
   @override
   Future<AiAccount> updateSelectedModels(List<String> selectedModels) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<ParentOverview> overview() {
+    return Future<ParentOverview>.value(
+      const ParentOverview(
+        todayConversationCount: 0,
+        todaySpentUsd: 0,
+        remainingBalanceUsd: 0,
+        balanceUsd: 0,
+        deviceCount: 0,
+        onlineDeviceCount: 0,
+      ),
+    );
+  }
+
+  @override
+  Future<ParentAccount> updateProfile({
+    required String displayName,
+    required String guardianFamilyName,
+    required String childNickname,
+    required String childBirthday,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<AppUpdateInfo?> appUpdate({
+    required String platform,
+    required String currentVersion,
+  }) {
     throw UnimplementedError();
   }
 }

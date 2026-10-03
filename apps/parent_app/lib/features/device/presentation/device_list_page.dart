@@ -17,12 +17,20 @@ class DeviceListPage extends ConsumerWidget {
     final binding = ref.watch(deviceBindingControllerProvider);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('我的设备'),
-        leading: IconButton(
-          tooltip: '返回首页',
-          onPressed: () => context.go('/family'),
-          icon: const Icon(Icons.arrow_back),
-        ),
+        title: const Text('设备'),
+        actions: [
+          IconButton(
+            tooltip: '添加设备',
+            onPressed: () => context.go('/devices/scan'),
+            icon: const Icon(Icons.add_circle_outline_rounded),
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => context.go('/devices/scan'),
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('添加设备'),
       ),
       body: AppStateSwitcher(
         stateKey: binding.when(
@@ -265,8 +273,7 @@ class DeviceListPage extends ConsumerWidget {
 String _deviceSubtitle(BoundDevice device) {
   final runtime = device.runtime;
   final details = <String>[
-    if (runtime != null)
-      runtime.isOnline ? '在线' : '离线',
+    if (runtime != null) runtime.isOnline ? '在线' : '离线',
     if (runtime?.networkQuality.isNotEmpty == true)
       '网络${_networkQualityLabel(runtime!.networkQuality)}',
     if (runtime?.receivedAt != null)

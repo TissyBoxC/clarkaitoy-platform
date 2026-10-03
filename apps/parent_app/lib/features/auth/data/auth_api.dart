@@ -25,6 +25,83 @@ class AuthResult {
   }
 }
 
+/// Daily usage and device summary shown on the guardian home screen.
+class ParentOverview {
+  const ParentOverview({
+    required this.todayConversationCount,
+    required this.todaySpentUsd,
+    required this.remainingBalanceUsd,
+    required this.balanceUsd,
+    required this.deviceCount,
+    required this.onlineDeviceCount,
+  });
+
+  final int todayConversationCount;
+  final double todaySpentUsd;
+  final double remainingBalanceUsd;
+  final double balanceUsd;
+  final int deviceCount;
+  final int onlineDeviceCount;
+
+  factory ParentOverview.fromJson(Map<String, Object?> json) {
+    return ParentOverview(
+      todayConversationCount: _requiredInt(
+        json['today_conversation_count'],
+        'today_conversation_count',
+      ),
+      todaySpentUsd: _requiredDouble(
+        json['today_spent_usd'],
+        'today_spent_usd',
+      ),
+      remainingBalanceUsd: _requiredDouble(
+        json['remaining_balance_usd'],
+        'remaining_balance_usd',
+      ),
+      balanceUsd: _requiredDouble(json['balance_usd'], 'balance_usd'),
+      deviceCount: _requiredInt(json['device_count'], 'device_count'),
+      onlineDeviceCount: _requiredInt(
+        json['online_device_count'],
+        'online_device_count',
+      ),
+    );
+  }
+}
+
+/// Available application update returned by the platform release service.
+class AppUpdateInfo {
+  const AppUpdateInfo({
+    required this.kind,
+    required this.version,
+    required this.downloadUrl,
+    required this.sha256,
+    required this.releaseNotes,
+    required this.isMandatory,
+    required this.minSupportedVersion,
+  });
+
+  final String kind;
+  final String version;
+  final String downloadUrl;
+  final String sha256;
+  final String releaseNotes;
+  final bool isMandatory;
+  final String minSupportedVersion;
+
+  bool get isClientUpdate => kind == 'client';
+
+  factory AppUpdateInfo.fromJson(Map<String, Object?> json) {
+    return AppUpdateInfo(
+      kind: _requiredString(json['kind'], 'kind'),
+      version: _requiredString(json['version'], 'version'),
+      downloadUrl: _requiredString(json['download_url'], 'download_url'),
+      sha256: _optionalString(json['sha256']),
+      releaseNotes: _optionalString(json['release_notes']),
+      isMandatory: json['is_mandatory'] == true,
+      minSupportedVersion: _optionalString(json['min_supported_version']),
+    );
+  }
+}
+
 /// Parent identity safe to display in the application.
 class ParentAccount {
   const ParentAccount({
@@ -224,6 +301,52 @@ class AuthApi {
     );
     final data = response['data'] as Map<String, Object?>;
     return AiAccount.fromJson(_requiredMap(data['ai_account'], 'ai_account'));
+  }
+
+  /// Loads the small dashboard shown after a guardian signs in.
+  Future<ParentOverview> overview() async {
+    final response = await _apiClient.get('/api/v1/auth/overview');
+    final data = response['data'] as Map<String, Object?>;
+    return ParentOverview.fromJson(data);
+  }
+
+  /// Updates editable guardian and child profile fields.
+  Future<ParentAccount> updateProfile({
+    required String displayName,
+    required String guardianFamilyName,
+    required String childNickname,
+    required String childBirthday,
+  }) async {
+    final response = await _apiClient.put(
+      '/api/v1/auth/profile',
+      body: {
+        'display_name': displayName,
+        'guardian_family_name': guardianFamilyName,
+        'child_nickname': childNickname,
+        'child_birthday': childBirthday,
+      },
+    );
+    final data = response['data'] as Map<String, Object?>;
+    return ParentAccount.fromJson(_requiredMap(data['account'], 'account'));
+  }
+
+  /// Returns the next available update, or null when the client is current.
+  Future<AppUpdateInfo?> appUpdate({
+    required String platform,
+    required String currentVersion,
+  }) async {
+    final response = await _apiClient.get(
+      '/api/v1/app/update',
+      queryParameters: {
+        'platform': platform,
+        'current_version': currentVersion,
+      },
+    );
+    final data = response['data'];
+    if (data is! Map) {
+      return null;
+    }
+    return AppUpdateInfo.fromJson(Map<String, Object?>.from(data));
   }
 }
 

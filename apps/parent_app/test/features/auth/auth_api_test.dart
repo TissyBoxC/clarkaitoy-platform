@@ -61,11 +61,67 @@ void main() {
     });
     expect(account.email, 'guardian@example.com');
   });
+
+  test('overview maps today usage and device totals', () async {
+    final client = _RecordingApiClient();
+    final api = AuthApi(client);
+
+    final overview = await api.overview();
+
+    expect(client.path, '/api/v1/auth/overview');
+    expect(overview.todayConversationCount, 12);
+    expect(overview.todaySpentUsd, 0.36);
+    expect(overview.remainingBalanceUsd, 8.64);
+    expect(overview.deviceCount, 2);
+    expect(overview.onlineDeviceCount, 1);
+  });
+
+  test(
+    'profile update sends only editable guardian and child fields',
+    () async {
+      final client = _RecordingApiClient();
+      final api = AuthApi(client);
+
+      await api.updateProfile(
+        displayName: '林妈妈',
+        guardianFamilyName: '林',
+        childNickname: '小芽',
+        childBirthday: '2021-06-01',
+      );
+
+      expect(client.path, '/api/v1/auth/profile');
+      expect(client.body, {
+        'display_name': '林妈妈',
+        'guardian_family_name': '林',
+        'child_nickname': '小芽',
+        'child_birthday': '2021-06-01',
+      });
+    },
+  );
+
+  test('update check sends platform and current version', () async {
+    final client = _RecordingApiClient();
+    final api = AuthApi(client);
+
+    final update = await api.appUpdate(
+      platform: 'android',
+      currentVersion: '1.0.0',
+    );
+
+    expect(client.path, '/api/v1/app/update');
+    expect(client.queryParameters, {
+      'platform': 'android',
+      'current_version': '1.0.0',
+    });
+    expect(update?.isClientUpdate, isFalse);
+    expect(update?.version, '1.0.1');
+  });
 }
 
 class _RecordingApiClient implements ApiClient {
   String? path;
   Object? body;
+  Map<String, String>? queryParameters;
 
   @override
   Future<Map<String, Object?>> post(String path, {Object? body}) async {
@@ -78,7 +134,34 @@ class _RecordingApiClient implements ApiClient {
   Future<Map<String, Object?>> get(
     String path, {
     Map<String, String>? queryParameters,
-  }) {
+  }) async {
+    this.path = path;
+    this.queryParameters = queryParameters;
+    if (path == '/api/v1/auth/overview') {
+      return {
+        'data': {
+          'today_conversation_count': 12,
+          'today_spent_usd': 0.36,
+          'remaining_balance_usd': 8.64,
+          'balance_usd': 9.0,
+          'device_count': 2,
+          'online_device_count': 1,
+        },
+      };
+    }
+    if (path == '/api/v1/app/update') {
+      return {
+        'data': {
+          'kind': 'resource',
+          'version': '1.0.1',
+          'download_url': 'https://example.com/sprout-resource.zip',
+          'sha256': 'abc123',
+          'release_notes': '更新了新的故事和儿歌内容。',
+          'is_mandatory': false,
+          'min_supported_version': '0.9.0',
+        },
+      };
+    }
     throw UnimplementedError();
   }
 

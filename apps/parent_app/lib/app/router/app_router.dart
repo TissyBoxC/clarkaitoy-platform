@@ -10,13 +10,16 @@ import '../../features/device/presentation/device_list_page.dart';
 import '../../features/device/domain/device_payload.dart';
 import '../../features/device/presentation/device_provisioning_page.dart';
 import '../../features/device/presentation/device_qr_scan_page.dart';
+import '../../shared/widgets/parent_shell.dart';
 import '../../features/family/presentation/family_home_page.dart';
+import '../../features/ota/presentation/app_update_page.dart';
+import '../../features/profile/presentation/profile_page.dart';
 
 /// Creates the application router with authentication-aware redirects.
 GoRouter createAppRouter(ProviderContainer container) {
   return GoRouter(
     refreshListenable: _AuthRefreshListenable(container),
-    initialLocation: '/family',
+    initialLocation: '/home',
     redirect: (context, state) {
       final authState = container.read(authControllerProvider);
       if (authState.isLoading) {
@@ -29,7 +32,7 @@ GoRouter createAppRouter(ProviderContainer container) {
         return '/login';
       }
       if (isSignedIn && isPublicRoute) {
-        return '/family';
+        return '/home';
       }
       return null;
     },
@@ -39,17 +42,44 @@ GoRouter createAppRouter(ProviderContainer container) {
         path: '/register',
         builder: (context, state) => const RegisterPage(),
       ),
-      GoRoute(
-        path: '/family',
-        builder: (context, state) => const FamilyHomePage(),
-      ),
+      GoRoute(path: '/family', redirect: (context, state) => '/home'),
       GoRoute(
         path: '/account/email',
         builder: (context, state) => const BindEmailPage(),
       ),
       GoRoute(
-        path: '/devices',
-        builder: (context, state) => const DeviceListPage(),
+        path: '/me/update',
+        builder: (context, state) => const AppUpdatePage(),
+      ),
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) =>
+            ParentShell(navigationShell: navigationShell),
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/home',
+                builder: (context, state) => const FamilyHomePage(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/devices',
+                builder: (context, state) => const DeviceListPage(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/me',
+                builder: (context, state) => const ProfilePage(),
+              ),
+            ],
+          ),
+        ],
       ),
       GoRoute(
         path: '/devices/scan',
@@ -104,7 +134,7 @@ class _RouteNotFoundPage extends StatelessWidget {
               const Text('这个页面已经移动或不再存在。'),
               const SizedBox(height: 16),
               FilledButton(
-                onPressed: () => context.go('/family'),
+                onPressed: () => context.go('/home'),
                 child: const Text('返回首页'),
               ),
             ],

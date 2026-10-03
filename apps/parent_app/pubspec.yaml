@@ -43,6 +43,12 @@ dependencies:
   wifi_iot: ^0.3.19+2
   esp_provisioning_wifi:
     path: packages/esp_provisioning_wifi
+  package_info_plus: ^10.2.2
+  path_provider: ^2.1.6
+  crypto: ^3.0.7
+  open_filex: ^4.7.0
+  archive: ^4.3.0
+  path: ^1.9.1
 
 dev_dependencies:
   build_runner: ^2.10.4

@@ -194,6 +194,32 @@ class AuthController extends AsyncNotifier<AuthState> {
     );
   }
 
+  /// Saves editable profile fields and refreshes the shared account state.
+  Future<void> updateProfile({
+    required String displayName,
+    required String guardianFamilyName,
+    required String childNickname,
+    required String childBirthday,
+  }) async {
+    final current = state.value;
+    if (current?.account == null) {
+      return;
+    }
+    final account = await _authApi.updateProfile(
+      displayName: displayName,
+      guardianFamilyName: guardianFamilyName,
+      childNickname: childNickname,
+      childBirthday: childBirthday,
+    );
+    state = AsyncData(
+      AuthState(
+        isLoading: false,
+        account: account,
+        aiAccount: current?.aiAccount,
+      ),
+    );
+  }
+
   Future<void> _saveSession(AuthResult session) async {
     await _secureStore.write(DioApiClient.accessTokenKey, session.accessToken);
     await _secureStore.write(
