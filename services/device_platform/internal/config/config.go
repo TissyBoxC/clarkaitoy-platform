@@ -23,6 +23,7 @@ type Config struct {
 	MQTT           MQTTConfig
 	DeviceRuntime  DeviceRuntimeConfig
 	ServiceVersion ServiceVersionConfig
+	ReleaseStore   ReleaseStoreConfig
 }
 
 // HTTPConfig contains HTTP server settings.
@@ -129,6 +130,14 @@ type ServiceVersionConfig struct {
 	StateDir string
 }
 
+// ReleaseStoreConfig points at the shared release volume consumed by the
+// download service. PublicBaseURL is the same non-secret HTTPS prefix used by
+// release manifests; credentials never belong here.
+type ReleaseStoreConfig struct {
+	RootDir       string
+	PublicBaseURL string
+}
+
 // Load reads configuration from environment variables with local defaults.
 func Load() (Config, error) {
 	cfg := Config{
@@ -202,6 +211,16 @@ func Load() (Config, error) {
 				"/var/lib/sprout-upgrades",
 			),
 		},
+		ReleaseStore: ReleaseStoreConfig{
+			RootDir: env(
+				"DEVICE_PLATFORM_DOWNLOAD_STORE_DIR",
+				"/srv/releases",
+			),
+			PublicBaseURL: env(
+				"DEVICE_PLATFORM_DOWNLOAD_PUBLIC_BASE_URL",
+				"",
+			),
+		},
 	}
 
 	if cfg.Internal.Enabled && len(strings.TrimSpace(cfg.Internal.AuthToken)) < 32 {
@@ -246,6 +265,9 @@ func Load() (Config, error) {
 	}
 	if !strings.HasPrefix(strings.TrimSpace(cfg.ServiceVersion.StateDir), "/") {
 		return Config{}, fmt.Errorf("DEVICE_PLATFORM_SERVICE_VERSION_STATE_DIR must be an absolute path")
+	}
+	if !strings.HasPrefix(strings.TrimSpace(cfg.ReleaseStore.RootDir), "/") {
+		return Config{}, fmt.Errorf("DEVICE_PLATFORM_DOWNLOAD_STORE_DIR must be an absolute path")
 	}
 
 	return cfg, nil

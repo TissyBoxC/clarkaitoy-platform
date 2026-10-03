@@ -25,6 +25,7 @@ import (
 	runtimeService "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_runtime/service"
 	operationsRepository "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/operations/repository"
 	operationsService "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/operations/service"
+	releaseStoreService "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/release_store/service"
 	serviceVersionRepository "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/service_version/repository"
 	serviceVersionService "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/service_version/service"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/platform/cache"
@@ -160,6 +161,14 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("create service version service: %w", err)
 	}
+	releaseStore, err := releaseStoreService.New(releaseStoreService.Options{
+		RootDir:       cfg.ReleaseStore.RootDir,
+		PublicBaseURL: cfg.ReleaseStore.PublicBaseURL,
+	})
+	if err != nil {
+		return fmt.Errorf("create release store service: %w", err)
+	}
+	defer releaseStore.Close()
 
 	server := &http.Server{
 		Addr: cfg.HTTP.Address(),
@@ -172,6 +181,7 @@ func Run() error {
 			BindingService:        deviceBindingService,
 			RuntimeService:        deviceRuntimeService,
 			ServiceVersionService: serviceVersions,
+			ReleaseStoreService:   releaseStore,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}

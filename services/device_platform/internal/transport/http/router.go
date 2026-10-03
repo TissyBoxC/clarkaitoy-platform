@@ -16,6 +16,7 @@ import (
 	bindingservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_binding/service"
 	runtimeservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_runtime/service"
 	operationsservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/operations/service"
+	releasestoreservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/release_store/service"
 	serviceversionservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/service_version/service"
 )
 
@@ -29,6 +30,7 @@ type RouterOptions struct {
 	BindingService        *bindingservice.Service
 	RuntimeService        *runtimeservice.Service
 	ServiceVersionService *serviceversionservice.Service
+	ReleaseStoreService   *releasestoreservice.Service
 }
 
 // NewRouter returns the HTTP router for the device platform.
@@ -146,6 +148,7 @@ func NewRouter(options RouterOptions) http.Handler {
 				parentService:         options.AuthService,
 				operationsService:     options.OperationsService,
 				serviceVersionService: options.ServiceVersionService,
+				releaseStoreService:   options.ReleaseStoreService,
 				deviceStatusService:   options.RuntimeService,
 			}
 			mux.HandleFunc(
@@ -228,6 +231,44 @@ func NewRouter(options RouterOptions) http.Handler {
 				mux.HandleFunc(
 					"GET /api/v1/app/update",
 					adminHandler.appUpdate,
+				)
+			}
+			if options.ReleaseStoreService != nil {
+				mux.HandleFunc(
+					"GET /api/v1/admin/storage/files",
+					authHandler.requireAdmin(adminHandler.listReleaseFiles),
+				)
+				mux.HandleFunc(
+					"POST /api/v1/admin/storage/files/upload",
+					authHandler.requireAdmin(adminHandler.uploadReleaseFile),
+				)
+				mux.HandleFunc(
+					"DELETE /api/v1/admin/storage/files/{path...}",
+					authHandler.requireAdmin(adminHandler.deleteReleaseFile),
+				)
+				mux.HandleFunc(
+					"GET /api/v1/admin/storage/index/status",
+					authHandler.requireAdmin(adminHandler.getReleaseIndexStatus),
+				)
+				mux.HandleFunc(
+					"POST /api/v1/admin/storage/index/refresh",
+					authHandler.requireAdmin(adminHandler.refreshReleaseIndex),
+				)
+				mux.HandleFunc(
+					"GET /api/v1/admin/release-files",
+					authHandler.requireAdmin(adminHandler.listReleaseFiles),
+				)
+				mux.HandleFunc(
+					"POST /api/v1/admin/release-files",
+					authHandler.requireAdmin(adminHandler.uploadReleaseFile),
+				)
+				mux.HandleFunc(
+					"DELETE /api/v1/admin/release-files",
+					authHandler.requireAdmin(adminHandler.deleteReleaseFile),
+				)
+				mux.HandleFunc(
+					"POST /api/v1/admin/release-index/refresh",
+					authHandler.requireAdmin(adminHandler.refreshReleaseIndex),
 				)
 			}
 			if options.ServiceVersionService != nil {

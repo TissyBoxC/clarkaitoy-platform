@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	authservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/service"
 	deviceruntimedomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_runtime/domain"
 	operationsdomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/operations/domain"
+	releaseStoredomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/release_store/domain"
 	serviceversiondomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/service_version/domain"
 	serviceversionservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/service_version/service"
 )
@@ -22,6 +24,7 @@ type adminHandler struct {
 	parentService         parentAccountService
 	operationsService     operationsAdminService
 	serviceVersionService serviceVersionAdminService
+	releaseStoreService   releaseStoreAdminService
 	deviceStatusService   adminDeviceStatusService
 }
 
@@ -135,6 +138,26 @@ type updateAIAccountRequest struct {
 	ConcurrencyLimit int      `json:"concurrency_limit"`
 	AvailableModels  []string `json:"available_models"`
 	Reason           string   `json:"reason"`
+}
+
+// releaseStoreAdminService is the management-facing download-store surface.
+// It is defined here so transport tests can substitute a small fake.
+type releaseStoreAdminService interface {
+	Inventory(ctx context.Context) (releaseStoredomain.Inventory, error)
+	IndexStatus(ctx context.Context) (releaseStoredomain.IndexStatus, error)
+	RefreshAllIndexes(
+		ctx context.Context,
+	) (releaseStoredomain.IndexRefreshSummary, error)
+	UploadFile(
+		ctx context.Context,
+		input releaseStoredomain.UploadInput,
+		reader io.Reader,
+	) (releaseStoredomain.File, error)
+	DeleteFile(ctx context.Context, relativePath string) error
+	RefreshIndex(
+		ctx context.Context,
+		input releaseStoredomain.IndexRefreshRequest,
+	) (releaseStoredomain.IndexRefreshResult, error)
 }
 
 type updateAIModelsRequest struct {
