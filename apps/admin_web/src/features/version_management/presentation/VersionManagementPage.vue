@@ -10,7 +10,6 @@ import type {
 import { useVersionManagementStore } from '@/features/version_management/application/versionManagementStore'
 
 const store = useVersionManagementStore()
-const servicePendingUpgrade = ref<AdminServiceVersion | null>(null)
 const isUpgradeAllOpen = ref(false)
 let pollingTimer: ReturnType<typeof setInterval> | null = null
 
@@ -53,16 +52,6 @@ function stopPolling(): void {
   pollingTimer = null
 }
 
-async function confirmServiceUpgrade(): Promise<void> {
-  if (servicePendingUpgrade.value === null) {
-    return
-  }
-  const succeeded = await store.upgradeService(servicePendingUpgrade.value)
-  if (succeeded) {
-    servicePendingUpgrade.value = null
-  }
-}
-
 async function confirmAllUpgrade(): Promise<void> {
   const succeeded = await store.upgradeAll()
   if (succeeded) {
@@ -92,6 +81,55 @@ function operationStatusLabel(status: ServiceVersionOperationStatus): string {
       recovering: '正在恢复',
     }[status] ?? '状态待确认'
   )
+}
+
+function serviceReleaseState(serviceId: string) {
+  return store.releaseStateForService(serviceId)
+}
+
+function targetVersion(service: AdminServiceVersion): string {
+  const state = serviceReleaseState(service.id)
+  return state.selectedVersion || service.latestVersion
+}
+
+function isManagedService(service: AdminServiceVersion): boolean {
+  return ['sub2api', 'device_platform', 'voice_gateway', 'admin_web'].includes(service.id)
+}
+
+function canStartUpgrade(service: AdminServiceVersion): boolean {
+  const selectedVersion = targetVersion(service)
+  return (
+    isManagedService(service) &&
+    selectedVersion !== '' &&
+    selectedVersion !== service.currentVersion &&
+    !store.isServiceUpgrading(service.id) &&
+    !store.isUpgradingAll
+  )
+}
+
+function versionOptionLabel(service: AdminServiceVersion, version: string): string {
+  const state = serviceReleaseState(service.id)
+  const release = state.releases.find((item) => item.version === version)
+  const labels = [version]
+  if (release?.isLatest || (!release && version === service.latestVersion)) {
+    labels.push('最新版本')
+  }
+  if (release?.isCurrent || version === service.currentVersion) {
+    labels.push('当前运行')
+  }
+  return labels.join(' · ')
+}
+
+function changeServiceVersion(serviceId: string, event: Event): void {
+  const target = event.target
+  if (!(target instanceof HTMLSelectElement)) {
+    return
+  }
+  store.selectServiceVersion(serviceId, target.value)
+}
+
+async function startServiceUpgrade(service: AdminServiceVersion): Promise<void> {
+  await store.upgradeService(service, targetVersion(service))
 }
 
 function formatTime(value: string): string {
@@ -242,11 +280,11 @@ function operationLog(operation: AdminServiceVersionOperation | null): string {
             <thead>
               <tr>
                 <th>服务</th>
-                <th>运行镜像</th>
-                <th>版本</th>
+                <th>当前版本</th>
+                <th>最新版本</th>
                 <th>状态</th>
-                <th>最近检查</th>
-                <th>操作</th>
+                <th>选择版本</th>
+                <th>升级操作</th>
               </tr>
             </thead>
             <tbody>
@@ -256,24 +294,10 @@ function operationLog(operation: AdminServiceVersionOperation | null): string {
                     <strong>{{ service.displayName || service.id }}</strong>
                     <span v-if="service.isSelf" class="self-badge">管理端自身</span>
                   </div>
-                  <p>{{ service.role || '品牌服务' }}</p>
-                  <small>{{ service.id }}</small>
-                </td>
-                <td>
                   <code>{{ service.image || '暂未提供镜像信息' }}</code>
                 </td>
-                <td>
-                  <div class="version-pair">
-                    <span>
-                      当前
-                      <strong>{{ service.currentVersion || '未知' }}</strong>
-                    </span>
-                    <span>
-                      最新
-                      <strong>{{ service.latestVersion || '待检查' }}</strong>
-                    </span>
-                  </div>
-                </td>
+                <td class="version-cell">{{ service.currentVersion || '未知' }}</td>
+                <td class="version-cell">{{ service.latestVersion || '待检查' }}</td>
                 <td>
                   <span :class="['status', service.status]">
                     {{ statusLabel(service.status) }}
@@ -288,26 +312,73 @@ function operationLog(operation: AdminServiceVersionOperation | null): string {
                     查看版本说明
                   </a>
                 </td>
-                <td>{{ formatTime(service.lastCheckedAt) }}</td>
                 <td>
-                  <button
-                    type="button"
-                    class="upgrade-button"
-                    :disabled="
-                      !service.canUpgrade ||
-                      store.isServiceUpgrading(service.id) ||
-                      store.isUpgradingAll
-                    "
-                    @click="servicePendingUpgrade = service"
-                  >
-                    {{
-                      store.isServiceUpgrading(service.id)
-                        ? '正在升级…'
-                        : service.canUpgrade
-                          ? '仅升级此服务'
-                          : '已是当前版本'
-                    }}
-                  </button>
+                  <div v-if="isManagedService(service)" class="version-picker">
+                    <label :for="`service-version-${service.id}`">
+                      {{ service.displayName || service.id }}版本
+                    </label>
+                    <select
+                      :id="`service-version-${service.id}`"
+                      :value="targetVersion(service)"
+                      :disabled="
+                        serviceReleaseState(service.id).isLoading ||
+                        store.isServiceUpgrading(service.id) ||
+                        store.isUpgradingAll
+                      "
+                      @change="changeServiceVersion(service.id, $event)"
+                    >
+                      <option
+                        v-for="release in serviceReleaseState(service.id).releases"
+                        :key="release.version"
+                        :value="release.version"
+                      >
+                        {{ versionOptionLabel(service, release.version) }}
+                      </option>
+                      <option
+                        v-if="serviceReleaseState(service.id).releases.length === 0"
+                        :value="targetVersion(service)"
+                      >
+                        {{ versionOptionLabel(service, targetVersion(service)) }}
+                      </option>
+                    </select>
+                    <small v-if="serviceReleaseState(service.id).isLoading"
+                      >正在读取可选版本…</small
+                    >
+                    <template v-else-if="serviceReleaseState(service.id).error">
+                      <small class="picker-error">
+                        {{ serviceReleaseState(service.id).error }}
+                      </small>
+                      <button
+                        type="button"
+                        class="text-button"
+                        @click="store.loadServiceReleases(service)"
+                      >
+                        重新读取版本
+                      </button>
+                    </template>
+                  </div>
+                  <p v-else class="read-only-copy">只读展示，不参与页面升级</p>
+                </td>
+                <td>
+                  <div class="row-action">
+                    <button
+                      v-if="isManagedService(service)"
+                      type="button"
+                      class="upgrade-button"
+                      :disabled="!canStartUpgrade(service)"
+                      @click="startServiceUpgrade(service)"
+                    >
+                      {{
+                        store.isServiceUpgrading(service.id)
+                          ? '正在升级…'
+                          : `升级到 ${targetVersion(service) || '所选版本'}`
+                      }}
+                    </button>
+                    <span v-else class="read-only-copy">只读展示</span>
+                    <small class="checked-at">
+                      {{ formatTime(service.lastCheckedAt) }}
+                    </small>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -346,47 +417,6 @@ function operationLog(operation: AdminServiceVersionOperation | null): string {
           </ul>
         </section>
       </template>
-    </Transition>
-
-    <Transition name="modal">
-      <div
-        v-if="servicePendingUpgrade"
-        class="dialog-backdrop"
-        @click.self="servicePendingUpgrade = null"
-      >
-        <section class="dialog" role="dialog" aria-modal="true">
-          <span class="dialog-mark" aria-hidden="true">☆</span>
-          <h2>升级{{ servicePendingUpgrade.displayName || '此服务' }}？</h2>
-          <p>
-            将从
-            {{ servicePendingUpgrade.currentVersion || '当前版本' }}
-            升级到
-            {{ servicePendingUpgrade.latestVersion || '最新版本' }}。
-          </p>
-          <p v-if="servicePendingUpgrade.isSelf" class="warning-copy">
-            升级期间管理端会短暂重载，完成后自动恢复。请不要关闭页面，升级记录会持续保留。
-          </p>
-          <p v-else>升级期间相关功能可能短暂不可用。建议在家长使用较少时进行。</p>
-          <div class="dialog-actions">
-            <button
-              type="button"
-              class="secondary"
-              :disabled="store.isServiceUpgrading(servicePendingUpgrade.id)"
-              @click="servicePendingUpgrade = null"
-            >
-              暂不升级
-            </button>
-            <button
-              type="button"
-              class="primary"
-              :disabled="store.isServiceUpgrading(servicePendingUpgrade.id)"
-              @click="confirmServiceUpgrade"
-            >
-              {{ store.isServiceUpgrading(servicePendingUpgrade.id) ? '正在开始…' : '立即升级' }}
-            </button>
-          </div>
-        </section>
-      </div>
     </Transition>
 
     <Transition name="modal">
@@ -725,23 +755,6 @@ code {
   white-space: normal;
 }
 
-.version-pair {
-  display: grid;
-  gap: 5px;
-  color: var(--sprout-text-muted);
-  font-size: 12px;
-}
-
-.version-pair span {
-  display: flex;
-  gap: 5px;
-}
-
-.version-pair strong {
-  color: var(--sprout-text);
-  font-size: 13px;
-}
-
 .status,
 .operation-status {
   display: inline-flex;
@@ -798,6 +811,81 @@ code {
 
 .upgrade-button {
   white-space: nowrap;
+}
+
+.version-cell {
+  color: #7b5263;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.version-picker {
+  display: grid;
+  min-width: 220px;
+  gap: 7px;
+}
+
+.version-picker label {
+  color: var(--sprout-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.version-picker select {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 34px 0 12px;
+  border: 1px solid #e9a5b8;
+  border-radius: 12px;
+  background-color: #ffffff;
+  color: var(--sprout-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.version-picker select:focus {
+  border-color: #d94f83;
+  outline: 3px solid rgb(217 79 131 / 16%);
+}
+
+.version-picker select:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.picker-error {
+  color: #a12b4a;
+  font-family: inherit;
+}
+
+.text-button {
+  width: fit-content;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: #fff7fa;
+  font-size: 12px;
+}
+
+.read-only-copy {
+  margin: 0;
+  color: var(--sprout-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.row-action {
+  display: grid;
+  min-width: 190px;
+  gap: 7px;
+}
+
+.checked-at {
+  color: #8a6b78;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
 }
 
 .operations-panel {

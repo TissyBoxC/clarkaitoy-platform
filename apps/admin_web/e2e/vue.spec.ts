@@ -262,6 +262,35 @@ test('checks and upgrades brand services from the service version page', async (
     },
   )
   await page.route(
+    '**/api/v1/admin/service-versions/admin_web/releases',
+    async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            service: 'admin_web',
+            releases: [
+              {
+                version: '0.9.1',
+                release_url: 'https://github.com/TissyBoxC/sprout-platform/releases/tag/v0.9.1',
+                published_at: '2026-10-03T10:00:00Z',
+                is_current: false,
+                is_latest: true,
+              },
+              {
+                version: '0.9.0',
+                release_url: 'https://github.com/TissyBoxC/sprout-platform/releases/tag/v0.9.0',
+                published_at: '2026-10-02T10:00:00Z',
+                is_current: true,
+                is_latest: false,
+              },
+            ],
+          },
+        }),
+      })
+    },
+  )
+  await page.route(
     '**/api/v1/admin/service-versions/upgrade',
     async (route) => {
       await route.fulfill({
@@ -273,6 +302,8 @@ test('checks and upgrades brand services from the service version page', async (
   await page.route(
     '**/api/v1/admin/service-versions/admin_web/upgrade',
     async (route) => {
+      const request = route.request()
+      expect(request.postDataJSON()).toEqual({ target_version: '0.9.1' })
       await route.fulfill({
         contentType: 'application/json',
         body: JSON.stringify({ data: { operation } }),
@@ -313,11 +344,8 @@ test('checks and upgrades brand services from the service version page', async (
   await expect(page.getByText('检查完成，有 1 个服务可以升级。')).toBeVisible()
   expect(serviceSnapshotRequests).toBeGreaterThan(0)
 
-  await page.getByRole('button', { name: '仅升级此服务' }).click()
-  await expect(
-    page.getByRole('heading', { name: '升级品牌管理端？' }),
-  ).toBeVisible()
-  await page.getByRole('button', { name: '立即升级' }).click()
+  await expect(page.getByLabel('品牌管理端版本')).toHaveValue('0.9.1')
+  await page.getByRole('button', { name: '升级到 0.9.1' }).click()
 
   await expect(page.getByText('品牌管理端 的升级已开始。')).toBeVisible()
   await expect(page.getByRole('button', { name: '查看进度' })).toBeVisible()

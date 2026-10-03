@@ -28,6 +28,14 @@ export interface ServiceVersionSnapshot {
   allUpToDate: boolean
 }
 
+export interface ServiceVersionRelease {
+  version: string
+  releaseUrl: string
+  publishedAt: string
+  isCurrent: boolean
+  isLatest: boolean
+}
+
 export interface AdminServiceVersionOperation {
   id: string
   targetService: string
@@ -43,7 +51,11 @@ export interface AdminServiceVersionOperation {
 export interface AdminVersionManagementClient {
   loadServiceVersions(): Promise<ServiceVersionSnapshot>
   checkServiceVersions(): Promise<ServiceVersionSnapshot>
-  upgradeService(serviceId: string): Promise<AdminServiceVersionOperation | null>
+  loadServiceReleases(serviceId: string): Promise<ServiceVersionRelease[]>
+  upgradeService(
+    serviceId: string,
+    targetVersion?: string,
+  ): Promise<AdminServiceVersionOperation | null>
   upgradeAllServices(): Promise<AdminServiceVersionOperation | null>
   loadServiceVersionOperations(): Promise<AdminServiceVersionOperation[]>
   loadServiceVersionOperation(operationId: string): Promise<AdminServiceVersionOperation | null>
@@ -64,9 +76,21 @@ export function createAdminVersionManagementClient(
       return toSnapshot(response.data?.data)
     },
 
-    async upgradeService(serviceId: string): Promise<AdminServiceVersionOperation | null> {
+    async loadServiceReleases(serviceId: string): Promise<ServiceVersionRelease[]> {
+      const response = await httpClient.get(
+        `/api/v1/admin/service-versions/${encodeURIComponent(serviceId)}/releases`,
+      )
+      return toReleases(response.data?.data)
+    },
+
+    async upgradeService(
+      serviceId: string,
+      targetVersion?: string,
+    ): Promise<AdminServiceVersionOperation | null> {
+      const normalizedTargetVersion = targetVersion?.trim() ?? ''
       const response = await httpClient.post(
         `/api/v1/admin/service-versions/${encodeURIComponent(serviceId)}/upgrade`,
+        normalizedTargetVersion === '' ? undefined : { target_version: normalizedTargetVersion },
       )
       return toNullableOperation(response.data?.data?.operation)
     },
@@ -95,6 +119,36 @@ export function createAdminVersionManagementClient(
       )
       return toNullableOperation(response.data?.data?.operation)
     },
+  }
+}
+
+function toReleases(value: unknown): ServiceVersionRelease[] {
+  const record = recordValue(value)
+  const source = Array.isArray(record.releases)
+    ? record.releases
+    : Array.isArray(value)
+      ? value
+      : []
+
+  return source.flatMap((release: unknown) => {
+    const parsedRelease = toNullableRelease(release)
+    return parsedRelease === null ? [] : [parsedRelease]
+  })
+}
+
+function toNullableRelease(value: unknown): ServiceVersionRelease | null {
+  const record = recordValue(value)
+  const version = stringValue(record.version).trim()
+  if (!version) {
+    return null
+  }
+
+  return {
+    version,
+    releaseUrl: stringValue(record.release_url),
+    publishedAt: stringValue(record.published_at),
+    isCurrent: record.is_current === true,
+    isLatest: record.is_latest === true,
   }
 }
 

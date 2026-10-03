@@ -6,11 +6,19 @@ import {
   createAdminVersionManagementClient,
   type AdminServiceVersion,
   type AdminServiceVersionOperation,
+  type ServiceVersionRelease,
   type ServiceVersionSnapshot,
 } from '@/api/adminVersionManagement'
 import { createHttpClient } from '@/api/httpClient'
 
 const activeOperationStatuses = new Set(['queued', 'running', 'recovering'])
+
+export interface ServiceReleaseState {
+  releases: ServiceVersionRelease[]
+  selectedVersion: string
+  isLoading: boolean
+  error: string
+}
 
 /// Owns the brand-wide service inventory and the state of upgrade operations.
 ///
@@ -26,6 +34,7 @@ export const useVersionManagementStore = defineStore('admin-version-management',
   const isUpgradingAll = ref(false)
   const isRefreshingOperations = ref(false)
   const upgradingServiceIds = ref<string[]>([])
+  const releaseStates = ref<Record<string, ServiceReleaseState>>({})
   const error = ref<ApiError | null>(null)
   const lastMessage = ref('')
 
@@ -44,6 +53,7 @@ export const useVersionManagementStore = defineStore('admin-version-management',
     try {
       snapshot.value = await client.loadServiceVersions()
       operations.value = await client.loadServiceVersionOperations()
+      await loadReleaseStates(services.value)
     } catch (caught: unknown) {
       error.value = mapApiError(caught)
     } finally {
@@ -56,8 +66,15 @@ export const useVersionManagementStore = defineStore('admin-version-management',
     error.value = null
     lastMessage.value = ''
     try {
-      snapshot.value = await client.checkServiceVersions()
+      const requestedSnapshot = await client.checkServiceVersions()
+      // The worker refreshes asynchronously. Poll briefly for a newer
+      // checked_at instead of presenting the old snapshot as the result.
+      snapshot.value = await waitForCheckedSnapshot(
+        requestedSnapshot,
+        () => client.loadServiceVersions(),
+      )
       operations.value = await client.loadServiceVersionOperations()
+      await loadReleaseStates(services.value)
       const count = outdatedServices.value.length
       lastMessage.value =
         count === 0 ? '所有服务都已是当前版本。' : `检查完成，有 ${count} 个服务可以升级。`
@@ -68,15 +85,24 @@ export const useVersionManagementStore = defineStore('admin-version-management',
     }
   }
 
-  async function upgradeService(service: AdminServiceVersion): Promise<boolean> {
-    if (!service.canUpgrade || isServiceUpgrading(service.id)) {
+  async function upgradeService(
+    service: AdminServiceVersion,
+    targetVersion?: string,
+  ): Promise<boolean> {
+    const releaseState = releaseStates.value[service.id]
+    const requestedVersion = (targetVersion ?? releaseState?.selectedVersion ?? '').trim()
+    if (
+      requestedVersion === '' ||
+      requestedVersion === service.currentVersion ||
+      isServiceUpgrading(service.id)
+    ) {
       return false
     }
     upgradingServiceIds.value = [...upgradingServiceIds.value, service.id]
     error.value = null
     lastMessage.value = ''
     try {
-      const operation = await client.upgradeService(service.id)
+      const operation = await client.upgradeService(service.id, requestedVersion)
       if (operation === null) {
         throw new Error('missing service upgrade operation')
       }
@@ -149,6 +175,7 @@ export const useVersionManagementStore = defineStore('admin-version-management',
       }
       if (!hasActiveOperations.value) {
         snapshot.value = await client.loadServiceVersions()
+        await loadReleaseStates(services.value)
       }
     } catch (caught: unknown) {
       error.value = mapApiError(caught)
@@ -178,6 +205,64 @@ export const useVersionManagementStore = defineStore('admin-version-management',
     return upgradingServiceIds.value.includes(serviceId)
   }
 
+  function releaseStateForService(serviceId: string): ServiceReleaseState {
+    return (
+      releaseStates.value[serviceId] ?? {
+        releases: [],
+        selectedVersion: '',
+        isLoading: false,
+        error: '',
+      }
+    )
+  }
+
+  async function loadServiceReleases(service: AdminServiceVersion): Promise<void> {
+    releaseStates.value = {
+      ...releaseStates.value,
+      [service.id]: {
+        ...releaseStateForService(service.id),
+        isLoading: true,
+        error: '',
+      },
+    }
+    try {
+      const releases = await client.loadServiceReleases(service.id)
+      const selectedVersion = selectableVersion(releases, service)
+      releaseStates.value = {
+        ...releaseStates.value,
+        [service.id]: {
+          releases,
+          selectedVersion,
+          isLoading: false,
+          error: '',
+        },
+      }
+    } catch (caught: unknown) {
+      releaseStates.value = {
+        ...releaseStates.value,
+        [service.id]: {
+          ...releaseStateForService(service.id),
+          isLoading: false,
+          error: mapApiError(caught).message,
+        },
+      }
+    }
+  }
+
+  async function loadReleaseStates(targetServices: AdminServiceVersion[]): Promise<void> {
+    await Promise.all(targetServices.map((service) => loadServiceReleases(service)))
+  }
+
+  function selectServiceVersion(serviceId: string, version: string): void {
+    releaseStates.value = {
+      ...releaseStates.value,
+      [serviceId]: {
+        ...releaseStateForService(serviceId),
+        selectedVersion: version,
+      },
+    }
+  }
+
   function operationForService(serviceId: string): AdminServiceVersionOperation | null {
     return operations.value.find((operation) => operation.targetService === serviceId) ?? null
   }
@@ -203,11 +288,14 @@ export const useVersionManagementStore = defineStore('admin-version-management',
     isUpgrading,
     isUpgradingAll,
     lastMessage,
+    loadServiceReleases,
     operationForService,
     operations,
     outdatedServices,
+    releaseStateForService,
     refreshOperations,
     selectedOperation,
+    selectServiceVersion,
     selectOperation,
     services,
     snapshot,
@@ -222,4 +310,48 @@ function sortOperations(
   operations: AdminServiceVersionOperation[],
 ): AdminServiceVersionOperation[] {
   return [...operations].sort((left, right) => right.startedAt.localeCompare(left.startedAt))
+}
+
+function selectableVersion(
+  releases: ServiceVersionRelease[],
+  service: AdminServiceVersion,
+): string {
+  const latestRelease = releases.find((release) => release.isLatest)
+  if (latestRelease !== undefined) {
+    return latestRelease.version
+  }
+
+  const newestRelease = releases.find((release) => release.version !== service.currentVersion)
+  if (newestRelease !== undefined) {
+    return newestRelease.version
+  }
+
+  return releases[0]?.version ?? service.latestVersion
+}
+
+async function waitForCheckedSnapshot(
+  requestedSnapshot: ServiceVersionSnapshot,
+  loadSnapshot: () => Promise<ServiceVersionSnapshot>,
+): Promise<ServiceVersionSnapshot> {
+  const requestedAt = Date.parse(requestedSnapshot.checkedAt)
+  let latestSnapshot = requestedSnapshot
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const nextSnapshot = await loadSnapshot()
+    latestSnapshot = nextSnapshot
+    const nextCheckedAt = Date.parse(nextSnapshot.checkedAt)
+    if (
+      Number.isFinite(nextCheckedAt) &&
+      (!Number.isFinite(requestedAt) || nextCheckedAt > requestedAt)
+    ) {
+      return nextSnapshot
+    }
+    await delay(500)
+  }
+  return latestSnapshot
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds)
+  })
 }
