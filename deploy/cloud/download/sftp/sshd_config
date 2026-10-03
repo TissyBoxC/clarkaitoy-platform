@@ -1,0 +1,19 @@
+# Stable, upload-only SFTP server. The container's start-up script adds the
+# release user and owns /home/<user>; this file keeps login strictly in SFTP.
+Protocol 2
+HostKey /etc/ssh/ssh_host_ed25519_key
+HostKey /etc/ssh/ssh_host_rsa_key
+
+UseDNS no
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+X11Forwarding no
+AllowTcpForwarding no
+PermitTunnel no
+AllowAgentForwarding no
+PermitEmptyPasswords no
+
+Subsystem sftp internal-sftp
+ForceCommand internal-sftp
+ChrootDirectory %h

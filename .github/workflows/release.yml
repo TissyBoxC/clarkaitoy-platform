@@ -65,8 +65,13 @@ jobs:
             echo "SPROUT_API_PUBLIC_URL is missing from deploy/public-endpoints.env" >&2
             exit 1
           fi
+          if [[ -z "${SPROUT_DOWNLOAD_PUBLIC_URL:-}" ]]; then
+            echo "SPROUT_DOWNLOAD_PUBLIC_URL is missing from deploy/public-endpoints.env" >&2
+            exit 1
+          fi
 
           echo "api_url=$SPROUT_API_PUBLIC_URL" >> "$GITHUB_OUTPUT"
+          echo "download_url=$SPROUT_DOWNLOAD_PUBLIC_URL" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
         if: steps.detect.outputs.should_release == 'true'
@@ -82,12 +87,226 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist
+          mkdir -p dist/stage dist/github-assets
 
           (cd services/device_platform && go test ./... && go build -o ../../dist/device-platform ./cmd/device-platform)
           (cd services/voice_gateway && go test ./... && go build -o ../../dist/voice-gateway ./cmd/voice-gateway)
 
-          tar -czf "dist/sprout-contracts-${{ steps.detect.outputs.tag }}.tar.gz" packages/contracts
+          tar -czf "dist/stage/sprout-contracts-${{ steps.detect.outputs.tag }}.tar.gz" packages/contracts
+          cp dist/device-platform dist/stage/device-platform
+          cp dist/voice-gateway dist/stage/voice-gateway
+          cp dist/device-platform "dist/github-assets/sprout-device-platform-${{ steps.detect.outputs.tag }}-linux-amd64"
+          cp dist/voice-gateway "dist/github-assets/sprout-voice-gateway-${{ steps.detect.outputs.tag }}-linux-amd64"
+          cp "dist/stage/sprout-contracts-${{ steps.detect.outputs.tag }}.tar.gz" dist/github-assets/
+
+      - name: Set up Node.js
+        if: steps.detect.outputs.should_release == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/admin_web/package-lock.json
+
+      - name: Build admin web
+        if: steps.detect.outputs.should_release == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --prefix apps/admin_web
+          npm run build --prefix apps/admin_web
+          tar -czf "dist/stage/sprout-admin-web-${{ steps.detect.outputs.tag }}.tar.gz" -C apps/admin_web dist
+          cp "dist/stage/sprout-admin-web-${{ steps.detect.outputs.tag }}.tar.gz" dist/github-assets/
+
+      - name: Set up Java
+        if: steps.detect.outputs.should_release == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Flutter
+        if: steps.detect.outputs.should_release == 'true'
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.9'
+          cache: true
+
+      - name: Build parent app APK
+        if: steps.detect.outputs.should_release == 'true'
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.detect.outputs.version }}
+          API_BASE_URL: ${{ steps.endpoints.outputs.api_url }}
+        working-directory: apps/parent_app
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter build apk \
+            --release \
+            --dart-define "API_BASE_URL=$API_BASE_URL" \
+            --dart-define "APP_VERSION=$RELEASE_VERSION" \
+            --build-name "$RELEASE_VERSION" \
+            --build-number "$GITHUB_RUN_NUMBER" \
+            --target-platform android-arm,android-arm64,android-x64
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            "../../dist/stage/sprout-parent-app-${{ steps.detect.outputs.tag }}.apk"
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            "../../dist/github-assets/sprout-parent-app-${{ steps.detect.outputs.tag }}.apk"
+
+      - name: Generate Chinese release notes
+        if: steps.detect.outputs.should_release == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/release_notes.py \
+            --version "${{ steps.detect.outputs.version }}" \
+            --current-tag "${{ steps.detect.outputs.tag }}" \
+            --repository "$GITHUB_REPOSITORY" \
+            --output release-notes.md
+          cat release-notes.md
+
+      - name: Create release assets checksum
+        if: steps.detect.outputs.should_release == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "dist/releases/${{ steps.detect.outputs.version }}/stable"
+
+          stage_release() {
+            platform="$1"
+            kind="$2"
+            source_name="$3"
+            target_name="$4"
+            target_dir="dist/releases/${{ steps.detect.outputs.version }}/stable/$platform/$kind"
+            mkdir -p "$target_dir"
+            cp "dist/stage/$source_name" "$target_dir/$target_name"
+          }
+
+          stage_release android apk \
+            "sprout-parent-app-${{ steps.detect.outputs.tag }}.apk" \
+            "sprout-parent-app-${{ steps.detect.outputs.tag }}.apk"
+          stage_release web admin-web \
+            "sprout-admin-web-${{ steps.detect.outputs.tag }}.tar.gz" \
+            "sprout-admin-web-${{ steps.detect.outputs.tag }}.tar.gz"
+          stage_release any contracts \
+            "sprout-contracts-${{ steps.detect.outputs.tag }}.tar.gz" \
+            "sprout-contracts-${{ steps.detect.outputs.tag }}.tar.gz"
+          stage_release linux device-platform \
+            "device-platform" \
+            "sprout-device-platform-${{ steps.detect.outputs.tag }}-linux-amd64"
+          stage_release linux voice-gateway \
+            "voice-gateway" \
+            "sprout-voice-gateway-${{ steps.detect.outputs.tag }}-linux-amd64"
+
+          find dist/github-assets -maxdepth 1 -type f ! -name SHA256SUMS -print0 \
+            | sort -z \
+            | xargs -0 -I '{}' sha256sum '{}' \
+            | sed 's#  dist/github-assets/#  #' > dist/SHA256SUMS
+          cp dist/SHA256SUMS dist/github-assets/
+          mkdir -p "dist/releases/${{ steps.detect.outputs.version }}/stable/any/checksums"
+          cp dist/SHA256SUMS \
+            "dist/releases/${{ steps.detect.outputs.version }}/stable/any/checksums/SHA256SUMS"
+
+      - name: Build release index
+        if: steps.detect.outputs.should_release == 'true'
+        shell: bash
+        env:
+          DOWNLOAD_BASE_URL: ${{ steps.endpoints.outputs.download_url }}
+        run: |
+          set -euo pipefail
+          download_base_url="${DOWNLOAD_BASE_URL:-https://download.clarkhub.cn}"
+          python3 tools/release_artifacts.py \
+            --root "dist/releases" \
+            --version "${{ steps.detect.outputs.version }}" \
+            --channel stable \
+            --public-base-url "$download_base_url" \
+            --title "如此萌屋平台 ${{ steps.detect.outputs.version }}"
+
+      - name: Configure SFTP
+        if: steps.detect.outputs.should_release == 'true'
+        shell: bash
+        env:
+          SFTP_PRIVATE_KEY: ${{ secrets.SPROUT_DOWNLOAD_SFTP_PRIVATE_KEY }}
+          SFTP_HOST: ${{ secrets.SPROUT_DOWNLOAD_SFTP_HOST }}
+          SFTP_PORT: ${{ secrets.SPROUT_DOWNLOAD_SFTP_PORT }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SFTP_PRIVATE_KEY:-}" || -z "${SFTP_HOST:-}" || -z "${SFTP_PORT:-}" ]]; then
+            echo "Release upload credentials are incomplete." >&2
+            exit 1
+          fi
+          install -d -m 700 "$RUNNER_TEMP/sprout-sftp"
+          printf '%s\n' "$SFTP_PRIVATE_KEY" > "$RUNNER_TEMP/sprout-sftp/id_ed25519"
+          chmod 600 "$RUNNER_TEMP/sprout-sftp/id_ed25519"
+          timeout 30 ssh-keyscan -p "$SFTP_PORT" -H "$SFTP_HOST" \
+            > "$RUNNER_TEMP/sprout-sftp/known_hosts"
+          test -s "$RUNNER_TEMP/sprout-sftp/known_hosts"
+
+      - name: Upload release artifacts
+        if: steps.detect.outputs.should_release == 'true'
+        shell: bash
+        env:
+          SFTP_HOST: ${{ secrets.SPROUT_DOWNLOAD_SFTP_HOST }}
+          SFTP_PORT: ${{ secrets.SPROUT_DOWNLOAD_SFTP_PORT }}
+          SFTP_USER: ${{ secrets.SPROUT_DOWNLOAD_SFTP_USER }}
+          DOWNLOAD_BASE_URL: ${{ steps.endpoints.outputs.download_url }}
+        run: |
+          set -euo pipefail
+          download_base_url="${DOWNLOAD_BASE_URL:-https://download.clarkhub.cn}"
+          python3 tools/upload_release_artifacts.py \
+            --dist dist \
+            --version "${{ steps.detect.outputs.version }}" \
+            --channel stable \
+            --host "$SFTP_HOST" \
+            --port "$SFTP_PORT" \
+            --user "$SFTP_USER" \
+            --private-key "$RUNNER_TEMP/sprout-sftp/id_ed25519" \
+            --known-hosts "$RUNNER_TEMP/sprout-sftp/known_hosts" \
+            --remote-root releases \
+            --index-root . \
+            --manifest "dist/releases/${{ steps.detect.outputs.version }}/stable/manifest.json" \
+            --public-base-url "$download_base_url" \
+            --title "如此萌屋平台 ${{ steps.detect.outputs.version }}" \
+            --published-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      - name: Verify published download service
+        if: steps.detect.outputs.should_release == 'true'
+        shell: bash
+        env:
+          DOWNLOAD_BASE_URL: ${{ steps.endpoints.outputs.download_url }}
+        run: |
+          set -euo pipefail
+          download_base_url="${DOWNLOAD_BASE_URL:-https://download.clarkhub.cn}"
+          curl --fail --silent --show-error --retry 8 --retry-delay 3 \
+            "$download_base_url/index.json" > "$RUNNER_TEMP/download-index.json"
+          python3 - "$RUNNER_TEMP/download-index.json" "${{ steps.detect.outputs.version }}" <<'PY'
+          import json
+          import sys
+
+          index_path, version = sys.argv[1], sys.argv[2]
+          with open(index_path, encoding="utf-8") as input_file:
+              index = json.load(input_file)
+          releases = [release for release in index.get("releases", []) if release.get("version") == version]
+          if not releases:
+              raise SystemExit(f"release {version} is missing from the download index")
+          PY
+          python3 - "${{ github.workspace }}/dist/releases/${{ steps.detect.outputs.version }}/stable/manifest.json" \
+            "$download_base_url" <<'PY'
+          import hashlib
+          import json
+          import sys
+          import urllib.request
+
+          manifest_path, base_url = sys.argv[1], sys.argv[2].rstrip("/")
+          with open(manifest_path, encoding="utf-8") as input_file:
+              manifest = json.load(input_file)
+          for artifact in manifest["artifacts"]:
+              with urllib.request.urlopen(artifact["url"], timeout=60) as response:
+                  remote_digest = hashlib.sha256(response.read()).hexdigest()
+              if remote_digest != artifact["sha256"]:
+                  raise SystemExit(f"checksum mismatch: {artifact['url']}")
+          print(f"verified {len(manifest['artifacts'])} download artifacts")
+          PY
 
       - name: Log in to GitHub Container Registry
         if: steps.detect.outputs.should_release == 'true'
@@ -133,78 +352,6 @@ jobs:
             --build-arg "VITE_API_BASE_URL=" \
             .
 
-      - name: Set up Node.js
-        if: steps.detect.outputs.should_release == 'true'
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: apps/admin_web/package-lock.json
-
-      - name: Build admin web
-        if: steps.detect.outputs.should_release == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          npm ci --prefix apps/admin_web
-          npm run build --prefix apps/admin_web
-          tar -czf "dist/admin-web-${{ steps.detect.outputs.tag }}.tar.gz" -C apps/admin_web dist
-
-      - name: Set up Java
-        if: steps.detect.outputs.should_release == 'true'
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - name: Set up Flutter
-        if: steps.detect.outputs.should_release == 'true'
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.41.9'
-          cache: true
-
-      - name: Build parent app APK
-        if: steps.detect.outputs.should_release == 'true'
-        shell: bash
-        env:
-          RELEASE_VERSION: ${{ steps.detect.outputs.version }}
-          API_BASE_URL: ${{ steps.endpoints.outputs.api_url }}
-        working-directory: apps/parent_app
-        run: |
-          set -euo pipefail
-          flutter pub get
-          flutter build apk \
-            --release \
-            --dart-define "API_BASE_URL=$API_BASE_URL" \
-            --dart-define "APP_VERSION=$RELEASE_VERSION" \
-            --build-name "$RELEASE_VERSION" \
-            --build-number "$GITHUB_RUN_NUMBER" \
-            --target-platform android-arm,android-arm64,android-x64
-          cp build/app/outputs/flutter-apk/app-release.apk \
-            "../../dist/sprout-parent-app-${{ steps.detect.outputs.tag }}.apk"
-
-      - name: Generate Chinese release notes
-        if: steps.detect.outputs.should_release == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 tools/release_notes.py \
-            --version "${{ steps.detect.outputs.version }}" \
-            --current-tag "${{ steps.detect.outputs.tag }}" \
-            --repository "$GITHUB_REPOSITORY" \
-            --output release-notes.md
-          cat release-notes.md
-
-      - name: Create release assets checksum
-        if: steps.detect.outputs.should_release == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          find dist -maxdepth 1 -type f ! -name SHA256SUMS -print0 \
-            | sort -z \
-            | xargs -0 sha256sum > dist/SHA256SUMS
-
       - name: Publish GitHub release
         if: steps.detect.outputs.should_release == 'true'
         env:
@@ -214,7 +361,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release create "$RELEASE_TAG" dist/* \
+          gh release create "$RELEASE_TAG" dist/github-assets/* \
             --target "$GITHUB_SHA" \
             --title "如此萌屋平台 $RELEASE_VERSION" \
             --notes-file release-notes.md
