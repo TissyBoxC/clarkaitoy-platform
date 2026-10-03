@@ -420,7 +420,10 @@ test('checks and upgrades brand services from the service version page', async (
   await page.goto('/services')
 
   await expect(page.getByRole('heading', { name: '服务版本' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '全部服务' })).toBeVisible()
+  await expect(page.getByText('只读服务')).toHaveCount(0)
   await expect(page.getByText('管理端自身')).toBeVisible()
+  await expect(page.getByText('固定镜像，由部署配置统一维护').first()).toBeVisible()
   await expect(page.getByText('管理端自身升级时，页面会短暂重载，完成后自动恢复')).toBeVisible()
   await expect(page.getByText('0.9.0', { exact: true }).first()).toBeVisible()
 

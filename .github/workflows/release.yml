@@ -222,27 +222,10 @@ jobs:
             --public-base-url "$download_base_url" \
             --title "如此萌屋平台 ${{ steps.detect.outputs.version }}"
 
-      - name: Require release upload credentials
-        if: steps.detect.outputs.should_release == 'true'
-        shell: bash
-        env:
-          SFTP_PRIVATE_KEY: ${{ secrets.SPROUT_DOWNLOAD_SFTP_PRIVATE_KEY }}
-          SFTP_HOST: ${{ secrets.SPROUT_DOWNLOAD_SFTP_HOST }}
-          SFTP_PORT: ${{ secrets.SPROUT_DOWNLOAD_SFTP_PORT }}
-          SFTP_USER: ${{ secrets.SPROUT_DOWNLOAD_SFTP_USER }}
-        run: |
-          set -euo pipefail
-          if [[ -n "${SFTP_PRIVATE_KEY:-}" &&
-                -n "${SFTP_HOST:-}" &&
-                -n "${SFTP_PORT:-}" &&
-                -n "${SFTP_USER:-}" ]]; then
-            exit 0
-          fi
-          echo "::error::Download upload credentials are incomplete. Configure SPROUT_DOWNLOAD_SFTP_PRIVATE_KEY, SPROUT_DOWNLOAD_SFTP_HOST, SPROUT_DOWNLOAD_SFTP_PORT, and SPROUT_DOWNLOAD_SFTP_USER before releasing."
-          exit 1
-
       - name: Configure SFTP
+        id: configure_sftp
         if: steps.detect.outputs.should_release == 'true'
+        continue-on-error: true
         shell: bash
         env:
           SFTP_PRIVATE_KEY: ${{ secrets.SPROUT_DOWNLOAD_SFTP_PRIVATE_KEY }}
@@ -251,6 +234,13 @@ jobs:
           SFTP_USER: ${{ secrets.SPROUT_DOWNLOAD_SFTP_USER }}
         run: |
           set -euo pipefail
+          if [[ -z "${SFTP_PRIVATE_KEY:-}" ||
+                -z "${SFTP_HOST:-}" ||
+                -z "${SFTP_PORT:-}" ||
+                -z "${SFTP_USER:-}" ]]; then
+            echo "::warning::Download upload credentials are incomplete. Release and container images will continue without download-service publication."
+            exit 1
+          fi
           install -d -m 700 "$RUNNER_TEMP/sprout-sftp"
           printf '%s\n' "$SFTP_PRIVATE_KEY" > "$RUNNER_TEMP/sprout-sftp/id_ed25519"
           chmod 600 "$RUNNER_TEMP/sprout-sftp/id_ed25519"
@@ -259,7 +249,9 @@ jobs:
           test -s "$RUNNER_TEMP/sprout-sftp/known_hosts"
 
       - name: Upload release artifacts
-        if: steps.detect.outputs.should_release == 'true'
+        id: upload_release
+        if: steps.detect.outputs.should_release == 'true' && steps.configure_sftp.outcome == 'success'
+        continue-on-error: true
         shell: bash
         env:
           SFTP_HOST: ${{ secrets.SPROUT_DOWNLOAD_SFTP_HOST }}
@@ -286,7 +278,9 @@ jobs:
             --published-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
       - name: Verify published download service
-        if: steps.detect.outputs.should_release == 'true'
+        id: verify_download
+        if: steps.detect.outputs.should_release == 'true' && steps.upload_release.outcome == 'success'
+        continue-on-error: true
         shell: bash
         env:
           DOWNLOAD_BASE_URL: ${{ steps.endpoints.outputs.download_url }}
@@ -323,6 +317,16 @@ jobs:
                   raise SystemExit(f"checksum mismatch: {artifact['url']}")
           print(f"verified {len(manifest['artifacts'])} download artifacts")
           PY
+
+      - name: Report download publication status
+        if: |
+          steps.detect.outputs.should_release == 'true' &&
+          (steps.configure_sftp.outcome != 'success' ||
+           steps.upload_release.outcome != 'success' ||
+           steps.verify_download.outcome != 'success')
+        shell: bash
+        run: |
+          echo "::warning::Download artifacts were not published because the download service was unreachable. GitHub Release and container image publication will continue."
 
       - name: Log in to GitHub Container Registry
         if: steps.detect.outputs.should_release == 'true'
