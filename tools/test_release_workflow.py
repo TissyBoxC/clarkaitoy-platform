@@ -11,6 +11,8 @@ REQUIRED_FRAGMENTS = (
     "Publish release artifacts",
     "SPROUT_RELEASE_UPLOAD_TOKEN",
     "upload_release_artifacts_http.py",
+    "upload_release_artifacts.py",
+    "Configure SFTP fallback",
     "steps.upload_release.outcome == 'success'",
     "Verify published download service",
 )
