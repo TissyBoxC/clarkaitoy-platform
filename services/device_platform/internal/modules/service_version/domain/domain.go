@@ -13,12 +13,15 @@ import (
 )
 
 var (
-	ErrServiceNotFound      = errors.New("service not found")
-	ErrServiceNotUpgradable = errors.New("service cannot be upgraded")
-	ErrUpgradeInProgress    = errors.New("an upgrade is already in progress")
-	ErrOperationNotFound    = errors.New("upgrade operation not found")
-	ErrStateUnavailable     = errors.New("service version state unavailable")
-	ErrNoUpgradeAvailable   = errors.New("no service needs an upgrade")
+	ErrServiceNotFound           = errors.New("service not found")
+	ErrServiceNotUpgradable      = errors.New("service cannot be upgraded")
+	ErrReleaseNotFound           = errors.New("service release not found")
+	ErrReleaseRepositoryNotFound = errors.New("service release repository not found")
+	ErrReleaseSourceFailed       = errors.New("service release source unavailable")
+	ErrUpgradeInProgress         = errors.New("an upgrade is already in progress")
+	ErrOperationNotFound         = errors.New("upgrade operation not found")
+	ErrStateUnavailable          = errors.New("service version state unavailable")
+	ErrNoUpgradeAvailable        = errors.New("no service needs an upgrade")
 )
 
 // Service status values describe a managed container image relative to the
@@ -58,6 +61,38 @@ type Service struct {
 	CanUpgrade     bool       `json:"can_upgrade"`
 	LastCheckedAt  *time.Time `json:"last_checked_at"`
 	UpdatedAt      *time.Time `json:"updated_at"`
+}
+
+// Release is one selectable published version of a managed service.
+//
+// IsCurrent and IsLatest are resolved against the operator's current running
+// snapshot and the newest release returned by the source. The type deliberately
+// contains no credential or internal repository identifier.
+type Release struct {
+	Version     string     `json:"version"`
+	ReleaseURL  string     `json:"release_url"`
+	PublishedAt *time.Time `json:"published_at"`
+	IsCurrent   bool       `json:"is_current"`
+	IsLatest    bool       `json:"is_latest"`
+}
+
+// ReleasePage is the newest-first page of selectable releases for one service.
+type ReleasePage struct {
+	Service  string    `json:"service"`
+	Releases []Release `json:"releases"`
+	Page     int       `json:"page"`
+	PageSize int       `json:"page_size"`
+	HasMore  bool      `json:"has_more"`
+}
+
+// ReleaseCatalog is the worker-produced, credential-free list of selectable
+// releases for every managed service.
+//
+// The admin API reads this file from the shared upgrade volume. Device
+// platform instances must never receive the GitHub token used to build it.
+type ReleaseCatalog struct {
+	GeneratedAt time.Time            `json:"generated_at"`
+	Services    map[string][]Release `json:"services"`
 }
 
 // Operation is one queued, running, or finished upgrade task.

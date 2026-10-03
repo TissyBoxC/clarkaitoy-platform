@@ -81,6 +81,21 @@ type serviceVersionAdminService interface {
 		ctx context.Context,
 		serviceID string,
 	) (serviceversionservice.UpgradePlan, error)
+	PlanUpgradeTo(
+		ctx context.Context,
+		serviceID string,
+		targetVersion string,
+	) (serviceversionservice.UpgradePlan, error)
+	Confirmation(
+		ctx context.Context,
+		plan serviceversionservice.UpgradePlan,
+	) (serviceversionservice.UpgradeConfirmation, error)
+	ListReleases(
+		ctx context.Context,
+		serviceID string,
+		page int,
+		pageSize int,
+	) (serviceversiondomain.ReleasePage, error)
 	PlanUpgradeAll(
 		ctx context.Context,
 	) ([]serviceversionservice.UpgradePlan, error)

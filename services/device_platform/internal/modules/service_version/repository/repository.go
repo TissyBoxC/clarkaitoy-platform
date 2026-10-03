@@ -23,6 +23,7 @@ import (
 // Repository exposes the worker state files used by the management API.
 type Repository interface {
 	Status(ctx context.Context) (*domain.StatusSnapshot, error)
+	ReleaseCatalog(ctx context.Context) (*domain.ReleaseCatalog, error)
 	RequestCheck(ctx context.Context) error
 	Enqueue(ctx context.Context, request *domain.UpgradeRequest) error
 	ListOperations(ctx context.Context) ([]domain.Operation, error)
@@ -45,6 +46,10 @@ func (r *FileRepository) statusPath() string {
 
 func (r *FileRepository) checkPath() string {
 	return filepath.Join(r.stateDir, "check-request.json")
+}
+
+func (r *FileRepository) releaseCatalogPath() string {
+	return filepath.Join(r.stateDir, "releases.json")
 }
 
 func (r *FileRepository) queueDir() string {
@@ -73,6 +78,28 @@ func (r *FileRepository) Status(ctx context.Context) (*domain.StatusSnapshot, er
 		return nil, fmt.Errorf("decode status snapshot: %w", err)
 	}
 	return &snapshot, nil
+}
+
+// ReleaseCatalog returns the worker-produced release list. A missing file
+// means the worker has not completed its first refresh yet.
+func (r *FileRepository) ReleaseCatalog(
+	ctx context.Context,
+) (*domain.ReleaseCatalog, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	payload, err := os.ReadFile(r.releaseCatalogPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, domain.ErrStateUnavailable
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read release catalog: %w", err)
+	}
+	var catalog domain.ReleaseCatalog
+	if err := json.Unmarshal(payload, &catalog); err != nil {
+		return nil, fmt.Errorf("decode release catalog: %w", err)
+	}
+	return &catalog, nil
 }
 
 // RequestCheck writes a single check marker that the worker consumes.

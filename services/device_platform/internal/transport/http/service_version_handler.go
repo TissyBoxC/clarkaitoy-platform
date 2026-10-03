@@ -2,7 +2,9 @@ package http
 
 import (
 	"errors"
+	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +16,10 @@ type versionSnapshotResponse struct {
 	Services    []domain.Service `json:"services"`
 	CheckedAt   *time.Time       `json:"checked_at"`
 	AllUpToDate bool             `json:"all_up_to_date"`
+}
+
+type upgradeServiceRequest struct {
+	TargetVersion string `json:"target_version"`
 }
 
 func (handler adminHandler) listServiceVersions(
@@ -64,7 +70,24 @@ func (handler adminHandler) upgradeService(
 		return
 	}
 	serviceID := strings.TrimSpace(request.PathValue("service"))
-	plan, err := handler.serviceVersionService.PlanUpgrade(request.Context(), serviceID)
+	var payload upgradeServiceRequest
+	if err := decodeOptionalJSON(request, &payload); err != nil {
+		writeError(response, request, http.StatusBadRequest, "invalid_request", "请选择要升级到的版本")
+		return
+	}
+	plan, err := handler.serviceVersionService.PlanUpgradeTo(
+		request.Context(),
+		serviceID,
+		payload.TargetVersion,
+	)
+	if err != nil {
+		writeServiceVersionError(response, request, err)
+		return
+	}
+	confirmation, err := handler.serviceVersionService.Confirmation(
+		request.Context(),
+		plan,
+	)
 	if err != nil {
 		writeServiceVersionError(response, request, err)
 		return
@@ -79,8 +102,29 @@ func (handler adminHandler) upgradeService(
 		return
 	}
 	writeSuccess(response, request, http.StatusAccepted, map[string]any{
-		"operation": operation,
+		"operation":    operation,
+		"confirmation": confirmation,
 	})
+}
+
+func (handler adminHandler) listServiceReleases(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	serviceID := strings.TrimSpace(request.PathValue("service"))
+	page := parsePositiveQueryInt(request.URL.Query().Get("page"), 1)
+	pageSize := parsePositiveQueryInt(request.URL.Query().Get("page_size"), 20)
+	releasePage, err := handler.serviceVersionService.ListReleases(
+		request.Context(),
+		serviceID,
+		page,
+		pageSize,
+	)
+	if err != nil {
+		writeServiceVersionError(response, request, err)
+		return
+	}
+	writeSuccess(response, request, http.StatusOK, releasePage)
 }
 
 func (handler adminHandler) upgradeAllServices(
@@ -164,6 +208,12 @@ func writeServiceVersionError(
 		writeError(response, request, http.StatusNotFound, "service_not_found", "没有找到这个服务")
 	case errors.Is(err, domain.ErrServiceNotUpgradable):
 		writeError(response, request, http.StatusUnprocessableEntity, "service_not_upgradable", "这个服务当前不需要升级")
+	case errors.Is(err, domain.ErrReleaseNotFound):
+		writeError(response, request, http.StatusNotFound, "release_not_found", "没有找到这个发布版本")
+	case errors.Is(err, domain.ErrReleaseRepositoryNotFound):
+		writeError(response, request, http.StatusNotFound, "release_repository_not_found", "没有找到这个服务的发布仓库")
+	case errors.Is(err, domain.ErrReleaseSourceFailed):
+		writeError(response, request, http.StatusBadGateway, "release_source_unavailable", "暂时无法读取可选版本，请稍后重试")
 	case errors.Is(err, domain.ErrNoUpgradeAvailable):
 		writeError(response, request, http.StatusConflict, "already_current", "所有服务都已是最新版本")
 	case errors.Is(err, domain.ErrUpgradeInProgress):
@@ -171,6 +221,27 @@ func writeServiceVersionError(
 	default:
 		writeError(response, request, http.StatusInternalServerError, "service_error", "升级任务没有开始，请稍后重试")
 	}
+}
+
+func parsePositiveQueryInt(value string, fallback int) int {
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || parsed < 1 {
+		return fallback
+	}
+	return parsed
+}
+
+// decodeOptionalJSON accepts an absent body while still rejecting malformed
+// JSON, which keeps the existing no-body upgrade request compatible.
+func decodeOptionalJSON(request *http.Request, destination any) error {
+	if request.Body == nil {
+		return nil
+	}
+	err := decodeJSON(request, destination)
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+	return err
 }
 
 func timePointer(value time.Time) *time.Time {

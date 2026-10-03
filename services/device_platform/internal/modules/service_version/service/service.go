@@ -18,6 +18,7 @@ import (
 // Service owns the read-mostly service inventory and its upgrade commands.
 type Service struct {
 	repository repository.Repository
+	releases   ReleaseSource
 	catalog    []domain.CatalogEntry
 	clock      func() time.Time
 }
@@ -25,6 +26,7 @@ type Service struct {
 // Options contains service version dependencies.
 type Options struct {
 	Repository repository.Repository
+	Releases   ReleaseSource
 	Clock      func() time.Time
 }
 
@@ -35,10 +37,27 @@ type UpgradePlan struct {
 	UpgradesSelf  bool
 }
 
+// UpgradeConfirmation is the operator-facing summary of a queued change.
+//
+// CurrentVersion is read from the worker snapshot; TargetVersion is the exact
+// release the worker will install. Keeping both values on the response lets the
+// console render a confirmation without a second round trip.
+type UpgradeConfirmation struct {
+	ServiceID      string `json:"service_id"`
+	DisplayName    string `json:"display_name"`
+	CurrentVersion string `json:"current_version"`
+	TargetVersion  string `json:"target_version"`
+	IsSelf         bool   `json:"is_self"`
+}
+
 // New creates the service version service.
 func New(options Options) (*Service, error) {
 	if options.Repository == nil {
 		return nil, errors.New("service version repository is required")
+	}
+	releaseSource := options.Releases
+	if releaseSource == nil {
+		releaseSource = NewRepositoryReleaseSource(options.Repository)
 	}
 	timeSource := options.Clock
 	if timeSource == nil {
@@ -46,6 +65,7 @@ func New(options Options) (*Service, error) {
 	}
 	return &Service{
 		repository: options.Repository,
+		releases:   releaseSource,
 		catalog:    defaultCatalog(),
 		clock:      timeSource,
 	}, nil
@@ -114,6 +134,17 @@ func (s *Service) PlanUpgrade(
 	ctx context.Context,
 	serviceID string,
 ) (UpgradePlan, error) {
+	return s.PlanUpgradeTo(ctx, serviceID, "")
+}
+
+// PlanUpgradeTo validates a single-service upgrade request. An empty
+// targetVersion keeps the upgrade-to-latest behavior; an explicit version must
+// exist in the service release list before it can be queued.
+func (s *Service) PlanUpgradeTo(
+	ctx context.Context,
+	serviceID string,
+	targetVersion string,
+) (UpgradePlan, error) {
 	services, _, err := s.Snapshot(ctx)
 	if err != nil {
 		return UpgradePlan{}, err
@@ -123,16 +154,122 @@ func (s *Service) PlanUpgrade(
 		if service.ID != serviceID {
 			continue
 		}
-		if !service.CanUpgrade {
+		// An empty target keeps the legacy latest-only contract. An explicit
+		// target is an operator-directed version change, so it remains valid
+		// for reinstall/downgrade even when the snapshot says current.
+		targetVersion = normalizeReleaseVersion(targetVersion)
+		if targetVersion == "" {
+			if !service.CanUpgrade {
+				return UpgradePlan{}, domain.ErrServiceNotUpgradable
+			}
+			// Empty target_version preserves the legacy behavior: use the
+			// snapshot's latest value without an extra repository request.
+			return UpgradePlan{
+				TargetService: service.ID,
+				TargetVersion: service.LatestVersion,
+				UpgradesSelf:  service.IsSelf,
+			}, nil
+		}
+		// Explicit operator choice must be verified against the repository,
+		// never trusted from the request body or the periodic status cache.
+		entry, exists := s.catalogEntry(service.ID)
+		if !exists || !entry.AutoUpgrade {
+			return UpgradePlan{}, domain.ErrServiceNotUpgradable
+		}
+		release, err := s.releases.FindRelease(
+			ctx,
+			entry.ID,
+			targetVersion,
+		)
+		if err != nil {
+			return UpgradePlan{}, err
+		}
+		if release.Version == normalizeReleaseVersion(service.CurrentVersion) {
 			return UpgradePlan{}, domain.ErrServiceNotUpgradable
 		}
 		return UpgradePlan{
 			TargetService: service.ID,
-			TargetVersion: service.LatestVersion,
+			TargetVersion: release.Version,
 			UpgradesSelf:  service.IsSelf,
 		}, nil
 	}
 	return UpgradePlan{}, domain.ErrServiceNotFound
+}
+
+// Confirmation describes the queued change without exposing repository or
+// credential material.
+func (s *Service) Confirmation(
+	ctx context.Context,
+	plan UpgradePlan,
+) (UpgradeConfirmation, error) {
+	services, _, err := s.Snapshot(ctx)
+	if err != nil {
+		return UpgradeConfirmation{}, err
+	}
+	for _, service := range services {
+		if service.ID != plan.TargetService {
+			continue
+		}
+		return UpgradeConfirmation{
+			ServiceID:      service.ID,
+			DisplayName:    service.DisplayName,
+			CurrentVersion: service.CurrentVersion,
+			TargetVersion:  plan.TargetVersion,
+			IsSelf:         plan.UpgradesSelf,
+		}, nil
+	}
+	return UpgradeConfirmation{}, domain.ErrServiceNotFound
+}
+
+// ListReleases returns one newest-first page of selectable versions for a
+// managed service, annotated against the current and latest worker snapshot.
+func (s *Service) ListReleases(
+	ctx context.Context,
+	serviceID string,
+	page int,
+	pageSize int,
+) (domain.ReleasePage, error) {
+	serviceID = strings.TrimSpace(serviceID)
+	entry, exists := s.catalogEntry(serviceID)
+	if !exists || !entry.AutoUpgrade {
+		return domain.ReleasePage{}, domain.ErrServiceNotFound
+	}
+	services, _, err := s.Snapshot(ctx)
+	if err != nil {
+		return domain.ReleasePage{}, err
+	}
+	currentVersion := ""
+	for _, service := range services {
+		if service.ID == serviceID {
+			currentVersion = normalizeReleaseVersion(service.CurrentVersion)
+			break
+		}
+	}
+	page, pageSize = normalizeReleasePage(page, pageSize)
+	releases, hasMore, err := s.releases.ListReleases(
+		ctx,
+		entry.ID,
+		page,
+		pageSize,
+	)
+	if err != nil {
+		return domain.ReleasePage{}, err
+	}
+	latest, err := s.releases.LatestRelease(ctx, entry.ID)
+	if err != nil {
+		return domain.ReleasePage{}, err
+	}
+	for index := range releases {
+		releases[index].IsCurrent = releases[index].Version == currentVersion
+		releases[index].IsLatest = releases[index].Version == latest.Version
+	}
+	return domain.ReleasePage{
+		Service:  serviceID,
+		Releases: releases,
+		Page:     page,
+		PageSize: pageSize,
+		HasMore:  hasMore,
+	}, nil
 }
 
 // PlanUpgradeAll validates the batch upgrade in the worker's required order.
@@ -148,6 +285,32 @@ func (s *Service) PlanUpgradeAll(
 		byID[service.ID] = service
 	}
 	plans := make([]UpgradePlan, 0, len(services))
+	targets, _, err := s.releases.ListReleases(
+		ctx,
+		"device_platform",
+		1,
+		releasePageSizeMax,
+	)
+	if err != nil {
+		return nil, err
+	}
+	platformLatest := ""
+	if len(targets) > 0 {
+		platformLatest = targets[0].Version
+	}
+	gatewayTargets, _, err := s.releases.ListReleases(
+		ctx,
+		"sub2api",
+		1,
+		releasePageSizeMax,
+	)
+	if err != nil {
+		return nil, err
+	}
+	gatewayLatest := ""
+	if len(gatewayTargets) > 0 {
+		gatewayLatest = gatewayTargets[0].Version
+	}
 	for _, entry := range s.catalog {
 		if !entry.AutoUpgrade {
 			continue
@@ -156,9 +319,16 @@ func (s *Service) PlanUpgradeAll(
 		if !exists || !service.CanUpgrade {
 			continue
 		}
+		targetVersion := platformLatest
+		if entry.ID == "sub2api" {
+			targetVersion = gatewayLatest
+		}
+		if targetVersion == "" {
+			targetVersion = service.LatestVersion
+		}
 		plans = append(plans, UpgradePlan{
 			TargetService: service.ID,
-			TargetVersion: service.LatestVersion,
+			TargetVersion: targetVersion,
 			UpgradesSelf:  service.IsSelf,
 		})
 	}
@@ -266,6 +436,15 @@ func (s *Service) ensureIdle(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (s *Service) catalogEntry(serviceID string) (domain.CatalogEntry, bool) {
+	for _, entry := range s.catalog {
+		if entry.ID == serviceID {
+			return entry, true
+		}
+	}
+	return domain.CatalogEntry{}, false
 }
 
 func snapshotServices(snapshot *domain.StatusSnapshot) []domain.Service {

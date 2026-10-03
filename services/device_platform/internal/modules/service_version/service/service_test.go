@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -12,7 +13,116 @@ import (
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/service_version/repository"
 )
 
+type fakeReleaseSource struct {
+	releases       []domain.Release
+	latest         *domain.Release
+	hasMore        bool
+	latestErr      error
+	findErr        error
+	listErr        error
+	requests       []string
+	latestRequests int
+}
+
+func newTestReleaseSource(
+	t *testing.T,
+	snapshotJSON string,
+	releases map[string][]domain.Release,
+) (*Service, string) {
+	t.Helper()
+	stateDir := t.TempDir()
+	if snapshotJSON != "" {
+		if err := os.WriteFile(
+			filepath.Join(stateDir, "status.json"),
+			[]byte(snapshotJSON),
+			0o600,
+		); err != nil {
+			t.Fatalf("write status snapshot: %v", err)
+		}
+	}
+	if releases != nil {
+		payload, err := json.Marshal(domain.ReleaseCatalog{
+			GeneratedAt: time.Unix(0, 0).UTC(),
+			Services:    releases,
+		})
+		if err != nil {
+			t.Fatalf("encode release catalog: %v", err)
+		}
+		if err := os.WriteFile(
+			filepath.Join(stateDir, "releases.json"),
+			payload,
+			0o600,
+		); err != nil {
+			t.Fatalf("write release catalog: %v", err)
+		}
+	}
+	service, err := New(Options{
+		Repository: repository.NewFileRepository(stateDir),
+		Clock:      func() time.Time { return time.Unix(0, 0).UTC() },
+	})
+	if err != nil {
+		t.Fatalf("create service: %v", err)
+	}
+	return service, stateDir
+}
+
+func (source *fakeReleaseSource) ListReleases(
+	_ context.Context,
+	repository string,
+	_ int,
+	_ int,
+) ([]domain.Release, bool, error) {
+	source.requests = append(source.requests, "list:"+repository)
+	if source.listErr != nil {
+		return nil, false, source.listErr
+	}
+	return append([]domain.Release(nil), source.releases...), source.hasMore, nil
+}
+
+func (source *fakeReleaseSource) LatestRelease(
+	_ context.Context,
+	repository string,
+) (domain.Release, error) {
+	source.requests = append(source.requests, "latest:"+repository)
+	source.latestRequests++
+	if source.latestErr != nil {
+		return domain.Release{}, source.latestErr
+	}
+	if source.latest != nil {
+		return *source.latest, nil
+	}
+	if len(source.releases) == 0 {
+		return domain.Release{}, domain.ErrReleaseNotFound
+	}
+	return source.releases[0], nil
+}
+
+func (source *fakeReleaseSource) FindRelease(
+	_ context.Context,
+	repository string,
+	version string,
+) (domain.Release, error) {
+	source.requests = append(source.requests, "find:"+repository)
+	if source.findErr != nil {
+		return domain.Release{}, source.findErr
+	}
+	for _, release := range source.releases {
+		if release.Version == version {
+			return release, nil
+		}
+	}
+	return domain.Release{}, domain.ErrReleaseNotFound
+}
+
 func newTestService(t *testing.T, snapshotJSON string) (*Service, string) {
+	return newTestServiceWithReleases(t, snapshotJSON, &fakeReleaseSource{})
+}
+
+func newTestServiceWithReleases(
+	t *testing.T,
+	snapshotJSON string,
+	releases ReleaseSource,
+) (*Service, string) {
 	t.Helper()
 	stateDir := t.TempDir()
 	if snapshotJSON != "" {
@@ -26,6 +136,7 @@ func newTestService(t *testing.T, snapshotJSON string) (*Service, string) {
 	}
 	service, err := New(Options{
 		Repository: repository.NewFileRepository(stateDir),
+		Releases:   releases,
 		Clock:      func() time.Time { return time.Unix(0, 0).UTC() },
 	})
 	if err != nil {
@@ -209,5 +320,151 @@ func TestPlanUpgradeAllOrdersPlatformBeforeSelf(t *testing.T) {
 		if order[index] != want[index] {
 			t.Fatalf("unexpected upgrade order: %v", order)
 		}
+	}
+}
+
+func TestPlanUpgradeToUsesExplicitPublishedVersion(t *testing.T) {
+	releases := &fakeReleaseSource{
+		releases: []domain.Release{
+			{Version: "0.10.0", ReleaseURL: "https://example.test/v0.10.0"},
+			{Version: "0.9.0", ReleaseURL: "https://example.test/v0.9.0"},
+		},
+	}
+	service, _ := newTestServiceWithReleases(t, `{
+		"generated_at":"2026-10-03T00:00:00Z",
+		"services":[{"id":"device_platform","current_version":"0.10.0","latest_version":"0.10.0","status":"current"}]
+	}`, releases)
+
+	plan, err := service.PlanUpgradeTo(
+		context.Background(),
+		"device_platform",
+		"v0.9.0",
+	)
+	if err != nil {
+		t.Fatalf("PlanUpgradeTo() returned unexpected error: %v", err)
+	}
+	if plan.TargetVersion != "0.9.0" {
+		t.Fatalf("expected normalized target 0.9.0, got %q", plan.TargetVersion)
+	}
+	if len(releases.requests) != 1 || releases.requests[0] != "find:device_platform" {
+		t.Fatalf("unexpected release source calls: %v", releases.requests)
+	}
+}
+
+func TestPlanUpgradeToRejectsUnpublishedVersion(t *testing.T) {
+	releases := &fakeReleaseSource{
+		releases: []domain.Release{{Version: "0.10.0"}},
+	}
+	service, _ := newTestServiceWithReleases(t, `{
+		"generated_at":"2026-10-03T00:00:00Z",
+		"services":[{"id":"device_platform","current_version":"0.9.0","latest_version":"0.10.0","status":"outdated"}]
+	}`, releases)
+
+	_, err := service.PlanUpgradeTo(
+		context.Background(),
+		"device_platform",
+		"9.9.9",
+	)
+	if !errors.Is(err, domain.ErrReleaseNotFound) {
+		t.Fatalf("expected ErrReleaseNotFound, got %v", err)
+	}
+}
+
+func TestPlanUpgradeToRejectsCurrentVersion(t *testing.T) {
+	releases := &fakeReleaseSource{
+		releases: []domain.Release{{Version: "0.10.0"}},
+	}
+	service, _ := newTestServiceWithReleases(t, `{
+		"generated_at":"2026-10-03T00:00:00Z",
+		"services":[{"id":"device_platform","current_version":"0.10.0","latest_version":"0.10.0","status":"current"}]
+	}`, releases)
+
+	_, err := service.PlanUpgradeTo(
+		context.Background(),
+		"device_platform",
+		"0.10.0",
+	)
+	if !errors.Is(err, domain.ErrServiceNotUpgradable) {
+		t.Fatalf("expected ErrServiceNotUpgradable, got %v", err)
+	}
+}
+
+func TestPlanUpgradeToMapsReleaseSourceFailure(t *testing.T) {
+	releases := &fakeReleaseSource{findErr: domain.ErrReleaseSourceFailed}
+	service, _ := newTestServiceWithReleases(t, `{
+		"generated_at":"2026-10-03T00:00:00Z",
+		"services":[{"id":"device_platform","current_version":"0.9.0","latest_version":"0.10.0","status":"outdated"}]
+	}`, releases)
+
+	_, err := service.PlanUpgradeTo(
+		context.Background(),
+		"device_platform",
+		"0.10.0",
+	)
+	if !errors.Is(err, domain.ErrReleaseSourceFailed) {
+		t.Fatalf("expected ErrReleaseSourceFailed, got %v", err)
+	}
+}
+
+func TestListReleasesMarksCurrentAndLatestAcrossPages(t *testing.T) {
+	releases := &fakeReleaseSource{
+		releases: []domain.Release{
+			{Version: "0.9.0", ReleaseURL: "https://example.test/v0.9.0"},
+		},
+		latest:  &domain.Release{Version: "0.10.0"},
+		hasMore: true,
+	}
+	service, _ := newTestServiceWithReleases(t, `{
+		"generated_at":"2026-10-03T00:00:00Z",
+		"services":[{"id":"device_platform","current_version":"0.9.0","latest_version":"0.10.0","status":"outdated"}]
+	}`, releases)
+
+	page, err := service.ListReleases(context.Background(), "device_platform", 2, 20)
+	if err != nil {
+		t.Fatalf("ListReleases() returned unexpected error: %v", err)
+	}
+	if page.Service != "device_platform" || page.Page != 2 || len(page.Releases) != 1 {
+		t.Fatalf("unexpected release page: %+v", page)
+	}
+	if !page.Releases[0].IsCurrent {
+		t.Fatal("expected the running version to be marked current")
+	}
+	if page.Releases[0].IsLatest {
+		t.Fatal("an older release must not be marked latest")
+	}
+	if !page.HasMore {
+		t.Fatal("expected has_more to be preserved")
+	}
+}
+
+func TestListReleasesRejectsInfrastructureService(t *testing.T) {
+	service, _ := newTestService(t, `{"generated_at":"2026-10-03T00:00:00Z","services":[]}`)
+
+	_, err := service.ListReleases(context.Background(), "postgres", 1, 20)
+	if !errors.Is(err, domain.ErrServiceNotFound) {
+		t.Fatalf("expected ErrServiceNotFound, got %v", err)
+	}
+}
+
+func TestConfirmationUsesRunningAndPlannedVersions(t *testing.T) {
+	service, _ := newTestService(t, `{
+		"generated_at":"2026-10-03T00:00:00Z",
+		"services":[{"id":"device_platform","current_version":"0.9.0","latest_version":"0.10.0","status":"outdated","display_name":"设备平台"}]
+	}`)
+
+	confirmation, err := service.Confirmation(
+		context.Background(),
+		UpgradePlan{
+			TargetService: "device_platform",
+			TargetVersion: "0.8.0",
+			UpgradesSelf:  false,
+		},
+	)
+	if err != nil {
+		t.Fatalf("Confirmation() returned unexpected error: %v", err)
+	}
+	if confirmation.CurrentVersion != "0.9.0" ||
+		confirmation.TargetVersion != "0.8.0" {
+		t.Fatalf("unexpected confirmation: %+v", confirmation)
 	}
 }

@@ -235,6 +235,10 @@ func NewRouter(options RouterOptions) http.Handler {
 					authHandler.requireAdmin(adminHandler.upgradeService),
 				)
 				mux.HandleFunc(
+					"GET /api/v1/admin/service-versions/{service}/releases",
+					authHandler.requireAdmin(adminHandler.listServiceReleases),
+				)
+				mux.HandleFunc(
 					"GET /api/v1/admin/service-version-operations",
 					authHandler.requireAdmin(adminHandler.listServiceVersionOperations),
 				)
