@@ -4,7 +4,9 @@ import DashboardPage from '@/features/dashboard/presentation/DashboardPage.vue'
 import DevicePage from '@/features/device/presentation/DevicePage.vue'
 import UITextPage from '@/features/ui_text/presentation/UITextPage.vue'
 import LoginPage from '@/features/auth/presentation/LoginPage.vue'
-import AiAccountsPage from '@/features/ai_gateway/presentation/AiAccountsPage.vue'
+import FamilyAccountsPage from '@/features/family/presentation/FamilyAccountsPage.vue'
+import ReleasePage from '@/features/ota/presentation/ReleasePage.vue'
+import SystemSettingsPage from '@/features/system/presentation/SystemSettingsPage.vue'
 import { useAuthStore } from '@/features/auth/application/authStore'
 
 /// Feature routes are registered here so removing a feature only changes its
@@ -25,9 +27,23 @@ export function createAdminRouter() {
         component: DashboardPage,
       },
       {
+        path: '/families',
+        name: 'families',
+        component: FamilyAccountsPage,
+      },
+      {
         path: '/ai-accounts',
-        name: 'ai-accounts',
-        component: AiAccountsPage,
+        redirect: '/families',
+      },
+      {
+        path: '/releases',
+        name: 'releases',
+        component: ReleasePage,
+      },
+      {
+        path: '/settings',
+        name: 'settings',
+        component: SystemSettingsPage,
       },
       {
         path: '/devices',

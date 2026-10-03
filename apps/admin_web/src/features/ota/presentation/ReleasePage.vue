@@ -1,0 +1,731 @@
+<script setup lang="ts">
+import { onMounted, reactive, ref } from 'vue'
+
+import {
+  useReleaseStore,
+  type AdminRelease,
+  type CreateReleaseInput,
+} from '@/features/ota/application/releaseStore'
+
+const store = useReleaseStore()
+const isCreateOpen = ref(false)
+const pendingDelete = ref<AdminRelease | null>(null)
+const pendingPublish = ref<AdminRelease | null>(null)
+const createForm = reactive<CreateReleaseInput>({
+  version: '',
+  channel: 'stable',
+  kind: 'resource',
+  platform: 'android',
+  downloadUrl: '',
+  sha256: '',
+  releaseNotes: '',
+  isMandatory: false,
+  minimumSupportedVersion: '',
+})
+
+onMounted(() => {
+  void store.load()
+})
+
+function openCreate(): void {
+  isCreateOpen.value = true
+  store.lastMessage = ''
+}
+
+async function createRelease(): Promise<void> {
+  const succeeded = await store.create(createForm)
+  if (!succeeded) {
+    return
+  }
+  resetCreateForm()
+  isCreateOpen.value = false
+}
+
+function resetCreateForm(): void {
+  createForm.version = ''
+  createForm.channel = 'stable'
+  createForm.kind = 'resource'
+  createForm.platform = 'android'
+  createForm.downloadUrl = ''
+  createForm.sha256 = ''
+  createForm.releaseNotes = ''
+  createForm.isMandatory = false
+  createForm.minimumSupportedVersion = ''
+}
+
+async function confirmPublish(): Promise<void> {
+  if (pendingPublish.value === null) {
+    return
+  }
+  const succeeded = await store.publish(pendingPublish.value.version)
+  if (succeeded) {
+    pendingPublish.value = null
+  }
+}
+
+async function confirmDelete(): Promise<void> {
+  if (pendingDelete.value === null) {
+    return
+  }
+  const succeeded = await store.remove(pendingDelete.value.version)
+  if (succeeded) {
+    pendingDelete.value = null
+  }
+}
+
+function kindLabel(value: string): string {
+  return (
+    {
+      resource: '资源更新',
+      client: '客户端更新',
+      firmware: '设备固件',
+    }[value] ?? '其他更新'
+  )
+}
+
+function channelLabel(value: string): string {
+  return (
+    {
+      stable: '稳定渠道',
+      beta: '测试渠道',
+      canary: '内测渠道',
+    }[value] ?? '稳定渠道'
+  )
+}
+
+function platformLabel(value: string): string {
+  return (
+    {
+      android: 'Android',
+      ios: 'iOS',
+      esp32_s3: '初芽设备',
+      all: '全部平台',
+    }[value] ?? value
+  )
+}
+
+function statusLabel(value: string): string {
+  return (
+    {
+      draft: '待发布',
+      published: '已发布',
+      withdrawn: '已撤回',
+    }[value] ?? '待确认'
+  )
+}
+
+function formatTime(value: string): string {
+  if (!value) {
+    return '尚未发布'
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return '尚未发布'
+  }
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+</script>
+
+<template>
+  <section>
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">版本运营</p>
+        <h1>更新发布</h1>
+        <p class="page-description">
+          小更新通过资源包快速生效；完整安装包和固件会经过校验后再提供给用户。
+        </p>
+      </div>
+      <div class="header-actions">
+        <button type="button" class="secondary" :disabled="store.isLoading" @click="store.load">
+          刷新列表
+        </button>
+        <button type="button" class="primary" @click="openCreate">登记新版本</button>
+      </div>
+    </header>
+
+    <Transition name="toast">
+      <p v-if="store.lastMessage" class="success-message">{{ store.lastMessage }}</p>
+    </Transition>
+    <Transition name="toast">
+      <p v-if="store.error" class="error-message">{{ store.error.message }}</p>
+    </Transition>
+
+    <Transition name="page" mode="out-in">
+      <div v-if="store.isLoading" key="loading" class="state-panel">
+        <span class="state-spinner" aria-hidden="true"></span>
+        正在读取更新记录…
+      </div>
+      <div v-else-if="store.releases.length === 0" key="empty" class="state-panel">
+        <span class="state-icon" aria-hidden="true">☆</span>
+        <span>还没有更新记录。登记新版本后，会显示在这里。</span>
+      </div>
+      <div v-else key="table" class="table-shell">
+        <table>
+          <thead>
+            <tr>
+              <th>版本</th>
+              <th>类型</th>
+              <th>适用平台</th>
+              <th>渠道</th>
+              <th>状态</th>
+              <th>发布时间</th>
+              <th>更新说明</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="release in store.releases" :key="release.version">
+              <td>
+                <span class="release-version">{{ release.version }}</span>
+                <span v-if="release.isMandatory" class="mandatory">必须升级</span>
+              </td>
+              <td>{{ kindLabel(release.kind) }}</td>
+              <td>{{ platformLabel(release.platform) }}</td>
+              <td>{{ channelLabel(release.channel) }}</td>
+              <td>
+                <span :class="['status', release.status]">
+                  {{ statusLabel(release.status) }}
+                </span>
+              </td>
+              <td>{{ formatTime(release.publishedAt) }}</td>
+              <td class="notes">{{ release.releaseNotes || '未填写更新说明' }}</td>
+              <td>
+                <div class="row-actions">
+                  <button
+                    v-if="release.status !== 'published'"
+                    type="button"
+                    :disabled="store.isSubmitting"
+                    @click="pendingPublish = release"
+                  >
+                    发布
+                  </button>
+                  <button
+                    type="button"
+                    class="danger"
+                    :disabled="store.isSubmitting"
+                    @click="pendingDelete = release"
+                  >
+                    删除
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </Transition>
+
+    <Transition name="modal">
+      <div v-if="isCreateOpen" class="dialog-backdrop" @click.self="isCreateOpen = false">
+        <form class="dialog" @submit.prevent="createRelease">
+          <h2>登记新版本</h2>
+          <p class="dialog-hint">文件上传完成后，填写验收信息并登记。确认无误后再发布。</p>
+          <div class="field-grid">
+            <label>
+              <span>版本号</span>
+              <input v-model.trim="createForm.version" type="text" required placeholder="例如 0.8.0" />
+            </label>
+            <label>
+              <span>更新类型</span>
+              <select v-model="createForm.kind">
+                <option value="resource">资源更新</option>
+                <option value="client">客户端更新</option>
+                <option value="firmware">设备固件</option>
+              </select>
+            </label>
+            <label>
+              <span>更新渠道</span>
+              <select v-model="createForm.channel">
+                <option value="stable">稳定渠道</option>
+                <option value="beta">测试渠道</option>
+                <option value="canary">内测渠道</option>
+              </select>
+            </label>
+            <label>
+              <span>适用平台</span>
+              <select v-model="createForm.platform">
+                <option value="android">Android</option>
+                <option value="ios">iOS</option>
+                <option value="esp32_s3">初芽设备</option>
+                <option value="all">全部平台</option>
+              </select>
+            </label>
+            <label class="span-two">
+              <span>下载地址</span>
+              <input
+                v-model.trim="createForm.downloadUrl"
+                type="url"
+                required
+                placeholder="填写文件的安全下载地址"
+              />
+            </label>
+            <label class="span-two">
+              <span>文件校验值</span>
+              <input
+                v-model.trim="createForm.sha256"
+                type="text"
+                required
+                placeholder="填写文件校验值，用于确认下载完整"
+              />
+            </label>
+            <label class="span-two">
+              <span>最低可用版本</span>
+              <input
+                v-model.trim="createForm.minimumSupportedVersion"
+                type="text"
+                placeholder="低于该版本时不再提供此更新"
+              />
+            </label>
+            <label class="span-two">
+              <span>更新说明</span>
+              <textarea
+                v-model.trim="createForm.releaseNotes"
+                rows="4"
+                required
+                placeholder="说明这次更新解决什么问题、带来哪些变化"
+              ></textarea>
+            </label>
+          </div>
+          <label class="mandatory-row">
+            <input v-model="createForm.isMandatory" type="checkbox" />
+            <span>
+              <strong>此版本必须升级</strong>
+              <small>家长打开应用时会看到升级提醒，暂不能跳过。</small>
+            </span>
+          </label>
+          <div class="dialog-actions">
+            <button type="button" class="secondary" @click="isCreateOpen = false">取消</button>
+            <button type="submit" class="primary" :disabled="store.isSubmitting">
+              {{ store.isSubmitting ? '正在登记…' : '登记版本' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </Transition>
+
+    <Transition name="modal">
+      <div v-if="pendingPublish" class="dialog-backdrop" @click.self="pendingPublish = null">
+        <section class="dialog confirm-dialog">
+          <h2>发布这个版本？</h2>
+          <p>
+            发布后，使用 {{ channelLabel(pendingPublish.channel) }} 的用户会收到
+            {{ pendingPublish.version }} 的更新提示。
+          </p>
+          <div class="dialog-actions">
+            <button type="button" class="secondary" @click="pendingPublish = null">取消</button>
+            <button
+              type="button"
+              class="primary"
+              :disabled="store.isSubmitting"
+              @click="confirmPublish"
+            >
+              {{ store.isSubmitting ? '正在发布…' : '确认发布' }}
+            </button>
+          </div>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition name="modal">
+      <div v-if="pendingDelete" class="dialog-backdrop" @click.self="pendingDelete = null">
+        <section class="dialog confirm-dialog">
+          <h2>删除这个版本？</h2>
+          <p>
+            删除后，版本 {{ pendingDelete.version }} 的记录将无法恢复。已经安装该版本的用户不受影响。
+          </p>
+          <div class="dialog-actions">
+            <button type="button" class="secondary" @click="pendingDelete = null">取消</button>
+            <button
+              type="button"
+              class="danger-button"
+              :disabled="store.isSubmitting"
+              @click="confirmDelete"
+            >
+              {{ store.isSubmitting ? '正在删除…' : '删除版本' }}
+            </button>
+          </div>
+        </section>
+      </div>
+    </Transition>
+  </section>
+</template>
+
+<style scoped>
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 22px;
+  padding: 24px;
+  border: 1px solid var(--sprout-outline);
+  border-radius: var(--sprout-radius-card);
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgb(194 91 128 / 5%);
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--sprout-pink-strong);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+h1 {
+  margin: 0;
+  color: var(--sprout-text);
+  font-size: 28px;
+}
+
+.page-description {
+  max-width: 720px;
+  margin: 10px 0 0;
+  color: var(--sprout-text-muted);
+}
+
+.header-actions,
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+button {
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid #e9a5b8;
+  border-radius: var(--sprout-radius-control);
+  background: #ffffff;
+  color: #c94175;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:not(:disabled):hover {
+  border-color: #d94f83;
+  background: #fff7fa;
+  box-shadow: 0 8px 18px rgb(217 79 131 / 10%);
+}
+
+button.primary {
+  border-color: #d94f83;
+  background: #d94f83;
+  color: #ffffff;
+}
+
+button.primary:not(:disabled):hover {
+  background: #c94175;
+}
+
+button.danger {
+  border-color: #f0bdcb;
+  color: #a12b4a;
+}
+
+button.danger-button {
+  border-color: #b3261e;
+  background: #b3261e;
+  color: #ffffff;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.table-shell,
+.state-panel {
+  overflow: hidden;
+  border: 1px solid var(--sprout-outline);
+  border-radius: var(--sprout-radius-card);
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgb(194 91 128 / 6%);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 14px 16px;
+  border-bottom: 1px solid #f7d9e2;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  color: #6b4f5a;
+  font-size: 13px;
+}
+
+td {
+  color: #4a2e3b;
+}
+
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+tbody tr {
+  transition: background-color var(--sprout-duration-fast) ease;
+}
+
+tbody tr:hover {
+  background: #fff8fa;
+}
+
+.release-version,
+.mandatory {
+  display: block;
+}
+
+.release-version {
+  font-weight: 700;
+}
+
+.mandatory {
+  margin-top: 3px;
+  color: #a12b4a;
+  font-size: 12px;
+}
+
+.notes {
+  max-width: 260px;
+  white-space: normal;
+}
+
+.status {
+  display: inline-flex;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #fff3cd;
+  color: #755600;
+  font-size: 13px;
+}
+
+.status.published {
+  background: #e7f8ee;
+  color: #1d6b3f;
+}
+
+.status.withdrawn {
+  background: #fff0f2;
+  color: #a12b4a;
+}
+
+.state-panel {
+  display: flex;
+  min-height: 132px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 28px;
+  color: #6b4f5a;
+  text-align: center;
+}
+
+.state-spinner {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border: 2px solid #f0bdcb;
+  border-top-color: #d94f83;
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+.state-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 12px;
+  background: #fff2f5;
+  color: #d94f83;
+  font-size: 20px;
+}
+
+.error-message {
+  margin: 0 0 14px;
+  color: #b3261e;
+}
+
+.success-message {
+  margin: 0 0 14px;
+  color: #1d6b3f;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(74 46 59 / 35%);
+  backdrop-filter: blur(3px);
+}
+
+.dialog {
+  display: grid;
+  width: min(100%, 560px);
+  max-height: min(820px, calc(100vh - 40px));
+  gap: 16px;
+  overflow: auto;
+  padding: 28px;
+  border: 1px solid #f0bdcb;
+  border-radius: 26px;
+  background: #ffffff;
+  box-shadow: 0 28px 72px rgb(74 46 59 / 22%);
+}
+
+.dialog h2,
+.dialog p {
+  margin: 0;
+}
+
+.dialog h2 {
+  color: #4a2e3b;
+}
+
+.dialog-hint {
+  margin-top: -6px !important;
+  color: #6b4f5a;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.field-grid label {
+  display: grid;
+  gap: 7px;
+  color: #4a2e3b;
+  font-weight: 600;
+}
+
+.field-grid .span-two {
+  grid-column: 1 / -1;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid #f0bdcb;
+  border-radius: 14px;
+  background: #fff8fa;
+  color: #4a2e3b;
+  font: inherit;
+  transition:
+    border-color var(--sprout-duration-fast) ease,
+    box-shadow var(--sprout-duration-fast) ease,
+    background-color var(--sprout-duration-fast) ease;
+}
+
+input,
+select {
+  min-height: 44px;
+  padding: 0 14px;
+}
+
+textarea {
+  min-height: 98px;
+  resize: vertical;
+  padding: 12px 14px;
+  line-height: 1.55;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: #d94f83;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgb(217 79 131 / 12%);
+  outline: none;
+}
+
+.mandatory-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #f7d9e2;
+  border-radius: 16px;
+  background: #fffbfc;
+}
+
+.mandatory-row input {
+  width: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  accent-color: #d94f83;
+}
+
+.mandatory-row span {
+  display: grid;
+  gap: 3px;
+}
+
+.mandatory-row strong {
+  color: #4a2e3b;
+}
+
+.mandatory-row small {
+  color: #6b4f5a;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.confirm-dialog p {
+  color: #6b4f5a;
+  line-height: 1.65;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 900px) {
+  .page-header {
+    display: grid;
+  }
+
+  .table-shell {
+    overflow-x: auto;
+  }
+
+  table {
+    min-width: 1080px;
+  }
+}
+
+@media (max-width: 620px) {
+  .field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .field-grid .span-two {
+    grid-column: auto;
+  }
+}
+</style>

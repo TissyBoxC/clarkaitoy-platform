@@ -1,0 +1,215 @@
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+
+import { mapApiError, type ApiError } from '@/api/apiError'
+import { createHttpClient } from '@/api/httpClient'
+
+export interface SystemSettings {
+  defaultBalanceUsd: number
+  defaultConcurrencyLimit: number
+  defaultModels: string[]
+  registrationEnabled: boolean
+  smsVerificationEnabled: boolean
+  emailLoginEnabled: boolean
+  minorModeDefaultEnabled: boolean
+  outputModerationEnabled: boolean
+  crisisInterventionEnabled: boolean
+  releaseChannel: string
+  minimumClientVersion: string
+  mandatoryUpdateThreshold: string
+  audioRetentionDays: number
+  imageRetentionDays: number
+  conversationRetentionDays: number
+}
+
+export const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
+  defaultBalanceUsd: 0,
+  defaultConcurrencyLimit: 1,
+  defaultModels: [],
+  registrationEnabled: true,
+  smsVerificationEnabled: true,
+  emailLoginEnabled: true,
+  minorModeDefaultEnabled: true,
+  outputModerationEnabled: true,
+  crisisInterventionEnabled: true,
+  releaseChannel: 'stable',
+  minimumClientVersion: '',
+  mandatoryUpdateThreshold: '',
+  audioRetentionDays: 0,
+  imageRetentionDays: 0,
+  conversationRetentionDays: 30,
+}
+
+// 设置按后端文档整体读取与整体保存，避免局部写入造成运行策略不一致。
+export const useSystemSettingsStore = defineStore('admin-system-settings', () => {
+  const httpClient = createHttpClient()
+  const settings = ref<SystemSettings>({ ...DEFAULT_SYSTEM_SETTINGS })
+  const isLoading = ref(false)
+  const isSaving = ref(false)
+  const error = ref<ApiError | null>(null)
+  const lastMessage = ref('')
+
+  async function load(): Promise<void> {
+    isLoading.value = true
+    error.value = null
+    try {
+      const response = await httpClient.get('/api/v1/admin/settings')
+      settings.value = toSettings(response.data.data?.settings ?? {})
+    } catch (caught: unknown) {
+      error.value = mapApiError(caught)
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  async function save(): Promise<boolean> {
+    isSaving.value = true
+    error.value = null
+    lastMessage.value = ''
+    try {
+      const response = await httpClient.put(
+        '/api/v1/admin/settings',
+        toPayload(settings.value),
+      )
+      settings.value = toSettings(response.data.data?.settings ?? {})
+      lastMessage.value = '系统设置已保存。'
+      return true
+    } catch (caught: unknown) {
+      error.value = mapApiError(caught)
+      return false
+    } finally {
+      isSaving.value = false
+    }
+  }
+
+  return {
+    error,
+    isLoading,
+    isSaving,
+    lastMessage,
+    load,
+    save,
+    settings,
+  }
+})
+
+function toSettings(value: Record<string, unknown>): SystemSettings {
+  const defaults = DEFAULT_SYSTEM_SETTINGS
+  const ai = recordValue(value.ai)
+  const account = recordValue(value.account)
+  const safety = recordValue(value.safety)
+  const update = recordValue(value.update)
+  const retention = recordValue(value.retention)
+
+  return {
+    defaultBalanceUsd: numberValue(ai.default_balance_usd, defaults.defaultBalanceUsd),
+    defaultConcurrencyLimit: numberValue(
+      ai.default_concurrency,
+      defaults.defaultConcurrencyLimit,
+    ),
+    defaultModels: stringListValue(ai.default_models),
+    registrationEnabled: booleanValue(
+      account.registration_enabled,
+      defaults.registrationEnabled,
+    ),
+    smsVerificationEnabled: booleanValue(
+      account.phone_verification_required,
+      defaults.smsVerificationEnabled,
+    ),
+    emailLoginEnabled: booleanValue(
+      account.email_login_enabled,
+      defaults.emailLoginEnabled,
+    ),
+    minorModeDefaultEnabled: booleanValue(
+      safety.minor_mode_default,
+      defaults.minorModeDefaultEnabled,
+    ),
+    outputModerationEnabled: booleanValue(
+      safety.output_moderation_enabled,
+      defaults.outputModerationEnabled,
+    ),
+    crisisInterventionEnabled: booleanValue(
+      safety.crisis_intervention_enabled,
+      defaults.crisisInterventionEnabled,
+    ),
+    releaseChannel: stringValue(update.channel, defaults.releaseChannel),
+    minimumClientVersion: stringValue(
+      update.min_client_version,
+      defaults.minimumClientVersion,
+    ),
+    mandatoryUpdateThreshold: stringValue(
+      update.force_upgrade_below,
+      defaults.mandatoryUpdateThreshold,
+    ),
+    audioRetentionDays: numberValue(
+      retention.audio_days,
+      defaults.audioRetentionDays,
+    ),
+    imageRetentionDays: numberValue(
+      retention.image_days,
+      defaults.imageRetentionDays,
+    ),
+    conversationRetentionDays: numberValue(
+      retention.conversation_days,
+      defaults.conversationRetentionDays,
+    ),
+  }
+}
+
+function toPayload(settings: SystemSettings): Record<string, unknown> {
+  return {
+    ai: {
+      default_balance_usd: settings.defaultBalanceUsd,
+      default_concurrency: settings.defaultConcurrencyLimit,
+      default_models: settings.defaultModels
+        .map((model) => model.trim())
+        .filter(Boolean),
+    },
+    account: {
+      registration_enabled: settings.registrationEnabled,
+      phone_verification_required: settings.smsVerificationEnabled,
+      email_login_enabled: settings.emailLoginEnabled,
+    },
+    safety: {
+      minor_mode_default: settings.minorModeDefaultEnabled,
+      output_moderation_enabled: settings.outputModerationEnabled,
+      crisis_intervention_enabled: settings.crisisInterventionEnabled,
+      // P0 约束要求儿童音视频默认不上传。开启前必须实现逐项监护人授权流程。
+      allow_audio_upload: false,
+      allow_image_upload: false,
+    },
+    update: {
+      channel: settings.releaseChannel,
+      min_client_version: settings.minimumClientVersion,
+      force_upgrade_below: settings.mandatoryUpdateThreshold,
+    },
+    retention: {
+      audio_days: settings.audioRetentionDays,
+      image_days: settings.imageRetentionDays,
+      conversation_days: settings.conversationRetentionDays,
+    },
+  }
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
+}
+
+function stringValue(value: unknown, fallback: string): string {
+  return typeof value === 'string' ? value : fallback
+}
+
+function numberValue(value: unknown, fallback: number): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function booleanValue(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback
+}
+
+function stringListValue(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(String).filter(Boolean) : []
+}

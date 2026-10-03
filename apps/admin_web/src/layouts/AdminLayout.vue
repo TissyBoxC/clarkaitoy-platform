@@ -34,17 +34,25 @@ async function logout(): Promise<void> {
           <span class="nav-dot" aria-hidden="true"></span>
           运营概览
         </RouterLink>
-        <RouterLink to="/ai-accounts">
+        <RouterLink to="/families">
           <span class="nav-dot" aria-hidden="true"></span>
-          家长 AI 账号
+          家长账号
         </RouterLink>
         <RouterLink to="/devices">
           <span class="nav-dot" aria-hidden="true"></span>
           设备管理
         </RouterLink>
+        <RouterLink to="/releases">
+          <span class="nav-dot" aria-hidden="true"></span>
+          更新发布
+        </RouterLink>
         <RouterLink to="/ui-text">
           <span class="nav-dot" aria-hidden="true"></span>
           界面文案
+        </RouterLink>
+        <RouterLink to="/settings">
+          <span class="nav-dot" aria-hidden="true"></span>
+          系统设置
         </RouterLink>
       </nav>
       <div class="account-panel">
