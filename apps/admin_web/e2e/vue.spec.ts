@@ -136,6 +136,175 @@ test('uses the fastest available model and the provider default balance', async 
   await expect(page.getByLabel('默认模型')).toHaveValue('fast-model')
 })
 
+test('manages a family AI account, profile, password, and bound devices', async ({ page }) => {
+  await useAdminSession(page)
+
+  const family = {
+    parent_account_id: 'parent-1',
+    phone: '13273330085',
+    display_name: '测试家长',
+    guardian_family_name: '王',
+    child_nickname: '小芽',
+    child_birthday: '2020-05-06',
+    status: 'active',
+    created_at: '2026-10-01T10:00:00Z',
+    ai_account: {
+      provider_account_id: 'provider-1',
+      status: 'active',
+      balance_usd: 0,
+      concurrency_limit: 1,
+      available_models: ['slow-model', 'fast-model'],
+      selected_models: ['fast-model'],
+      allowed_models: ['slow-model', 'fast-model'],
+      credential_ready: true,
+      updated_at: '2026-10-03T10:00:00Z',
+    },
+  }
+
+  await page.route('**/api/v1/admin/families', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ data: { accounts: [family] } }),
+    })
+  })
+  await page.route('**/api/v1/admin/ai-models', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          models: [
+            { id: 'slow-model', latency_ms: 500 },
+            { id: 'fast-model', latency_ms: 80 },
+          ],
+        },
+      }),
+    })
+  })
+  await page.route('**/api/v1/admin/families/parent-1/devices', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          devices: [
+            {
+              device_id: 'device-1',
+              device_name: '初芽一号',
+              hardware_model: '初芽标准版',
+              firmware_version: '0.11.0',
+              capabilities: ['display', 'microphone', 'wifi'],
+              bound_at: '2026-10-02T10:00:00Z',
+              updated_at: '2026-10-03T10:00:00Z',
+              runtime: {
+                is_online: true,
+                reported_at: '2026-10-03T10:00:00Z',
+                received_at: '2026-10-03T10:00:02Z',
+                connection: {
+                  state: 'connected',
+                  transport: 'wifi',
+                },
+              },
+            },
+          ],
+        },
+      }),
+    })
+  })
+  await page.route('**/api/v1/admin/ai-accounts/provider-1', async (route) => {
+    const request = route.request()
+    expect(request.method()).toBe('PUT')
+    expect(request.postDataJSON()).toMatchObject({
+      balance_usd: 12.5,
+      concurrency_limit: 2,
+      available_models: ['slow-model', 'fast-model'],
+    })
+    family.ai_account.balance_usd = 12.5
+    family.ai_account.concurrency_limit = 2
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          ...family.ai_account,
+        },
+      }),
+    })
+  })
+  await page.route('**/api/v1/admin/families/parent-1/profile', async (route) => {
+    const request = route.request()
+    expect(request.method()).toBe('PUT')
+    const payload = request.postDataJSON()
+    Object.assign(family, {
+      display_name: payload.display_name,
+      guardian_family_name: payload.guardian_family_name,
+      child_nickname: payload.child_nickname,
+      child_birthday: payload.child_birthday,
+    })
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ data: {} }),
+    })
+  })
+  await page.route('**/api/v1/admin/families/parent-1/password', async (route) => {
+    expect(route.request().postDataJSON()).toEqual({ password: 'new-secret-123' })
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ data: {} }),
+    })
+  })
+
+  await page.goto('/families')
+
+  await expect(page.getByRole('heading', { name: '家长账号' })).toBeVisible()
+  await expect(page.getByText('$0.00')).toBeVisible()
+
+  await page.getByRole('button', { name: '管理' }).click()
+
+  await expect(page.getByRole('dialog', { name: '王' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '家长资料' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'AI 服务' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '绑定设备' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '账号安全' })).toBeVisible()
+  await expect(page.getByText('默认最快')).toBeVisible()
+  await expect(page.getByText('初芽一号')).toBeVisible()
+  await expect(page.getByText('在线', { exact: true })).toBeVisible()
+
+  const modelCheckboxes = page.locator('.model-option input[type="checkbox"]')
+  await expect(modelCheckboxes).toHaveCount(2)
+  await expect(modelCheckboxes.nth(0)).toBeChecked()
+  await expect(modelCheckboxes.nth(1)).toBeChecked()
+
+  await page.getByLabel('剩余额度（美元）').fill('12.5')
+  await page.getByLabel('同时对话数量').fill('2')
+  await page.getByRole('button', { name: '保存 AI 设置' }).click()
+  await expect(page.getByText('AI 设置已保存。')).toBeVisible()
+
+  await page.getByLabel('家长称呼').fill('更新后的家长')
+  await page.getByLabel('家长姓氏').fill('李')
+  await page.getByLabel('宝贝姓名').fill('新芽')
+  await page.getByLabel('宝贝生日').fill('2021-06-07')
+  await page.getByRole('button', { name: '保存家长资料' }).click()
+  await expect(page.getByText('家长资料已保存。')).toBeVisible()
+
+  await page.getByRole('button', { name: '重置密码' }).click()
+  const resetDialog = page.getByRole('dialog', { name: '重置家长密码' })
+  await resetDialog.getByLabel('新密码', { exact: true }).fill('new-secret-123')
+  await resetDialog.getByLabel('再次输入新密码').fill('new-secret-123')
+  await resetDialog.getByRole('button', { name: '重置密码' }).click()
+  await expect(page.getByText('密码已重置，该家长需要重新登录。')).toBeVisible()
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  const drawer = page.locator('.family-drawer')
+  await expect(drawer).toBeVisible()
+  const drawerBox = await drawer.boundingBox()
+  expect(drawerBox?.width).toBeLessThanOrEqual(390)
+
+  await page.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(page.getByText('$12.50')).toBeVisible()
+
+  await page.getByRole('button', { name: '管理' }).click()
+  await expect(page.getByLabel('剩余额度（美元）')).toHaveValue('12.5')
+  await expect(page.getByLabel('家长称呼')).toHaveValue('更新后的家长')
+})
+
 test('fills the current version and the release artifact automatically', async ({ page }) => {
   await useAdminSession(page)
   await page.route('**/api/v1/admin/releases', async (route) => {

@@ -1,18 +1,37 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 
+import type { ApiError } from '@/api/apiError'
+import type { AIModelOption } from '@/api/adminOperations'
 import {
   useFamilyAccountStore,
   type AdminFamily,
   type AdminFamilyAiAccount,
   type CreateAdminFamilyInput,
+  type FamilyMutationResult,
+  type UpdateAdminFamilyAiAccountInput,
+  type UpdateAdminFamilyProfileInput,
 } from '@/features/family/application/familyAccountStore'
 
 const store = useFamilyAccountStore()
 const isCreateOpen = ref(false)
-const editingFamily = ref<AdminFamily | null>(null)
-const editingAiAccount = ref<AdminFamilyAiAccount | null>(null)
-const modelsText = ref('')
+const selectedFamilyId = ref('')
+const profileForm = reactive<UpdateAdminFamilyProfileInput>(
+  emptyProfileForm(),
+)
+const aiForm = reactive<UpdateAdminFamilyAiAccountInput>(
+  emptyAiAccountForm(),
+)
+const passwordForm = reactive({
+  password: '',
+  confirmation: '',
+})
+const isPasswordResetOpen = ref(false)
+const feedbackBySection = reactive({
+  profile: emptySectionFeedback(),
+  ai: emptySectionFeedback(),
+  password: emptySectionFeedback(),
+})
 const createForm = reactive<CreateAdminFamilyInput>({
   phone: '',
   password: '',
@@ -20,6 +39,32 @@ const createForm = reactive<CreateAdminFamilyInput>({
   childNickname: '',
   childBirthday: '',
 })
+
+const selectedFamily = computed(
+  () =>
+    store.families.find(
+      (family) => family.parentAccountId === selectedFamilyId.value,
+    ) ?? null,
+)
+const selectedDevices = computed(() =>
+  selectedFamily.value === null
+    ? []
+    : store.devicesFor(selectedFamily.value.parentAccountId),
+)
+const isDevicesLoading = computed(
+  () =>
+    selectedFamily.value !== null &&
+    store.isFamilyDevicesLoading(selectedFamily.value.parentAccountId),
+)
+const deviceError = computed(
+  () =>
+    selectedFamily.value === null
+      ? null
+      : store.deviceErrorFor(selectedFamily.value.parentAccountId),
+)
+const availableModels = computed(() =>
+  modelOptionsForAccount(store.modelOptions, aiForm.availableModels),
+)
 
 onMounted(() => {
   void store.load()
@@ -51,33 +96,260 @@ function resetCreateForm(): void {
   createForm.childBirthday = ''
 }
 
-function openAiEditor(family: AdminFamily): void {
-  if (family.aiAccount === null) {
-    store.lastMessage = ''
+async function openFamily(family: AdminFamily): Promise<void> {
+  selectedFamilyId.value = family.parentAccountId
+  Object.assign(profileForm, {
+    displayName: family.parentDisplayName,
+    guardianFamilyName: family.guardianFamilyName,
+    childNickname: family.childNickname,
+    childBirthday: family.childBirthday,
+  })
+  if (family.aiAccount !== null) {
+    Object.assign(aiForm, {
+      providerAccountId: family.aiAccount.providerAccountId,
+      status: family.aiAccount.status,
+      balanceUsd: family.aiAccount.balanceUsd,
+      concurrencyLimit: family.aiAccount.concurrencyLimit,
+      availableModels: assignableModels(family.aiAccount, store.modelOptions),
+    })
+  }
+  clearSectionFeedback()
+  await store.loadFamilyDevices(family.parentAccountId)
+}
+
+function closeFamily(): void {
+  selectedFamilyId.value = ''
+  isPasswordResetOpen.value = false
+  passwordForm.password = ''
+  passwordForm.confirmation = ''
+  clearSectionFeedback()
+}
+
+async function saveProfile(): Promise<void> {
+  if (selectedFamily.value === null) {
     return
   }
-  editingFamily.value = family
-  editingAiAccount.value = { ...family.aiAccount }
-  modelsText.value = family.aiAccount.availableModels.join('、')
+  const result = await store.updateParentProfile(
+    selectedFamily.value.parentAccountId,
+    profileForm,
+  )
+  handleMutationResult('profile', result, '家长资料已保存。')
 }
 
 async function saveAiAccount(): Promise<void> {
-  if (editingAiAccount.value === null) {
+  if (selectedFamily.value === null || selectedFamily.value.aiAccount === null) {
     return
   }
-  editingAiAccount.value.availableModels = modelsText.value
-    .split(/[,\s，、]+/)
-    .map((model) => model.trim())
-    .filter(Boolean)
-  const succeeded = await store.updateAiAccount(editingAiAccount.value)
-  if (succeeded) {
-    editingAiAccount.value = null
-    editingFamily.value = null
+  if (aiForm.availableModels.length === 0) {
+    setSectionError('ai', {
+      kind: 'validation',
+      message: '请至少选择一个模型。',
+      retryable: false,
+    })
+    return
   }
+  const result = await store.updateAiAccount({
+    providerAccountId: selectedFamily.value.aiAccount.providerAccountId,
+    status: aiForm.status,
+    balanceUsd: aiForm.balanceUsd,
+    concurrencyLimit: aiForm.concurrencyLimit,
+    availableModels: aiForm.availableModels,
+  })
+  if (result.succeeded) {
+    synchronizeFromSelectedFamily()
+  }
+  handleMutationResult('ai', result, 'AI 设置已保存。')
+}
+
+function openPasswordReset(): void {
+  isPasswordResetOpen.value = true
+  passwordForm.password = ''
+  passwordForm.confirmation = ''
+  clearSectionFeedback()
+}
+
+function closePasswordReset(): void {
+  isPasswordResetOpen.value = false
+  passwordForm.password = ''
+  passwordForm.confirmation = ''
+}
+
+async function resetPassword(): Promise<void> {
+  if (selectedFamily.value === null) {
+    return
+  }
+  if (passwordForm.password.length < 8) {
+    setSectionError('password', {
+      kind: 'validation',
+      message: '新密码至少需要 8 位。',
+      retryable: false,
+    })
+    return
+  }
+  if (passwordForm.password !== passwordForm.confirmation) {
+    setSectionError('password', {
+      kind: 'validation',
+      message: '两次输入的密码不一致。',
+      retryable: false,
+    })
+    return
+  }
+  const result = await store.resetParentPassword(
+    selectedFamily.value.parentAccountId,
+    passwordForm.password,
+  )
+  if (result.succeeded) {
+    closePasswordReset()
+  }
+  handleMutationResult(
+    'password',
+    result,
+    '密码已重置，该家长需要重新登录。',
+    '密码已重置，请提醒家长使用新密码登录。',
+  )
+}
+
+async function retryAiAccount(): Promise<void> {
+  if (selectedFamily.value === null) {
+    return
+  }
+  const result = await store.retryAiAccount(selectedFamily.value.parentAccountId)
+  handleMutationResult('ai', result, '家长 AI 服务已准备完成。')
+}
+
+async function reloadDevices(): Promise<void> {
+  if (selectedFamily.value === null) {
+    return
+  }
+  await store.loadFamilyDevices(selectedFamily.value.parentAccountId)
+}
+
+function toggleModel(model: AIModelOption): void {
+  if (aiForm.availableModels.includes(model.id)) {
+    aiForm.availableModels = aiForm.availableModels.filter(
+      (modelId) => modelId !== model.id,
+    )
+    return
+  }
+  aiForm.availableModels = [...aiForm.availableModels, model.id]
+}
+
+function selectAllModels(): void {
+  aiForm.availableModels = store.modelOptions.map((model) => model.id)
+}
+
+function synchronizeFromSelectedFamily(): void {
+  const family = selectedFamily.value
+  if (family === null || family.aiAccount === null) {
+    return
+  }
+  Object.assign(aiForm, {
+    providerAccountId: family.aiAccount.providerAccountId,
+    status: family.aiAccount.status,
+    balanceUsd: family.aiAccount.balanceUsd,
+    concurrencyLimit: family.aiAccount.concurrencyLimit,
+    availableModels: assignableModels(family.aiAccount, store.modelOptions),
+  })
+}
+
+function handleMutationResult(
+  section: SectionName,
+  result: FamilyMutationResult,
+  successMessage: string,
+  refreshFailureMessage = '已保存，但列表暂时没有更新，请重新加载。',
+): void {
+  if (!result.succeeded) {
+    setSectionError(section, result.error)
+    return
+  }
+  if (result.refreshError !== null) {
+    feedbackBySection[section].error = result.refreshError
+    feedbackBySection[section].message = refreshFailureMessage
+    return
+  }
+  feedbackBySection[section].error = null
+  feedbackBySection[section].message = successMessage
+}
+
+function clearSectionFeedback(): void {
+  resetSectionFeedback('profile')
+  resetSectionFeedback('ai')
+  resetSectionFeedback('password')
+}
+
+function setSectionError(section: SectionName, value: ApiError | null): void {
+  feedbackBySection[section].error = value
+  feedbackBySection[section].message = ''
+}
+
+function resetSectionFeedback(section: SectionName): void {
+  feedbackBySection[section].error = null
+  feedbackBySection[section].message = ''
 }
 
 function statusLabel(value: string): string {
   return value === 'active' ? '可用' : '已暂停'
+}
+
+function modelOptionsForAccount(
+  models: AIModelOption[],
+  selectedModels: string[],
+): AIModelOption[] {
+  const options = [...models]
+  const knownIds = new Set(options.map((model) => model.id))
+  for (const modelId of selectedModels) {
+    if (!knownIds.has(modelId)) {
+      options.push({ id: modelId, latencyMs: null })
+    }
+  }
+  return options.sort((left, right) => {
+    const leftLatency = left.latencyMs ?? Number.POSITIVE_INFINITY
+    const rightLatency = right.latencyMs ?? Number.POSITIVE_INFINITY
+    if (leftLatency !== rightLatency) {
+      return leftLatency - rightLatency
+    }
+    return left.id.localeCompare(right.id)
+  })
+}
+
+function assignableModels(
+  account: AdminFamilyAiAccount,
+  models: AIModelOption[],
+): string[] {
+  const accessible = account.availableModels.length
+    ? account.availableModels
+    : account.allowedModels
+  if (accessible.length > 0) {
+    return accessible
+  }
+  return models.map((model) => model.id)
+}
+
+function fastestModel(models: AIModelOption[]): AIModelOption | null {
+  const measuredModels = models.filter(
+    (model) => model.id && model.latencyMs !== null && model.latencyMs >= 0,
+  )
+  if (measuredModels.length === 0) {
+    return models.find((model) => model.id) ?? null
+  }
+  return measuredModels.reduce((fastest, model) =>
+    (model.latencyMs ?? Number.POSITIVE_INFINITY) <
+    (fastest.latencyMs ?? Number.POSITIVE_INFINITY)
+      ? model
+      : fastest,
+  )
+}
+
+function latencyLabel(model: AIModelOption): string {
+  return model.latencyMs === null ? '延迟待测' : `约 ${model.latencyMs} ms`
+}
+
+function isModelSelected(modelId: string): boolean {
+  return aiForm.availableModels.includes(modelId)
+}
+
+function isFastestModel(modelId: string): boolean {
+  return fastestModel(store.modelOptions)?.id === modelId
 }
 
 function formatDate(value: string): string {
@@ -90,6 +362,79 @@ function formatDate(value: string): string {
   }
   return date.toLocaleDateString('zh-CN')
 }
+
+function formatTime(value: string): string {
+  if (!value) {
+    return '尚未上报'
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return '尚未上报'
+  }
+  return date.toLocaleString('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function deviceStatusLabel(isOnline: boolean | null): string {
+  if (isOnline === null) {
+    return '状态未知'
+  }
+  return isOnline ? '在线' : '离线'
+}
+
+function deviceStatusClass(isOnline: boolean | null): string {
+  if (isOnline === null) {
+    return 'unknown'
+  }
+  return isOnline ? 'online' : 'offline'
+}
+
+function capabilityLabel(value: string): string {
+  return (
+    {
+      camera: '摄像头',
+      microphone: '麦克风',
+      display: '显示屏',
+      touch: '触摸屏',
+      wifi: '无线网络',
+      bluetooth: '蓝牙',
+      battery: '电池',
+      cellular: '移动网络',
+    }[value] ?? value
+  )
+}
+
+function emptyProfileForm(): UpdateAdminFamilyProfileInput {
+  return {
+    displayName: '',
+    guardianFamilyName: '',
+    childNickname: '',
+    childBirthday: '',
+  }
+}
+
+function emptyAiAccountForm(): UpdateAdminFamilyAiAccountInput {
+  return {
+    providerAccountId: '',
+    status: 'active',
+    balanceUsd: 0,
+    concurrencyLimit: 1,
+    availableModels: [],
+  }
+}
+
+type SectionName = 'profile' | 'ai' | 'password'
+
+function emptySectionFeedback(): {
+  error: ApiError | null
+  message: string
+} {
+  return { error: null, message: '' }
+}
 </script>
 
 <template>
@@ -99,23 +444,33 @@ function formatDate(value: string): string {
         <p class="eyebrow">家庭与 AI 服务</p>
         <h1>家长账号</h1>
         <p class="page-description">
-          每个家长账号都会自动开通一份 AI 服务。你可以在这里查看家庭绑定情况，
-          并统一调整额度、模型和使用状态。
+          查看家庭和绑定设备，统一维护家长资料、AI 服务与登录安全。
         </p>
       </div>
       <div class="header-actions">
-        <button type="button" class="secondary" :disabled="store.isLoading" @click="store.load">
+        <button
+          type="button"
+          class="secondary"
+          :disabled="store.isLoading"
+          @click="store.load"
+        >
           重新加载
         </button>
-        <button type="button" class="primary" @click="openCreate">新建家长账号</button>
+        <button type="button" class="primary" @click="openCreate">
+          新建家长账号
+        </button>
       </div>
     </header>
 
     <Transition name="toast">
-      <p v-if="store.lastMessage" class="success-message">{{ store.lastMessage }}</p>
+      <p v-if="store.lastMessage && !selectedFamily" class="success-message">
+        {{ store.lastMessage }}
+      </p>
     </Transition>
     <Transition name="toast">
-      <p v-if="store.error" class="error-message">{{ store.error.message }}</p>
+      <p v-if="store.error && !selectedFamily" class="error-message">
+        {{ store.error.message }}
+      </p>
     </Transition>
 
     <Transition name="page" mode="out-in">
@@ -133,11 +488,10 @@ function formatDate(value: string): string {
             <tr>
               <th>家长</th>
               <th>宝贝信息</th>
-              <th>AI 账号</th>
+              <th>AI 服务</th>
               <th>剩余额度</th>
-              <th>可分配模型</th>
-              <th>家长账号</th>
-              <th>创建时间</th>
+              <th>可用模型</th>
+              <th>绑定设备</th>
               <th></th>
             </tr>
           </thead>
@@ -145,16 +499,25 @@ function formatDate(value: string): string {
             <tr v-for="family in store.families" :key="family.parentAccountId">
               <td>
                 <span class="parent-name">
-                  {{ family.guardianFamilyName || family.parentDisplayName || '未填写称呼' }}
+                  {{
+                    family.guardianFamilyName ||
+                    family.parentDisplayName ||
+                    '未填写称呼'
+                  }}
                 </span>
                 <span class="parent-meta">{{ family.phone || '未绑定手机号' }}</span>
               </td>
               <td>
                 <span>{{ family.childNickname || '未填写宝贝姓名' }}</span>
-                <span class="parent-meta">{{ formatDate(family.childBirthday) }}</span>
+                <span class="parent-meta">
+                  {{ formatDate(family.childBirthday) }}
+                </span>
               </td>
               <td>
-                <span v-if="family.aiAccount" :class="['status', family.aiAccount.status]">
+                <span
+                  v-if="family.aiAccount"
+                  :class="['status', family.aiAccount.status]"
+                >
                   {{ statusLabel(family.aiAccount.status) }}
                 </span>
                 <span v-else class="status missing">待开通</span>
@@ -170,32 +533,28 @@ function formatDate(value: string): string {
               </td>
               <td>
                 <span v-if="family.aiAccount">
-                  {{ family.aiAccount.availableModels.join('、') || '使用默认模型' }}
+                  {{
+                    assignableModels(family.aiAccount, store.modelOptions).join('、') ||
+                    '等待模型'
+                  }}
                 </span>
                 <span v-else>未开通</span>
               </td>
               <td>
-                <span :class="['status', family.status]">
-                  {{ statusLabel(family.status) }}
-                </span>
+                <button
+                  type="button"
+                  class="link-button"
+                  @click="openFamily(family)"
+                >
+                  查看设备
+                </button>
               </td>
-              <td>{{ formatDate(family.createdAt) }}</td>
               <td>
                 <button
-                  v-if="family.aiAccount"
                   type="button"
-                  :disabled="store.isSubmitting"
-                  @click="openAiEditor(family)"
+                  @click="openFamily(family)"
                 >
-                  管理 AI 服务
-                </button>
-                <button
-                  v-else
-                  type="button"
-                  :disabled="store.isSubmitting"
-                  @click="store.retryAiAccount(family.parentAccountId)"
-                >
-                  {{ store.isSubmitting ? '正在开通…' : '重新开通 AI 服务' }}
+                  管理
                 </button>
               </td>
             </tr>
@@ -206,9 +565,17 @@ function formatDate(value: string): string {
 
     <Transition name="modal">
       <div v-if="isCreateOpen" class="dialog-backdrop" @click.self="closeCreate">
-        <form class="dialog" @submit.prevent="createFamily">
-          <h2>新建家长账号</h2>
-          <p class="dialog-hint">创建后会自动开通家长 AI 账号，家长可直接登录应用。</p>
+        <form
+          class="dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-family-title"
+          @submit.prevent="createFamily"
+        >
+          <h2 id="create-family-title">新建家长账号</h2>
+          <p class="dialog-hint">
+            创建后会自动开通家长 AI 服务，家长可直接登录应用。
+          </p>
           <label>
             <span>手机号</span>
             <input
@@ -230,19 +597,21 @@ function formatDate(value: string): string {
             />
           </label>
           <label>
-            <span>家长姓氏</span>
+            <span>家长姓氏（可选）</span>
             <input v-model.trim="createForm.guardianFamilyName" type="text" />
           </label>
           <label>
-            <span>宝贝姓名</span>
+            <span>宝贝姓名（可选）</span>
             <input v-model.trim="createForm.childNickname" type="text" />
           </label>
           <label>
-            <span>宝贝生日</span>
+            <span>宝贝生日（可选）</span>
             <input v-model="createForm.childBirthday" type="date" />
           </label>
           <div class="dialog-actions">
-            <button type="button" class="secondary" @click="closeCreate">取消</button>
+            <button type="button" class="secondary" @click="closeCreate">
+              取消
+            </button>
             <button type="submit" class="primary" :disabled="store.isSubmitting">
               {{ store.isSubmitting ? '正在创建…' : '创建账号' }}
             </button>
@@ -251,47 +620,396 @@ function formatDate(value: string): string {
       </div>
     </Transition>
 
+    <Transition name="drawer">
+      <div
+        v-if="selectedFamily"
+        class="drawer-backdrop"
+        @click.self="closeFamily"
+      >
+        <aside
+          class="family-drawer"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="family-detail-title"
+        >
+          <header class="drawer-header">
+            <div>
+              <p class="eyebrow">家长账号</p>
+              <h2 id="family-detail-title">
+                {{
+                  selectedFamily.guardianFamilyName ||
+                  selectedFamily.parentDisplayName ||
+                  selectedFamily.phone ||
+                  '家长账号'
+                }}
+              </h2>
+              <p class="drawer-subtitle">
+                {{ selectedFamily.phone || '未绑定手机号' }} ·
+                {{ selectedFamily.status === 'active' ? '账号可用' : '账号已停用' }}
+              </p>
+            </div>
+            <button
+              type="button"
+              class="icon-button"
+              aria-label="关闭家长账号详情"
+              @click="closeFamily"
+            >
+              ×
+            </button>
+          </header>
+
+          <div class="drawer-body">
+            <Transition name="toast">
+              <p
+                v-if="feedbackBySection.profile.message"
+                class="success-message"
+                role="status"
+              >
+                {{ feedbackBySection.profile.message }}
+              </p>
+            </Transition>
+            <Transition name="toast">
+              <p
+                v-if="feedbackBySection.profile.error"
+                class="error-message"
+                role="alert"
+              >
+                {{ feedbackBySection.profile.error.message }}
+              </p>
+            </Transition>
+
+            <section class="detail-card">
+              <div class="section-heading">
+                <div>
+                  <h3>家长资料</h3>
+                  <p>这些信息用于家长端展示和孩子生日提醒。</p>
+                </div>
+              </div>
+              <div class="form-grid">
+                <label>
+                  <span>家长称呼</span>
+                  <input
+                    v-model.trim="profileForm.displayName"
+                    type="text"
+                    autocomplete="name"
+                    placeholder="例如：萌屋妈妈"
+                  />
+                </label>
+                <label>
+                  <span>家长姓氏</span>
+                  <input
+                    v-model.trim="profileForm.guardianFamilyName"
+                    type="text"
+                    placeholder="可选"
+                  />
+                </label>
+                <label>
+                  <span>宝贝姓名</span>
+                  <input
+                    v-model.trim="profileForm.childNickname"
+                    type="text"
+                    placeholder="可选"
+                  />
+                </label>
+                <label>
+                  <span>宝贝生日</span>
+                  <input v-model="profileForm.childBirthday" type="date" />
+                </label>
+              </div>
+              <div class="section-actions">
+                <button
+                  type="button"
+                  class="primary"
+                  :disabled="store.isUpdatingProfile"
+                  @click="saveProfile"
+                >
+                  {{ store.isUpdatingProfile ? '正在保存…' : '保存家长资料' }}
+                </button>
+              </div>
+            </section>
+
+            <section class="detail-card">
+              <div class="section-heading">
+                <div>
+                  <h3>AI 服务</h3>
+                  <p>额度、并发与模型会直接影响家长端的 AI 使用。</p>
+                </div>
+                <span
+                  v-if="selectedFamily.aiAccount"
+                  :class="['status', selectedFamily.aiAccount.status]"
+                >
+                  {{ statusLabel(selectedFamily.aiAccount.status) }}
+                </span>
+              </div>
+
+              <div v-if="selectedFamily.aiAccount" class="ai-editor">
+                <Transition name="toast">
+                  <p
+                    v-if="feedbackBySection.ai.message"
+                    class="success-message"
+                    role="status"
+                  >
+                    {{ feedbackBySection.ai.message }}
+                  </p>
+                </Transition>
+                <Transition name="toast">
+                  <p
+                    v-if="feedbackBySection.ai.error"
+                    class="error-message"
+                    role="alert"
+                  >
+                    {{ feedbackBySection.ai.error.message }}
+                  </p>
+                </Transition>
+                <div class="form-grid">
+                  <label>
+                    <span>服务状态</span>
+                    <select v-model="aiForm.status">
+                      <option value="active">可用</option>
+                      <option value="suspended">暂停使用</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>剩余额度（美元）</span>
+                    <input
+                      v-model.number="aiForm.balanceUsd"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                    />
+                  </label>
+                  <label>
+                    <span>同时对话数量</span>
+                    <input
+                      v-model.number="aiForm.concurrencyLimit"
+                      type="number"
+                      min="1"
+                    />
+                  </label>
+                </div>
+
+                <div class="model-picker">
+                  <div class="model-picker-heading">
+                    <div>
+                      <span class="field-label">可分配模型</span>
+                      <p class="field-hint">
+                        家长只能使用勾选的模型，列表按当前延迟从低到高排列。
+                      </p>
+                    </div>
+                    <div class="model-picker-actions">
+                      <button type="button" class="text-button" @click="selectAllModels">
+                        全部选择
+                      </button>
+                    </div>
+                  </div>
+
+                  <div v-if="store.isLoadingModels" class="inline-state">
+                    正在读取可用模型…
+                  </div>
+                  <div v-else-if="store.modelError" class="inline-state error">
+                    {{ store.modelError.message }}
+                    <button type="button" class="text-button" @click="store.load">
+                      重新加载模型
+                    </button>
+                  </div>
+                  <div v-else-if="availableModels.length === 0" class="inline-state">
+                    暂时没有可分配的模型。请稍后重新加载。
+                  </div>
+                  <ul v-else class="model-list">
+                    <li v-for="model in availableModels" :key="model.id">
+                      <label class="model-option">
+                        <input
+                          type="checkbox"
+                          :checked="isModelSelected(model.id)"
+                          @change="toggleModel(model)"
+                        />
+                        <span class="model-option-main">
+                          <span class="model-name">
+                            <strong>{{ model.id }}</strong>
+                            <em v-if="isFastestModel(model.id)">默认最快</em>
+                          </span>
+                          <small>{{ latencyLabel(model) }}</small>
+                        </span>
+                      </label>
+                    </li>
+                  </ul>
+                </div>
+
+                <div class="section-actions">
+                  <button
+                    type="button"
+                    class="primary"
+                    :disabled="store.isUpdatingAiAccount"
+                    @click="saveAiAccount"
+                  >
+                    {{
+                      store.isUpdatingAiAccount ? '正在保存…' : '保存 AI 设置'
+                    }}
+                  </button>
+                </div>
+              </div>
+
+              <div v-else class="empty-section">
+                <p>这个家长还没有 AI 服务。</p>
+                <button
+                  type="button"
+                  class="primary"
+                  :disabled="store.isSubmitting"
+                  @click="retryAiAccount"
+                >
+                  {{ store.isSubmitting ? '正在开通…' : '重新开通 AI 服务' }}
+                </button>
+                <p v-if="feedbackBySection.ai.message" class="success-message">
+                  {{ feedbackBySection.ai.message }}
+                </p>
+                <p v-if="feedbackBySection.ai.error" class="error-message">
+                  {{ feedbackBySection.ai.error.message }}
+                </p>
+              </div>
+            </section>
+
+            <section class="detail-card">
+              <div class="section-heading">
+                <div>
+                  <h3>绑定设备</h3>
+                  <p>查看这个家庭已经连接的设备与在线状态。</p>
+                </div>
+                <button
+                  type="button"
+                  class="text-button"
+                  :disabled="isDevicesLoading"
+                  @click="reloadDevices"
+                >
+                  {{ isDevicesLoading ? '正在更新…' : '更新状态' }}
+                </button>
+              </div>
+
+              <div v-if="isDevicesLoading" class="inline-state">
+                正在读取绑定设备…
+              </div>
+              <div v-else-if="deviceError" class="inline-state error">
+                {{ deviceError.message }}
+                <button type="button" class="text-button" @click="reloadDevices">
+                  重新加载设备
+                </button>
+              </div>
+              <div v-else-if="selectedDevices.length === 0" class="empty-section">
+                <p>这个家长还没有绑定设备。家长端连接设备后会自动显示在这里。</p>
+              </div>
+              <ul v-else class="device-list">
+                <li v-for="device in selectedDevices" :key="device.deviceId">
+                  <div class="device-list-header">
+                    <strong>{{ device.deviceName || '未命名设备' }}</strong>
+                    <span
+                      :class="[
+                        'status',
+                        deviceStatusClass(device.runtime?.isOnline ?? null),
+                      ]"
+                    >
+                      {{ deviceStatusLabel(device.runtime?.isOnline ?? null) }}
+                    </span>
+                  </div>
+                  <p class="device-meta">
+                    {{ device.hardwareModel || '初芽' }} ·
+                    {{ device.firmwareVersion || '版本未知' }}
+                  </p>
+                  <p v-if="device.capabilities.length" class="device-meta">
+                    {{ device.capabilities.map(capabilityLabel).join('、') }}
+                  </p>
+                  <p class="device-meta">
+                    绑定于 {{ formatDate(device.boundAt) }} ·
+                    最近上报 {{ formatTime(device.runtime?.receivedAt ?? '') }}
+                  </p>
+                </li>
+              </ul>
+            </section>
+
+            <section class="detail-card">
+              <div class="section-heading">
+                <div>
+                  <h3>账号安全</h3>
+                  <p>重置后，家长当前在所有设备上的登录会失效。</p>
+                </div>
+              </div>
+              <div class="security-row">
+                <div>
+                  <strong>登录密码</strong>
+                  <p>家长可以用手机号和密码登录应用。</p>
+                </div>
+                <button type="button" @click="openPasswordReset">
+                  重置密码
+                </button>
+              </div>
+              <p v-if="feedbackBySection.password.message" class="success-message">
+                {{ feedbackBySection.password.message }}
+              </p>
+              <p
+                v-if="feedbackBySection.password.error"
+                class="error-message"
+              >
+                {{ feedbackBySection.password.error.message }}
+              </p>
+            </section>
+          </div>
+
+          <footer class="drawer-footer">
+            <button type="button" class="secondary" @click="closeFamily">
+              关闭
+            </button>
+          </footer>
+        </aside>
+      </div>
+    </Transition>
+
     <Transition name="modal">
       <div
-        v-if="editingAiAccount && editingFamily"
+        v-if="isPasswordResetOpen && selectedFamily"
         class="dialog-backdrop"
-        @click.self="editingAiAccount = null"
+        @click.self="closePasswordReset"
       >
-        <form class="dialog" @submit.prevent="saveAiAccount">
-          <h2>管理家长 AI 服务</h2>
+        <form
+          class="dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reset-password-title"
+          @submit.prevent="resetPassword"
+        >
+          <h2 id="reset-password-title">重置家长密码</h2>
           <p class="dialog-hint">
-            {{ editingFamily.guardianFamilyName || editingFamily.phone || '家长账号' }}
+            重置后该家长需要重新登录。请通过可靠方式把新密码交给家长。
           </p>
           <label>
-            <span>服务状态</span>
-            <select v-model="editingAiAccount.status">
-              <option value="active">可用</option>
-              <option value="suspended">暂停使用</option>
-            </select>
-          </label>
-          <label>
-            <span>剩余额度（美元）</span>
+            <span>新密码</span>
             <input
-              v-model.number="editingAiAccount.balanceUsd"
-              type="number"
-              min="0"
-              step="0.01"
+              v-model="passwordForm.password"
+              type="password"
+              minlength="8"
+              required
+              autocomplete="new-password"
+              placeholder="至少 8 位"
             />
           </label>
           <label>
-            <span>同时对话数量</span>
-            <input v-model.number="editingAiAccount.concurrencyLimit" type="number" min="1" />
-          </label>
-          <label>
-            <span>可分配模型</span>
-            <input v-model="modelsText" type="text" placeholder="多个模型之间用顿号分隔" />
+            <span>再次输入新密码</span>
+            <input
+              v-model="passwordForm.confirmation"
+              type="password"
+              minlength="8"
+              required
+              autocomplete="new-password"
+              placeholder="再次输入新密码"
+            />
           </label>
           <div class="dialog-actions">
-            <button type="button" class="secondary" @click="editingAiAccount = null">
+            <button type="button" class="secondary" @click="closePasswordReset">
               取消
             </button>
-            <button type="submit" class="primary" :disabled="store.isSubmitting">
-              {{ store.isSubmitting ? '正在保存…' : '保存更改' }}
+            <button
+              type="submit"
+              class="primary"
+              :disabled="store.isResettingPassword"
+            >
+              {{ store.isResettingPassword ? '正在重置…' : '重置密码' }}
             </button>
           </div>
         </form>
@@ -321,19 +1039,38 @@ function formatDate(value: string): string {
   font-weight: 700;
 }
 
-h1 {
+h1,
+h2,
+h3 {
   margin: 0;
   color: var(--sprout-text);
+}
+
+h1 {
   font-size: 28px;
 }
 
-.page-description {
-  max-width: 700px;
-  margin: 10px 0 0;
-  color: var(--sprout-text-muted);
+h2 {
+  font-size: 22px;
 }
 
-.header-actions {
+h3 {
+  font-size: 17px;
+}
+
+.page-description,
+.drawer-subtitle,
+.section-heading p,
+.security-row p {
+  margin: 8px 0 0;
+  color: var(--sprout-text-muted);
+  line-height: 1.6;
+}
+
+.header-actions,
+.dialog-actions,
+.section-actions,
+.model-picker-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -370,6 +1107,25 @@ button.primary:not(:disabled):hover {
 button:disabled {
   cursor: wait;
   opacity: 0.55;
+}
+
+.link-button,
+.text-button {
+  min-height: auto;
+  padding: 2px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #c94175;
+  box-shadow: none;
+}
+
+.link-button:not(:disabled):hover,
+.text-button:not(:disabled):hover {
+  border: 0;
+  background: transparent;
+  color: #a82d5a;
+  box-shadow: none;
 }
 
 .table-shell,
@@ -424,8 +1180,9 @@ tbody tr:hover {
   font-weight: 600;
 }
 
-.parent-meta {
-  margin-top: 2px;
+.parent-meta,
+.device-meta {
+  margin-top: 3px;
   color: #6b4f5a;
   font-size: 12px;
 }
@@ -439,16 +1196,23 @@ tbody tr:hover {
   font-size: 13px;
 }
 
-.status.active {
+.status.active,
+.status.online {
   background: #e7f8ee;
   color: #1d6b3f;
 }
 
 .status.suspended,
 .status.disabled,
-.status.missing {
+.status.missing,
+.status.offline {
   background: #fff0f2;
   color: #a12b4a;
+}
+
+.status.unknown {
+  background: #fff3cd;
+  color: #755600;
 }
 
 .state-panel {
@@ -492,14 +1256,19 @@ tbody tr:hover {
   color: #1d6b3f;
 }
 
-.dialog-backdrop {
+.dialog-backdrop,
+.drawer-backdrop {
   position: fixed;
   inset: 0;
+  z-index: 30;
+  background: rgb(74 46 59 / 35%);
+  backdrop-filter: blur(3px);
+}
+
+.dialog-backdrop {
   display: grid;
   place-items: center;
   padding: 20px;
-  background: rgb(74 46 59 / 35%);
-  backdrop-filter: blur(3px);
 }
 
 .dialog {
@@ -515,17 +1284,14 @@ tbody tr:hover {
   box-shadow: 0 28px 72px rgb(74 46 59 / 22%);
 }
 
-.dialog h2 {
-  margin: 0;
-  color: #4a2e3b;
-}
-
 .dialog-hint {
   margin: -6px 0 0;
   color: #6b4f5a;
+  line-height: 1.6;
 }
 
-.dialog label {
+.dialog label,
+.detail-card label {
   display: grid;
   gap: 7px;
   color: #4a2e3b;
@@ -533,7 +1299,9 @@ tbody tr:hover {
 }
 
 .dialog input,
-.dialog select {
+.dialog select,
+.detail-card input,
+.detail-card select {
   min-height: 44px;
   padding: 0 14px;
   border: 1px solid #f0bdcb;
@@ -548,7 +1316,9 @@ tbody tr:hover {
 }
 
 .dialog input:focus,
-.dialog select:focus {
+.dialog select:focus,
+.detail-card input:focus,
+.detail-card select:focus {
   border-color: #d94f83;
   background: #ffffff;
   box-shadow: 0 0 0 3px rgb(217 79 131 / 12%);
@@ -556,10 +1326,271 @@ tbody tr:hover {
 }
 
 .dialog-actions {
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.drawer-backdrop {
   display: flex;
   justify-content: flex-end;
+}
+
+.family-drawer {
+  display: grid;
+  width: min(100%, 760px);
+  height: 100%;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border-left: 1px solid #f0bdcb;
+  background:
+    radial-gradient(circle at 96% 2%, rgb(255 224 102 / 14%), transparent 16rem),
+    #fffbfc;
+  box-shadow: -24px 0 64px rgb(74 46 59 / 18%);
+}
+
+.drawer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 26px 28px 20px;
+  border-bottom: 1px solid #f7d9e2;
+  background: rgb(255 255 255 / 88%);
+}
+
+.icon-button {
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.drawer-body {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  overflow-y: auto;
+  padding: 22px 28px 28px;
+}
+
+.detail-card {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+  border: 1px solid var(--sprout-outline);
+  border-radius: 20px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgb(194 91 128 / 6%);
+}
+
+.section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.section-actions {
+  justify-content: flex-end;
+}
+
+.ai-editor {
+  display: grid;
+  gap: 18px;
+}
+
+.model-picker {
+  display: grid;
+  gap: 12px;
+}
+
+.model-picker-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.field-label {
+  color: var(--sprout-text);
+  font-weight: 700;
+}
+
+.field-hint {
+  margin: 5px 0 0;
+  color: var(--sprout-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.model-list,
+.device-list {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.model-option {
+  display: flex !important;
+  grid-template-columns: none !important;
+  align-items: center;
+  gap: 11px !important;
+  padding: 11px 13px;
+  border: 1px solid #f7d9e2;
+  border-radius: 14px;
+  background: #fffbfc;
+  cursor: pointer;
+  transition:
+    border-color var(--sprout-duration-fast) ease,
+    background-color var(--sprout-duration-fast) ease,
+    transform var(--sprout-duration-fast) var(--sprout-ease-out);
+}
+
+.model-option:hover {
+  border-color: #e9a5b8;
+  background: #fff7fa;
+  transform: translateX(2px);
+}
+
+.model-option input {
+  width: 18px;
+  min-height: auto;
+  height: 18px;
+  flex: 0 0 auto;
+  padding: 0;
+  accent-color: #d94f83;
+}
+
+.model-option-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.model-option-main strong {
+  overflow-wrap: anywhere;
+}
+
+.model-name {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.model-name em {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #fff3cd;
+  color: #755600;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.model-option-main small {
+  flex: 0 0 auto;
+  color: #6b4f5a;
+}
+
+.inline-state,
+.empty-section {
+  padding: 14px 16px;
+  border-radius: 15px;
+  background: #fff7fa;
+  color: #6b4f5a;
+  line-height: 1.6;
+}
+
+.inline-state.error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  margin-top: 6px;
+  background: #fff0f2;
+  color: #a12b4a;
+}
+
+.empty-section {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+}
+
+.empty-section p {
+  margin: 0;
+}
+
+.device-list li {
+  display: grid;
+  gap: 3px;
+  padding: 14px 15px;
+  border: 1px solid #f7d9e2;
+  border-radius: 16px;
+  background: #fffbfc;
+}
+
+.device-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.security-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.security-row p {
+  margin-top: 4px;
+}
+
+.drawer-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 16px 28px;
+  border-top: 1px solid #f7d9e2;
+  background: rgb(255 255 255 / 92%);
+}
+
+.drawer-enter-active,
+.drawer-leave-active {
+  transition: opacity var(--sprout-duration-base) ease;
+}
+
+.drawer-enter-active .family-drawer,
+.drawer-leave-active .family-drawer {
+  transition: transform var(--sprout-duration-slow) var(--sprout-ease-out);
+}
+
+.drawer-enter-from,
+.drawer-leave-to {
+  opacity: 0;
+}
+
+.drawer-enter-from .family-drawer,
+.drawer-leave-to .family-drawer {
+  transform: translateX(24px);
 }
 
 @keyframes spin {
@@ -578,7 +1609,38 @@ tbody tr:hover {
   }
 
   table {
-    min-width: 1040px;
+    min-width: 1120px;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .dialog {
+    gap: 14px;
+    padding: 22px 18px;
+    border-radius: 22px;
+  }
+
+  .drawer-header,
+  .drawer-body,
+  .drawer-footer {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  .model-picker-heading,
+  .section-heading,
+  .security-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .security-row button,
+  .section-actions button {
+    width: 100%;
   }
 }
 </style>
