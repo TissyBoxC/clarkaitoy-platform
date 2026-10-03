@@ -8,6 +8,7 @@ import FamilyAccountsPage from '@/features/family/presentation/FamilyAccountsPag
 import ReleasePage from '@/features/ota/presentation/ReleasePage.vue'
 import SystemSettingsPage from '@/features/system/presentation/SystemSettingsPage.vue'
 import VersionManagementPage from '@/features/version_management/presentation/VersionManagementPage.vue'
+import DownloadFilesPage from '@/features/downloads/presentation/DownloadFilesPage.vue'
 import { useAuthStore } from '@/features/auth/application/authStore'
 
 /// Feature routes are registered here so removing a feature only changes its
@@ -40,6 +41,11 @@ export function createAdminRouter() {
         path: '/releases',
         name: 'releases',
         component: ReleasePage,
+      },
+      {
+        path: '/downloads',
+        name: 'downloads',
+        component: DownloadFilesPage,
       },
       {
         path: '/services',

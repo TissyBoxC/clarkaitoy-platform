@@ -47,6 +47,10 @@ async function logout(): Promise<void> {
           <span class="nav-dot" aria-hidden="true"></span>
           内容发布
         </RouterLink>
+        <RouterLink to="/downloads">
+          <span class="nav-dot" aria-hidden="true"></span>
+          下载文件
+        </RouterLink>
         <RouterLink to="/ui-text">
           <span class="nav-dot" aria-hidden="true"></span>
           界面文案

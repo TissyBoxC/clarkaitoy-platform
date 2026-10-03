@@ -619,3 +619,173 @@ test('checks and upgrades brand services from the service version page', async (
   await expect(page.getByText('品牌管理端 的升级已开始。')).toBeVisible()
   await expect(page.getByRole('button', { name: '查看进度' })).toBeVisible()
 })
+
+test('lists download files and manages uploads, deletion, and the release index', async ({ page }) => {
+  await useAdminSession(page)
+
+  const indexedFile = {
+    id: 'file-client',
+    name: 'sprout-parent-app-0.12.3.apk',
+    relative_path: 'releases/android/sprout-parent-app-0.12.3.apk',
+    directory: 'releases/android',
+    size_bytes: 48234496,
+    modified_at: '2026-10-04T02:00:00Z',
+    sha256: 'a'.repeat(64),
+    version: '0.12.3',
+    kind: 'client',
+    platform: 'android',
+    is_indexed: true,
+  }
+  const pendingFile = {
+    id: 'file-firmware',
+    name: 'sprout-firmware-0.12.3.bin',
+    relative_path: 'releases/firmware/sprout-firmware-0.12.3.bin',
+    directory: 'releases/firmware',
+    size_bytes: 2097152,
+    modified_at: '2026-10-04T02:10:00Z',
+    sha256: 'b'.repeat(64),
+    version: '0.12.3',
+    kind: 'firmware',
+    platform: 'esp32_s3',
+    is_indexed: false,
+  }
+  let releaseFiles = [indexedFile, pendingFile]
+  const uploadPayloads: Record<string, string> = {}
+  let refreshRequests = 0
+  const deletedPaths: string[] = []
+
+  await page.route('**/api/v1/admin/storage/files', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ data: { files: releaseFiles } }),
+    })
+  })
+  await page.route('**/api/v1/admin/storage/files/upload', async (route) => {
+    const request = route.request()
+    expect(request.method()).toBe('POST')
+    const body = request.postData() ?? ''
+    for (const field of [
+      'name="file"',
+      'name="relative_path"',
+      'name="directory"',
+      'name="filename"',
+      'name="version"',
+      'name="kind"',
+      'name="platform"',
+    ]) {
+      expect(body).toContain(field)
+    }
+    uploadPayloads.body = body
+    const uploadedFile = {
+      id: 'file-resource',
+      name: 'learning-pack-0.12.3.zip',
+      relative_path: 'releases/resource/learning-pack-0.12.3.zip',
+      directory: 'releases/resource',
+      size_bytes: 1024,
+      modified_at: '2026-10-04T03:00:00Z',
+      sha256: 'c'.repeat(64),
+      version: '0.12.3',
+      kind: 'resource',
+      platform: 'all',
+      is_indexed: true,
+    }
+    releaseFiles = [...releaseFiles, uploadedFile]
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ data: { file: uploadedFile } }),
+    })
+  })
+  await page.route('**/api/v1/admin/storage/index/status', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          available: true,
+          refreshed_at: '2026-10-04T02:30:00Z',
+          indexed_file_count: 1,
+          pending_file_count: 1,
+        },
+      }),
+    })
+  })
+  await page.route('**/api/v1/admin/storage/index/refresh', async (route) => {
+    refreshRequests += 1
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          available: true,
+          refreshed_at: '2026-10-04T03:05:00Z',
+          indexed_file_count: 2,
+          pending_file_count: 1,
+        },
+      }),
+    })
+  })
+  await page.route('**/api/v1/admin/storage/files/**', async (route) => {
+    const request = route.request()
+    if (request.method() !== 'DELETE') {
+      await route.fallback()
+      return
+    }
+    const relativePath = decodeURIComponent(
+      new URL(request.url()).pathname.replace('/api/v1/admin/storage/files/', ''),
+    )
+    deletedPaths.push(relativePath)
+    releaseFiles = releaseFiles.filter((file) => file.relative_path !== relativePath)
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ data: {} }),
+    })
+  })
+
+  await page.goto('/downloads')
+
+  await expect(page.getByRole('heading', { name: '下载文件' })).toBeVisible()
+  await expect(page.locator('table tbody tr')).toHaveCount(2)
+  await expect(
+    page.locator('table tbody').getByText('sprout-parent-app-0.12.3.apk', { exact: true }),
+  ).toBeVisible()
+  await expect(page.getByText('待登记', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText('按版本查看')).toBeVisible()
+  await expect(page.getByText('1 / 2 已登记')).toBeVisible()
+
+  await page.getByLabel('发布状态').selectOption('pending')
+  await expect(page.locator('table tbody tr')).toHaveCount(1)
+  await expect(
+    page.locator('table tbody').getByText('sprout-firmware-0.12.3.bin', { exact: true }),
+  ).toBeVisible()
+
+  await page.getByLabel('文件类型').selectOption('client')
+  await expect(page.locator('table tbody tr')).toHaveCount(0)
+
+  await page.getByRole('button', { name: '清除筛选' }).click()
+  await expect(page.locator('table tbody tr')).toHaveCount(2)
+
+  await page.getByRole('button', { name: '上传文件' }).click()
+  const uploadDialog = page.getByRole('dialog', { name: '上传到下载服务器' })
+  await expect(uploadDialog).toBeVisible()
+  await uploadDialog.getByLabel('本地文件').setInputFiles({
+    name: 'learning-pack-0.12.3.zip',
+    mimeType: 'application/zip',
+    buffer: Buffer.from('learning-pack'),
+  })
+  await uploadDialog.getByLabel('目标目录').fill('releases/resource')
+  await uploadDialog.getByLabel('文件名').fill('learning-pack-0.12.3.zip')
+  await uploadDialog.getByLabel('版本号').fill('0.12.3')
+  await uploadDialog.getByLabel('文件类型').selectOption('resource')
+  await uploadDialog.getByLabel('适用平台').selectOption('all')
+  await uploadDialog.getByRole('button', { name: '上传并刷新索引' }).click()
+
+  await expect(page.getByText('learning-pack-0.12.3.zip 已上传到下载服务器。')).toBeVisible()
+  expect(uploadPayloads.body).toContain('releases/resource/learning-pack-0.12.3.zip')
+  expect(refreshRequests).toBeGreaterThan(0)
+  await expect(page.locator('table tbody tr')).toHaveCount(3)
+
+  await page.getByRole('button', { name: '删除' }).first().click()
+  const deleteDialog = page.getByRole('dialog', { name: /删除 .*？/ })
+  await expect(deleteDialog).toBeVisible()
+  await deleteDialog.getByRole('button', { name: '确认删除' }).click()
+  await expect(page.getByText('已从下载服务器删除。')).toBeVisible()
+  expect(deletedPaths[0]).toBe('releases/android/sprout-parent-app-0.12.3.apk')
+})
