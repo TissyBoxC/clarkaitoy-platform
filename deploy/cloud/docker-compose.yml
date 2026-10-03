@@ -242,7 +242,7 @@ services:
       [
         "sh",
         "-c",
-        "chown -R ${SPROUT_DOWNLOAD_SFTP_UID}:${SPROUT_DOWNLOAD_SFTP_GID} /srv/releases && chmod 750 /srv/releases",
+        "chown -R ${SPROUT_DOWNLOAD_SFTP_UID}:${SPROUT_DOWNLOAD_SFTP_GID} /srv/releases && chmod 755 /srv/releases",
       ]
     volumes:
       - sprout_download_data:/srv/releases
