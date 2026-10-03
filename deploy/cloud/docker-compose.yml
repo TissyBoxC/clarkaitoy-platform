@@ -219,11 +219,9 @@ services:
       - "${SPROUT_SERVICE_BIND_ADDRESS}:${SPROUT_ADMIN_WEB_PORT}:8080"
     read_only: true
     tmpfs:
-      # The nginx process runs as UID/GID 101. Docker's default tmpfs owner
-      # caused mkdir failures under the read-only root filesystem.
-      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
-      - /var/cache/nginx:rw,noexec,nosuid,size=64m,uid=101,gid=101,mode=0755
-      - /var/run:rw,noexec,nosuid,size=1m,uid=101,gid=101,mode=0755
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
     depends_on:
       device_platform:
         condition: service_started
@@ -289,9 +287,11 @@ services:
       - no-new-privileges:true
     read_only: true
     tmpfs:
-      - /tmp
-      - /var/cache/nginx
-      - /var/run
+      # The container entrypoint runs as UID/GID 101 under a read-only root
+      # filesystem, so nginx's runtime directories must be explicitly writable.
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+      - /var/cache/nginx:rw,noexec,nosuid,size=64m,uid=101,gid=101,mode=0755
+      - /var/run:rw,noexec,nosuid,size=1m,uid=101,gid=101,mode=0755
     ports:
       - "${SPROUT_DOWNLOAD_HTTP_BIND_ADDRESS}:${SPROUT_DOWNLOAD_HTTP_PORT}:8080"
     volumes:
