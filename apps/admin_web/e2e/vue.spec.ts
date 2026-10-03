@@ -132,7 +132,7 @@ test('uses the fastest available model and the provider default balance', async 
 
   await page.goto('/settings')
 
-  await expect(page.getByLabel('初始余额（美元）')).toHaveValue('6.5')
+  await expect(page.getByLabel('初始额度')).toHaveValue('6.5')
   await expect(page.getByLabel('默认模型')).toHaveValue('fast-model')
 })
 
@@ -254,7 +254,7 @@ test('manages a family AI account, profile, password, and bound devices', async 
   await page.goto('/families')
 
   await expect(page.getByRole('heading', { name: '家长账号' })).toBeVisible()
-  await expect(page.getByText('$0.00')).toBeVisible()
+  await expect(page.getByText('0.00', { exact: true }).first()).toBeVisible()
 
   await page.getByRole('button', { name: '管理' }).click()
 
@@ -272,7 +272,7 @@ test('manages a family AI account, profile, password, and bound devices', async 
   await expect(modelCheckboxes.nth(0)).toBeChecked()
   await expect(modelCheckboxes.nth(1)).toBeChecked()
 
-  await page.getByLabel('剩余额度（美元）').fill('12.5')
+  await page.getByLabel('剩余额度').fill('12.5')
   await page.getByLabel('同时对话数量').fill('2')
   await page.getByRole('button', { name: '保存 AI 设置' }).click()
   await expect(page.getByText('AI 设置已保存。')).toBeVisible()
@@ -298,10 +298,10 @@ test('manages a family AI account, profile, password, and bound devices', async 
   expect(drawerBox?.width).toBeLessThanOrEqual(390)
 
   await page.getByRole('button', { name: '关闭', exact: true }).click()
-  await expect(page.getByText('$12.50')).toBeVisible()
+  await expect(page.getByText('12.50', { exact: true }).first()).toBeVisible()
 
   await page.getByRole('button', { name: '管理' }).click()
-  await expect(page.getByLabel('剩余额度（美元）')).toHaveValue('12.5')
+  await expect(page.getByLabel('剩余额度')).toHaveValue('12.5')
   await expect(page.getByLabel('家长称呼')).toHaveValue('更新后的家长')
 })
 

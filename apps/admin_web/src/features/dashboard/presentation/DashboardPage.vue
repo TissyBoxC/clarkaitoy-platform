@@ -15,8 +15,8 @@ function formatCount(value: number): string {
   return new Intl.NumberFormat('zh-CN').format(value)
 }
 
-function formatUsd(value: number): string {
-  return `$${value.toFixed(2)}`
+function formatQuota(value: number): string {
+  return value.toFixed(2)
 }
 
 function formatTime(value: string): string {
@@ -95,11 +95,11 @@ function releaseStatusLabel(value: string): string {
           <MetricCard
             label="今日 AI 对话"
             :value="formatCount(overview.todayConversationCount)"
-            :detail="`今日消耗 ${formatUsd(overview.todaySpentUsd)}`"
+            :detail="`今日消耗 ${formatQuota(overview.todaySpentUsd)}`"
           />
           <MetricCard
             label="剩余总额度"
-            :value="formatUsd(overview.totalBalanceUsd)"
+            :value="formatQuota(overview.totalBalanceUsd)"
             :detail="`${formatCount(overview.pendingReleaseCount)} 个更新待发布`"
           />
         </div>

@@ -527,7 +527,7 @@ function emptySectionFeedback(): {
               </td>
               <td>
                 <span v-if="family.aiAccount">
-                  ${{ family.aiAccount.balanceUsd.toFixed(2) }}
+                  {{ family.aiAccount.balanceUsd.toFixed(2) }}
                 </span>
                 <span v-else>未开通</span>
               </td>
@@ -770,7 +770,7 @@ function emptySectionFeedback(): {
                     </select>
                   </label>
                   <label>
-                    <span>剩余额度（美元）</span>
+                    <span>剩余额度</span>
                     <input
                       v-model.number="aiForm.balanceUsd"
                       type="number"

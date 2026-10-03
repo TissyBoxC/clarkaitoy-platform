@@ -59,7 +59,7 @@ onMounted(() => {
         </div>
         <div class="field-grid">
           <label>
-            <span>初始余额（美元）</span>
+            <span>初始额度</span>
             <input
               v-model.number="store.settings.defaultBalanceUsd"
               type="number"
