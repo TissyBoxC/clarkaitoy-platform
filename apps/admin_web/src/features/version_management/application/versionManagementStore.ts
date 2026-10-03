@@ -91,7 +91,14 @@ export const useVersionManagementStore = defineStore('admin-version-management',
       lastMessage.value =
         count === 0 ? '所有服务都已是当前版本。' : `检查完成，有 ${count} 个服务可以升级。`
     } catch (caught: unknown) {
-      error.value = mapApiError(caught)
+      const mappedError = mapApiError(caught)
+      // A check request can fail while the last complete snapshot is still
+      // useful. Keep the page readable and tell the operator what to retry.
+      if (mappedError.retryable && snapshot.value !== null) {
+        lastMessage.value = '暂时无法请求新的检查结果，正在显示上次检查结果。'
+      } else {
+        error.value = mappedError
+      }
     } finally {
       isChecking.value = false
     }

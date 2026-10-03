@@ -20,6 +20,12 @@ const currentServiceCount = computed(
   () => store.services.filter((service) => service.status === 'current').length,
 )
 const upgradeableServiceCount = computed(() => store.outdatedServices.length)
+const upgradeableServices = computed(() =>
+  store.services.filter((service) => isUpgradeableService(service.id)),
+)
+const readOnlyServices = computed(() =>
+  store.services.filter((service) => !isUpgradeableService(service.id)),
+)
 
 onMounted(async () => {
   await store.load()
@@ -274,7 +280,15 @@ function operationLog(operation: AdminServiceVersionOperation | null): string {
           </div>
         </div>
 
-        <div class="table-shell">
+        <section class="service-group">
+          <div class="group-heading">
+            <div>
+              <h2>可升级服务</h2>
+              <p>选择任意已发布版本，可直接升级或回溯。</p>
+            </div>
+            <span>{{ upgradeableServices.length }} 个服务</span>
+          </div>
+          <div class="table-shell">
           <table>
             <thead>
               <tr>
@@ -287,7 +301,7 @@ function operationLog(operation: AdminServiceVersionOperation | null): string {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="service in store.services" :key="service.id">
+              <tr v-for="service in upgradeableServices" :key="service.id">
                 <td>
                   <div class="service-name">
                     <strong>{{ service.displayName || service.id }}</strong>
@@ -312,7 +326,7 @@ function operationLog(operation: AdminServiceVersionOperation | null): string {
                   </a>
                 </td>
                 <td>
-                  <div v-if="isUpgradeableService(service.id)" class="version-picker">
+                  <div class="version-picker">
                     <label :for="`service-version-${service.id}`">
                       {{ service.displayName || service.id }}版本
                     </label>
@@ -356,12 +370,10 @@ function operationLog(operation: AdminServiceVersionOperation | null): string {
                       </button>
                     </template>
                   </div>
-                  <p v-else class="read-only-copy">只读展示，不参与页面升级</p>
                 </td>
                 <td>
                   <div class="row-action">
                     <button
-                      v-if="isUpgradeableService(service.id)"
                       type="button"
                       class="upgrade-button"
                       :disabled="!canStartUpgrade(service)"
@@ -373,7 +385,6 @@ function operationLog(operation: AdminServiceVersionOperation | null): string {
                           : `升级到 ${targetVersion(service) || '所选版本'}`
                       }}
                     </button>
-                    <span v-else class="read-only-copy">只读展示</span>
                     <small class="checked-at">
                       {{ formatTime(service.lastCheckedAt) }}
                     </small>
@@ -382,7 +393,60 @@ function operationLog(operation: AdminServiceVersionOperation | null): string {
               </tr>
             </tbody>
           </table>
-        </div>
+          </div>
+        </section>
+
+        <section v-if="readOnlyServices.length > 0" class="service-group">
+          <div class="group-heading">
+            <div>
+              <h2>只读服务</h2>
+              <p>这些服务只展示当前状态，升级需要单独安排维护窗口。</p>
+            </div>
+            <span>{{ readOnlyServices.length }} 个服务</span>
+          </div>
+          <div class="table-shell">
+            <table>
+              <thead>
+                <tr>
+                  <th>服务</th>
+                  <th>当前版本</th>
+                  <th>最新版本</th>
+                  <th>状态</th>
+                  <th>最近检查</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="service in readOnlyServices" :key="service.id">
+                  <td>
+                    <div class="service-name">
+                      <strong>{{ service.displayName || service.id }}</strong>
+                    </div>
+                    <code>{{ service.image || '暂未提供镜像信息' }}</code>
+                  </td>
+                  <td class="version-cell">{{ service.currentVersion || '未知' }}</td>
+                  <td class="version-cell">{{ service.latestVersion || '待检查' }}</td>
+                  <td>
+                    <span :class="['status', service.status]">
+                      {{ statusLabel(service.status) }}
+                    </span>
+                    <a
+                      v-if="service.releaseUrl"
+                      class="release-link"
+                      :href="service.releaseUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      查看版本说明
+                    </a>
+                  </td>
+                  <td>
+                    <small class="checked-at">{{ formatTime(service.lastCheckedAt) }}</small>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
 
         <section class="operations-panel">
           <div class="panel-heading">
@@ -666,12 +730,45 @@ button:disabled {
 }
 
 .table-shell {
-  margin-top: 18px;
   overflow: hidden;
   border: 1px solid var(--sprout-outline);
   border-radius: var(--sprout-radius-card);
   background: #ffffff;
   box-shadow: 0 10px 28px rgb(194 91 128 / 6%);
+}
+
+.service-group {
+  margin-top: 18px;
+}
+
+.group-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 10px;
+}
+
+.group-heading h2,
+.group-heading p {
+  margin: 0;
+}
+
+.group-heading h2 {
+  color: var(--sprout-text);
+  font-size: 17px;
+}
+
+.group-heading p {
+  margin-top: 4px;
+  color: var(--sprout-text-muted);
+  font-size: 13px;
+}
+
+.group-heading > span {
+  color: var(--sprout-text-muted);
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 table {
