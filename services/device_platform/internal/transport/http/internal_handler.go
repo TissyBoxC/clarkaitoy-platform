@@ -3,19 +3,106 @@ package http
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	gatewaydomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/ai_gateway/domain"
 	gatewayservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/ai_gateway/service"
 	bindingdomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_binding/domain"
 	bindingservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_binding/service"
+	releaseStoredomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/release_store/domain"
 )
 
 // internalHandler exposes service-to-service endpoints for the AI relay.
 // Every route must be mounted behind the internal service token.
 type internalHandler struct {
-	bindingService *bindingservice.Service
-	aiService      *gatewayservice.Service
+	bindingService      *bindingservice.Service
+	aiService           *gatewayservice.Service
+	releaseStoreService releaseStoreAdminService
+}
+
+// uploadReleaseFile lets the release pipeline publish one artifact through
+// the same store implementation used by the console. The caller must already
+// be authenticated by the internal service token.
+func (handler internalHandler) uploadReleaseFile(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	request.Body = http.MaxBytesReader(
+		response,
+		request.Body,
+		releaseStoredomain.MaxUploadBytes+1<<20,
+	)
+	if err := request.ParseMultipartForm(32 << 20); err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			writeError(response, request, http.StatusRequestEntityTooLarge, "file_too_large", "上传文件过大")
+			return
+		}
+		writeError(response, request, http.StatusBadRequest, "invalid_upload", "请重新提交发布文件")
+		return
+	}
+	relativePath := strings.TrimSpace(request.FormValue("relative_path"))
+	if relativePath == "" {
+		relativePath = strings.TrimSpace(request.FormValue("path"))
+	}
+	overwrite, _ := strconv.ParseBool(strings.TrimSpace(request.FormValue("overwrite")))
+	file, _, err := request.FormFile("file")
+	if err != nil {
+		writeError(response, request, http.StatusBadRequest, "missing_file", "请提交发布文件")
+		return
+	}
+	defer file.Close()
+	uploaded, err := handler.releaseStoreService.UploadFile(
+		request.Context(),
+		releaseStoredomain.UploadInput{
+			RelativePath: relativePath,
+			Overwrite:    overwrite,
+			Version:      strings.TrimSpace(request.FormValue("version")),
+			Channel:      strings.TrimSpace(request.FormValue("channel")),
+			Platform:     strings.TrimSpace(request.FormValue("platform")),
+			Kind:         strings.TrimSpace(request.FormValue("kind")),
+			FileName:     strings.TrimSpace(request.FormValue("filename")),
+		},
+		file,
+	)
+	if err != nil {
+		writeReleaseStoreError(response, request, err)
+		return
+	}
+	writeSuccess(response, request, http.StatusCreated, map[string]any{"file": uploaded})
+}
+
+// refreshReleaseIndex regenerates the public manifest and global index for
+// one release. The endpoint is intentionally non-destructive when the version
+// directory is absent, matching the console's refresh contract.
+func (handler internalHandler) refreshReleaseIndex(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	var payload refreshReleaseIndexRequest
+	if err := decodeOptionalJSON(request, &payload); err != nil {
+		writeError(response, request, http.StatusBadRequest, "invalid_request", "请检查版本信息")
+		return
+	}
+	if strings.TrimSpace(payload.Version) == "" {
+		writeError(response, request, http.StatusBadRequest, "invalid_request", "请指定要刷新的发布版本")
+		return
+	}
+	result, err := handler.releaseStoreService.RefreshIndex(
+		request.Context(),
+		releaseStoredomain.IndexRefreshRequest{
+			Version:     payload.Version,
+			Channel:     payload.Channel,
+			Title:       payload.Title,
+			PublishedAt: payload.PublishedAt,
+		},
+	)
+	if err != nil {
+		writeReleaseStoreError(response, request, err)
+		return
+	}
+	writeSuccess(response, request, http.StatusOK, map[string]any{"release": result})
 }
 
 // aiCredential resolves the AI execution credential for one bound device.

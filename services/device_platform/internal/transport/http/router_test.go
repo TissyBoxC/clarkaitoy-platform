@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"log/slog"
+	"mime/multipart"
 	stdhttp "net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/config"
 	gatewayservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/ai_gateway/service"
 	bindingservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_binding/service"
+	releasestoreservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/release_store/service"
 )
 
 func TestHealthEndpoint(t *testing.T) {
@@ -160,10 +162,104 @@ func TestInternalCredentialRouteRequiresServiceToken(t *testing.T) {
 	}
 }
 
+func TestInternalReleaseUploadRequiresReleaseToken(t *testing.T) {
+	options := newTestRouterOptions()
+	options.InternalAPIConfig = config.InternalAPIConfig{
+		Enabled:            true,
+		AuthToken:          strings.Repeat("t", 32),
+		ReleaseUploadToken: strings.Repeat("r", 32),
+	}
+	options.ReleaseStoreService = new(releasestoreservice.Service)
+
+	request := newInternalReleaseUploadRequest(t)
+	recorder := httptest.NewRecorder()
+	NewRouter(options).ServeHTTP(recorder, request)
+
+	if recorder.Code != stdhttp.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", stdhttp.StatusUnauthorized, recorder.Code)
+	}
+}
+
+func TestInternalReleaseUploadRejectsGeneralServiceToken(t *testing.T) {
+	options := newTestRouterOptions()
+	options.InternalAPIConfig = config.InternalAPIConfig{
+		Enabled:            true,
+		AuthToken:          strings.Repeat("t", 32),
+		ReleaseUploadToken: strings.Repeat("r", 32),
+	}
+	options.ReleaseStoreService = new(releasestoreservice.Service)
+
+	request := newInternalReleaseUploadRequest(t)
+	request.Header.Set("Authorization", "Bearer "+strings.Repeat("t", 32))
+	recorder := httptest.NewRecorder()
+	NewRouter(options).ServeHTTP(recorder, request)
+
+	if recorder.Code != stdhttp.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", stdhttp.StatusUnauthorized, recorder.Code)
+	}
+}
+
+func TestInternalReleaseUploadRouteIsHiddenWithoutReleaseToken(t *testing.T) {
+	options := newTestRouterOptions()
+	options.InternalAPIConfig = config.InternalAPIConfig{
+		Enabled:   true,
+		AuthToken: strings.Repeat("t", 32),
+	}
+	options.ReleaseStoreService = new(releasestoreservice.Service)
+
+	request := newInternalReleaseUploadRequest(t)
+	recorder := httptest.NewRecorder()
+	NewRouter(options).ServeHTTP(recorder, request)
+
+	if recorder.Code != stdhttp.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", stdhttp.StatusNotFound, recorder.Code)
+	}
+}
+
 type testEnvelope struct {
 	SchemaVersion string             `json:"schema_version"`
 	RequestID     string             `json:"request_id"`
 	Error         *httpapi.ErrorBody `json:"error"`
+}
+
+func newInternalReleaseUploadRequest(t *testing.T) *stdhttp.Request {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("version", "0.12.4"); err != nil {
+		t.Fatalf("write version field: %v", err)
+	}
+	if err := writer.WriteField("channel", "stable"); err != nil {
+		t.Fatalf("write channel field: %v", err)
+	}
+	if err := writer.WriteField("platform", "any"); err != nil {
+		t.Fatalf("write platform field: %v", err)
+	}
+	if err := writer.WriteField("kind", "resource"); err != nil {
+		t.Fatalf("write kind field: %v", err)
+	}
+	if err := writer.WriteField("filename", "resource.bin"); err != nil {
+		t.Fatalf("write filename field: %v", err)
+	}
+	filePart, err := writer.CreateFormFile("file", "resource.bin")
+	if err != nil {
+		t.Fatalf("create file field: %v", err)
+	}
+	if _, err := filePart.Write([]byte("release bytes")); err != nil {
+		t.Fatalf("write file field: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	request := httptest.NewRequest(
+		stdhttp.MethodPost,
+		"/internal/v1/release-files",
+		&body,
+	)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	return request
 }
 
 func decodeEnvelope(t *testing.T, recorder *httptest.ResponseRecorder) testEnvelope {

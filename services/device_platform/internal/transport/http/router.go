@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/TissyBoxC/sprout-platform/packages/go/httpapi"
@@ -332,6 +333,29 @@ func NewRouter(options RouterOptions) http.Handler {
 				requireServiceToken(
 					options.InternalAPIConfig.AuthToken,
 					http.HandlerFunc(internalHandler.aiCredential),
+				),
+			)
+		}
+		if options.ReleaseStoreService != nil &&
+			strings.TrimSpace(options.InternalAPIConfig.ReleaseUploadToken) != "" {
+			internalHandler := internalHandler{
+				releaseStoreService: options.ReleaseStoreService,
+			}
+			// Release automation only needs the constrained download-store
+			// surface. Keeping these routes separate from admin routes avoids
+			// granting a CI credential access to family or provider data.
+			mux.Handle(
+				"POST /internal/v1/release-files",
+				requireServiceToken(
+					options.InternalAPIConfig.ReleaseUploadToken,
+					http.HandlerFunc(internalHandler.uploadReleaseFile),
+				),
+			)
+			mux.Handle(
+				"POST /internal/v1/release-index/refresh",
+				requireServiceToken(
+					options.InternalAPIConfig.ReleaseUploadToken,
+					http.HandlerFunc(internalHandler.refreshReleaseIndex),
 				),
 			)
 		}

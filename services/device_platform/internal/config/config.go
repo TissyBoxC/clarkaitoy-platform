@@ -39,8 +39,9 @@ func (c HTTPConfig) Address() string {
 
 // InternalAPIConfig contains service-to-service management API settings.
 type InternalAPIConfig struct {
-	Enabled   bool
-	AuthToken string
+	Enabled            bool
+	AuthToken          string
+	ReleaseUploadToken string
 }
 
 // AuthConfig contains parent authentication settings.
@@ -148,6 +149,10 @@ func Load() (Config, error) {
 		Internal: InternalAPIConfig{
 			Enabled:   envBool("DEVICE_PLATFORM_INTERNAL_API_ENABLED", false),
 			AuthToken: env("DEVICE_PLATFORM_INTERNAL_API_TOKEN", ""),
+			ReleaseUploadToken: env(
+				"DEVICE_PLATFORM_RELEASE_UPLOAD_TOKEN",
+				"",
+			),
 		},
 		Auth: AuthConfig{
 			AccessTokenSecret: env("DEVICE_PLATFORM_AUTH_ACCESS_TOKEN_SECRET", ""),
@@ -225,6 +230,9 @@ func Load() (Config, error) {
 
 	if cfg.Internal.Enabled && len(strings.TrimSpace(cfg.Internal.AuthToken)) < 32 {
 		return Config{}, fmt.Errorf("DEVICE_PLATFORM_INTERNAL_API_TOKEN must contain at least 32 characters when the internal API is enabled")
+	}
+	if token := strings.TrimSpace(cfg.Internal.ReleaseUploadToken); token != "" && len(token) < 32 {
+		return Config{}, fmt.Errorf("DEVICE_PLATFORM_RELEASE_UPLOAD_TOKEN must contain at least 32 characters")
 	}
 	if cfg.MQTT.InsecureSkipVerify {
 		return Config{}, fmt.Errorf("DEVICE_PLATFORM_MQTT_INSECURE_SKIP_VERIFY must remain false")
