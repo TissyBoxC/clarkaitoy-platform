@@ -14,8 +14,13 @@ import (
 )
 
 const (
-	releasePageSizeDefault = 20
-	releasePageSizeMax     = 50
+	// ReleaseCatalogLimit matches the worker's default release catalogue
+	// capacity. Keeping it exported prevents the transport layer from drifting
+	// to a smaller page size than the catalogue can contain.
+	ReleaseCatalogLimit = 100
+
+	releasePageSizeDefault = ReleaseCatalogLimit
+	releasePageSizeMax     = ReleaseCatalogLimit
 )
 
 // ReleaseSource lists published versions from the worker-generated catalogue.

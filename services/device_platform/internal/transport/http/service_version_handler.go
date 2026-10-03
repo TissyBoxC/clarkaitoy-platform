@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/service_version/domain"
+	serviceversionservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/service_version/service"
 )
 
 // versionSnapshotResponse is the console-facing service inventory.
@@ -113,7 +114,10 @@ func (handler adminHandler) listServiceReleases(
 ) {
 	serviceID := strings.TrimSpace(request.PathValue("service"))
 	page := parsePositiveQueryInt(request.URL.Query().Get("page"), 1)
-	pageSize := parsePositiveQueryInt(request.URL.Query().Get("page_size"), 20)
+	pageSize := parsePositiveQueryInt(
+		request.URL.Query().Get("page_size"),
+		serviceversionservice.ReleaseCatalogLimit,
+	)
 	releasePage, err := handler.serviceVersionService.ListReleases(
 		request.Context(),
 		serviceID,
