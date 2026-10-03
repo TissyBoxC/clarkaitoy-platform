@@ -72,16 +72,19 @@ function releaseStatusLabel(value: string): string {
     </Transition>
 
     <Transition name="page" mode="out-in">
-      <div v-if="store.isLoading && overview === null" key="loading" class="state-panel">
-        <span class="state-spinner" aria-hidden="true"></span>
-        正在汇总平台数据…
-      </div>
-      <div v-else-if="overview === null" key="empty" class="state-panel">
-        <span class="state-icon" aria-hidden="true">☆</span>
-        <span>暂时没有可显示的数据，请稍后重新加载。</span>
-      </div>
-      <template v-else key="content">
-        <div class="metric-grid">
+      <div
+        :key="store.isLoading && overview === null ? 'loading' : overview === null ? 'empty' : 'content'"
+      >
+        <div v-if="store.isLoading && overview === null" class="state-panel">
+          <span class="state-spinner" aria-hidden="true"></span>
+          正在汇总平台数据…
+        </div>
+        <div v-else-if="overview === null" class="state-panel">
+          <span class="state-icon" aria-hidden="true">☆</span>
+          <span>暂时没有可显示的数据，请稍后重新加载。</span>
+        </div>
+        <template v-else>
+          <div class="metric-grid">
           <MetricCard
             label="家长账号"
             :value="formatCount(overview.parentAccountCount)"
@@ -102,9 +105,9 @@ function releaseStatusLabel(value: string): string {
             :value="formatQuota(overview.totalBalanceUsd)"
             :detail="`${formatCount(overview.pendingReleaseCount)} 个更新待发布`"
           />
-        </div>
+          </div>
 
-        <section class="release-panel">
+          <section class="release-panel">
           <div class="panel-heading">
             <div>
               <h2>最近更新</h2>
@@ -128,8 +131,9 @@ function releaseStatusLabel(value: string): string {
               <time>{{ formatTime(release.publishedAt) }}</time>
             </li>
           </ul>
-        </section>
-      </template>
+          </section>
+        </template>
+      </div>
     </Transition>
   </section>
 </template>

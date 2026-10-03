@@ -164,6 +164,16 @@ validate_positive_integer() {
   fi
 }
 
+# The worker runs from the host-mounted checkout and must not depend on the
+# executor script having been sourced in the same process.
+require_command() {
+  command_name="$1"
+  if ! command -v "$command_name" >/dev/null 2>&1; then
+    echo "缺少命令: $command_name" >&2
+    exit 1
+  fi
+}
+
 validate_operation_id() {
   operation_id="$1"
   printf '%s' "$operation_id" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'

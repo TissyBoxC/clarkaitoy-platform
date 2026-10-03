@@ -249,16 +249,19 @@ function operationLog(operation: AdminServiceVersionOperation | null): string {
     </Transition>
 
     <Transition name="page" mode="out-in">
-      <div v-if="store.isLoading" key="loading" class="state-panel">
-        <span class="state-spinner" aria-hidden="true"></span>
-        正在读取服务版本…
-      </div>
-      <div v-else-if="store.services.length === 0" key="empty" class="state-panel">
-        <span class="state-icon" aria-hidden="true">☆</span>
-        <span>还没有可管理的服务。完成服务接入后，会显示在这里。</span>
-      </div>
-      <template v-else key="content">
-        <div class="summary-grid" aria-label="服务版本概览">
+      <div
+        :key="store.isLoading ? 'loading' : store.services.length === 0 ? 'empty' : 'content'"
+      >
+        <div v-if="store.isLoading" class="state-panel">
+          <span class="state-spinner" aria-hidden="true"></span>
+          正在读取服务版本…
+        </div>
+        <div v-else-if="store.services.length === 0" class="state-panel">
+          <span class="state-icon" aria-hidden="true">☆</span>
+          <span>还没有可管理的服务。完成服务接入后，会显示在这里。</span>
+        </div>
+        <template v-else>
+          <div class="summary-grid" aria-label="服务版本概览">
           <div>
             <span>全部服务</span>
             <strong>{{ store.services.length }}</strong>
@@ -401,9 +404,9 @@ function operationLog(operation: AdminServiceVersionOperation | null): string {
             </tbody>
           </table>
           </div>
-        </section>
+          </section>
 
-        <section class="operations-panel">
+          <section class="operations-panel">
           <div class="panel-heading">
             <div>
               <h2>升级记录</h2>
@@ -433,8 +436,9 @@ function operationLog(operation: AdminServiceVersionOperation | null): string {
               <button type="button" @click="store.selectOperation(operation.id)">查看进度</button>
             </li>
           </ul>
-        </section>
-      </template>
+          </section>
+        </template>
+      </div>
     </Transition>
 
     <Transition name="modal">

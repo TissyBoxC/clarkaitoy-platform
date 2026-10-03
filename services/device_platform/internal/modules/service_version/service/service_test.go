@@ -199,20 +199,45 @@ func TestInfrastructureNeverUpgradable(t *testing.T) {
 func TestSnapshotWithoutWorkerStateIsUnknown(t *testing.T) {
 	service, _ := newTestService(t, "")
 
-	services, _, err := service.Snapshot(context.Background())
+	result, err := service.SnapshotResult(context.Background())
 	if err != nil {
-		t.Fatalf("Snapshot() returned unexpected error: %v", err)
+		t.Fatalf("SnapshotResult() returned unexpected error: %v", err)
 	}
-	if len(services) == 0 {
+	if len(result.Services) == 0 {
 		t.Fatal("expected the catalogue to be returned even without a snapshot")
 	}
-	for _, item := range services {
+	for _, item := range result.Services {
 		if item.Status != domain.ServiceStatusUnknown {
 			t.Fatalf("expected unknown status, got %q for %s", item.Status, item.ID)
 		}
 		if item.CanUpgrade {
 			t.Fatalf("an unknown service must not be upgradable: %s", item.ID)
 		}
+	}
+	if result.CheckedAt.IsZero() {
+		t.Fatal("expected the platform read time when the worker snapshot is absent")
+	}
+	if result.StateSource != "platform-read" {
+		t.Fatalf("expected platform-read state source, got %q", result.StateSource)
+	}
+}
+
+func TestSnapshotResultUsesWorkerTimestampWhenPresent(t *testing.T) {
+	service, _ := newTestService(t, `{
+		"generated_at":"2026-10-03T00:00:00Z",
+		"services":[]
+	}`)
+
+	result, err := service.SnapshotResult(context.Background())
+	if err != nil {
+		t.Fatalf("SnapshotResult() returned unexpected error: %v", err)
+	}
+	want := time.Date(2026, time.October, 3, 0, 0, 0, 0, time.UTC)
+	if !result.CheckedAt.Equal(want) {
+		t.Fatalf("expected worker timestamp %s, got %s", want, result.CheckedAt)
+	}
+	if result.StateSource != "worker" {
+		t.Fatalf("expected worker state source, got %q", result.StateSource)
 	}
 }
 

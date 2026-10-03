@@ -30,6 +30,18 @@ type Options struct {
 	Clock      func() time.Time
 }
 
+// SnapshotResult is one console-facing view of the worker snapshot.
+//
+// CheckedAt is always populated for a healthy response. When the worker has
+// not written status.json yet, it is the time the platform read the shared
+// state directory so the console can distinguish "not reported yet" from a
+// permanently missing page value.
+type SnapshotResult struct {
+	Services    []domain.Service
+	CheckedAt   time.Time
+	StateSource string
+}
+
 // UpgradePlan is a validated batch of service upgrades.
 type UpgradePlan struct {
 	TargetService string
@@ -74,9 +86,20 @@ func New(options Options) (*Service, error) {
 // Snapshot merges the worker snapshot with the catalogue so every managed
 // service is visible even before the worker has reported on it.
 func (s *Service) Snapshot(ctx context.Context) ([]domain.Service, time.Time, error) {
+	result, err := s.SnapshotResult(ctx)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	return result.Services, result.CheckedAt, nil
+}
+
+// SnapshotResult returns the inventory plus the timestamp the console should
+// show as the latest check. A worker-generated timestamp is preferred; the
+// read timestamp is the explicit fallback for a missing or zero timestamp.
+func (s *Service) SnapshotResult(ctx context.Context) (SnapshotResult, error) {
 	snapshot, err := s.repository.Status(ctx)
 	if err != nil && !errors.Is(err, domain.ErrStateUnavailable) {
-		return nil, time.Time{}, err
+		return SnapshotResult{}, err
 	}
 	reported := make(map[string]domain.Service, len(snapshotServices(snapshot)))
 	for _, service := range snapshotServices(snapshot) {
@@ -106,10 +129,19 @@ func (s *Service) Snapshot(ctx context.Context) ([]domain.Service, time.Time, er
 			catalogRank(s.catalog, services[right].ID)
 	})
 	var checkedAt time.Time
+	stateSource := "worker"
 	if snapshot != nil {
 		checkedAt = snapshot.GeneratedAt
 	}
-	return services, checkedAt, nil
+	if checkedAt.IsZero() {
+		checkedAt = s.clock().UTC()
+		stateSource = "platform-read"
+	}
+	return SnapshotResult{
+		Services:    services,
+		CheckedAt:   checkedAt,
+		StateSource: stateSource,
+	}, nil
 }
 
 // AllCurrent reports whether every service is at its newest version. Unknown
