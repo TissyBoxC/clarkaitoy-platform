@@ -47,6 +47,17 @@ type releaseDirectoryTarget struct {
 	channel string
 }
 
+// ArtifactLookup is a resolved canonical file from the shared download volume.
+// It is intentionally independent from the operations module so CI-published
+// files can be exposed to release lookup without a reverse dependency.
+type ArtifactLookup struct {
+	Version     string
+	Kind        string
+	Platform    string
+	DownloadURL string
+	SHA256      string
+}
+
 // Options contains download-store dependencies.
 type Options struct {
 	RootDir       string
@@ -189,6 +200,52 @@ func (s *Service) IndexStatus(ctx context.Context) (domain.IndexStatus, error) {
 	}, nil
 }
 
+// FindArtifact resolves the newest indexed file for one release version. The
+// lookup accepts the operator-facing kind (client/resource) and maps it to the
+// canonical CI directory before scanning manifest files.
+func (s *Service) FindArtifact(
+	ctx context.Context,
+	version string,
+	kind string,
+	platform string,
+) (*ArtifactLookup, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	version = strings.TrimSpace(version)
+	kind = strings.TrimSpace(kind)
+	platform = strings.TrimSpace(platform)
+	if !versionPattern.MatchString(version) ||
+		!kindPattern.MatchString(kind) ||
+		!platformPattern.MatchString(platform) {
+		return nil, domain.ErrArtifactNotFound
+	}
+	expectedKind := artifactDirectoryKind(kind, platform, "")
+	expectedPrefix := path.Join(version, domain.DefaultChannel, platform, expectedKind) + "/"
+	inventory, err := s.Inventory(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for index := range inventory.Files {
+		file := &inventory.Files[index]
+		if !file.IsIndexed ||
+			file.Release == nil ||
+			!strings.HasPrefix(file.RelativePath, expectedPrefix) ||
+			file.DownloadURL == "" ||
+			file.SHA256 == "" {
+			continue
+		}
+		return &ArtifactLookup{
+			Version:     file.Release.Version,
+			Kind:        kind,
+			Platform:    file.Release.Platform,
+			DownloadURL: file.DownloadURL,
+			SHA256:      file.SHA256,
+		}, nil
+	}
+	return nil, domain.ErrArtifactNotFound
+}
+
 // UploadFile stores one manually uploaded file.
 //
 // The caller passes a single reader so the handler can enforce the HTTP body
@@ -201,13 +258,13 @@ func (s *Service) UploadFile(
 	if err := ctx.Err(); err != nil {
 		return domain.File{}, err
 	}
-	relativePath, err := NormalizeFilePath(input.RelativePath)
+	relativePath, err := resolveUploadPath(input)
 	if err != nil {
 		return domain.File{}, err
 	}
 	parent := path.Dir(relativePath)
 	if parent != "." {
-		if err := s.root.MkdirAll(parent, 0o755); err != nil {
+		if err := s.root.MkdirAll(parent, 0o775); err != nil {
 			return domain.File{}, fmt.Errorf("create download directory: %w", err)
 		}
 	}
@@ -578,6 +635,59 @@ func ParseArtifactPath(relativePath string) (*domain.FileRelease, bool) {
 	}, true
 }
 
+// resolveUploadPath accepts either a complete relative path or the release
+// metadata submitted by the console. Structured metadata is authoritative so
+// a browser cannot accidentally store an artifact outside the indexed layout.
+func resolveUploadPath(input domain.UploadInput) (string, error) {
+	version := strings.TrimSpace(input.Version)
+	channel := strings.TrimSpace(input.Channel)
+	platform := strings.TrimSpace(input.Platform)
+	kind := strings.TrimSpace(input.Kind)
+	fileName := strings.TrimSpace(input.FileName)
+	if version == "" && channel == "" && platform == "" && kind == "" && fileName == "" {
+		return NormalizeFilePath(input.RelativePath)
+	}
+	if channel == "" {
+		channel = domain.DefaultChannel
+	}
+	if !versionPattern.MatchString(version) ||
+		!channelPattern.MatchString(channel) ||
+		!platformPattern.MatchString(platform) ||
+		!kindPattern.MatchString(kind) ||
+		!segmentPattern.MatchString(fileName) {
+		return "", domain.ErrPathInvalid
+	}
+	return path.Join(
+		version,
+		channel,
+		platform,
+		artifactDirectoryKind(kind, platform, fileName),
+		fileName,
+	), nil
+}
+
+// artifactDirectoryKind keeps operator-facing release kinds aligned with the
+// canonical package directories produced by CI. The release record still uses
+// client/resource/firmware, while the download URL keeps the transport format.
+func artifactDirectoryKind(kind string, platform string, fileName string) string {
+	if kind == domain.ArtifactKindClient {
+		if platform == "android" &&
+			(fileName == "" || strings.HasSuffix(strings.ToLower(fileName), ".apk")) {
+			return domain.ArtifactKindAPK
+		}
+		if platform == "all" &&
+			(fileName == "" || strings.HasSuffix(strings.ToLower(fileName), ".tar.gz")) {
+			return domain.ArtifactKindAdminWeb
+		}
+	}
+	if kind == domain.ArtifactKindResource &&
+		platform == "all" &&
+		strings.HasPrefix(fileName, "sprout-contracts-") {
+		return domain.ArtifactKindContracts
+	}
+	return kind
+}
+
 // NormalizeFilePath validates a writable relative path.
 func NormalizeFilePath(value string) (string, error) {
 	normalized, err := NormalizeRelativePath(value)
@@ -630,7 +740,7 @@ func (s *Service) createTemporary(parent string) (string, *os.File, error) {
 	for attempt := 0; attempt < 16; attempt++ {
 		name := fmt.Sprintf(".upload-%d-%d.tmp", os.Getpid(), s.clock.Now().UnixNano()+int64(attempt))
 		fullPath := path.Join(parent, name)
-		file, err := s.root.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		file, err := s.root.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o664)
 		if err == nil {
 			return name, file, nil
 		}
@@ -671,7 +781,7 @@ func (s *Service) loadIndex() (domain.ReleaseIndex, error) {
 func (s *Service) writeJSONAtomic(relativePath string, payload any) error {
 	parent := path.Dir(relativePath)
 	if parent != "." {
-		if err := s.root.MkdirAll(parent, 0o755); err != nil {
+		if err := s.root.MkdirAll(parent, 0o775); err != nil {
 			return fmt.Errorf("create download metadata directory: %w", err)
 		}
 	}

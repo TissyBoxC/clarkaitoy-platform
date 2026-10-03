@@ -24,9 +24,22 @@ var (
 // Service owns operational policy and release lifecycle.
 type Service struct {
 	repository      repository.Repository
+	artifactStore   ReleaseArtifactStore
 	timeSource      clock.Clock
 	onlineThreshold time.Duration
 	ota             OTAConfig
+}
+
+// ReleaseArtifactStore resolves a release artifact directly from the shared
+// download volume. CI publication writes files there without touching
+// platform_releases, so lookup must not depend on prior registration.
+type ReleaseArtifactStore interface {
+	FindArtifact(
+		ctx context.Context,
+		version string,
+		kind string,
+		platform string,
+	) (*domain.ReleaseArtifact, error)
 }
 
 // RuntimePolicyReader exposes the narrow settings projection to callers that
@@ -38,6 +51,7 @@ type RuntimePolicyReader interface {
 // Options contains operations dependencies.
 type Options struct {
 	Repository      repository.Repository
+	ArtifactStore   ReleaseArtifactStore
 	Clock           clock.Clock
 	OnlineThreshold time.Duration
 	OTA             OTAConfig
@@ -65,10 +79,21 @@ func New(options Options) (*Service, error) {
 	}
 	return &Service{
 		repository:      options.Repository,
+		artifactStore:   options.ArtifactStore,
 		timeSource:      timeSource,
 		onlineThreshold: onlineThreshold,
 		ota:             options.OTA,
 	}, nil
+}
+
+// SetArtifactStore injects the shared download-volume reader after both
+// services are constructed. It is optional so existing tests can construct
+// the operations service with only a repository.
+func (s *Service) SetArtifactStore(store ReleaseArtifactStore) {
+	if s == nil {
+		return
+	}
+	s.artifactStore = store
 }
 
 // ListFamilyAccounts returns parent accounts with their dependent AI account.
@@ -218,7 +243,14 @@ func (s *Service) FindReleaseArtifact(
 		!isReleasePlatform(platform) {
 		return nil, domain.ErrReleaseNotFound
 	}
-	return s.repository.FindReleaseArtifact(ctx, version, kind, platform)
+	artifact, err := s.repository.FindReleaseArtifact(ctx, version, kind, platform)
+	if err == nil {
+		return artifact, nil
+	}
+	if !errors.Is(err, domain.ErrReleaseNotFound) || s.artifactStore == nil {
+		return nil, err
+	}
+	return s.artifactStore.FindArtifact(ctx, version, kind, platform)
 }
 
 // CreateRelease validates and stores a draft delivery.

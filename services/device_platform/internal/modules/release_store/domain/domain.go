@@ -28,6 +28,19 @@ const (
 	MaxUploadBytes int64 = 512 * 1024 * 1024
 
 	DefaultChannel = "stable"
+
+	// Canonical release artifact kinds differ from the operator-facing
+	// registration kinds: the package directory uses the transport format
+	// (apk/admin-web) while platform_releases stores the delivery action
+	// (client/resource). Keeping the mapping here prevents the download panel
+	// and the release registration flow from drifting apart.
+	ArtifactKindAPK       = "apk"
+	ArtifactKindAdminWeb  = "admin-web"
+	ArtifactKindContracts = "contracts"
+	ArtifactKindBinary    = "binary"
+	ArtifactKindFirmware  = "firmware"
+	ArtifactKindResource  = "resource"
+	ArtifactKindClient    = "client"
 )
 
 // File is one real file in the shared download volume.
@@ -56,6 +69,23 @@ type FileRelease struct {
 	Kind     string `json:"kind"`
 }
 
+// RegistrationKind maps a canonical artifact directory to the release kind
+// used by platform_releases. Unknown values are returned unchanged so the
+// operator can still inspect and register newer artifact formats.
+func (r *FileRelease) RegistrationKind() string {
+	if r == nil {
+		return ""
+	}
+	switch r.Kind {
+	case ArtifactKindAPK, ArtifactKindAdminWeb:
+		return ArtifactKindClient
+	case ArtifactKindContracts, ArtifactKindResource:
+		return ArtifactKindResource
+	default:
+		return r.Kind
+	}
+}
+
 // UploadInput is one validated manual upload.
 //
 // RelativePath is relative to the shared root and must include the file name.
@@ -63,6 +93,11 @@ type FileRelease struct {
 type UploadInput struct {
 	RelativePath string
 	Overwrite    bool
+	Version      string
+	Channel      string
+	Platform     string
+	Kind         string
+	FileName     string
 }
 
 // IndexRefreshRequest regenerates one release manifest and the global index.

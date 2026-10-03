@@ -169,6 +169,7 @@ func Run() error {
 		return fmt.Errorf("create release store service: %w", err)
 	}
 	defer releaseStore.Close()
+	operations.SetArtifactStore(releaseArtifactStoreAdapter{store: releaseStore})
 
 	server := &http.Server{
 		Addr: cfg.HTTP.Address(),

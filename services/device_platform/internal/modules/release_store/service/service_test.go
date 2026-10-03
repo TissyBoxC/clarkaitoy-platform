@@ -260,6 +260,72 @@ func TestRefreshIndexMatchesPublicReleaseContract(t *testing.T) {
 	}
 }
 
+func TestUploadFileBuildsCanonicalReleasePathFromMetadata(t *testing.T) {
+	service, root := newTestService(t)
+	uploaded, err := service.UploadFile(
+		context.Background(),
+		domain.UploadInput{
+			Version:  "0.12.4",
+			Channel:  "stable",
+			Platform: "android",
+			Kind:     "client",
+			FileName: "sprout-parent-app-v0.12.4.apk",
+		},
+		strings.NewReader("apk"),
+	)
+	if err != nil {
+		t.Fatalf("UploadFile() returned unexpected error: %v", err)
+	}
+	expected := "0.12.4/stable/android/apk/sprout-parent-app-v0.12.4.apk"
+	if uploaded.RelativePath != expected {
+		t.Fatalf("expected canonical path %q, got %q", expected, uploaded.RelativePath)
+	}
+	if uploaded.Release == nil ||
+		uploaded.Release.Version != "0.12.4" ||
+		uploaded.Release.Channel != "stable" ||
+		uploaded.Release.Platform != "android" ||
+		uploaded.Release.Kind != "apk" ||
+		uploaded.Release.RegistrationKind() != "client" {
+		t.Fatalf("unexpected release metadata: %+v", uploaded.Release)
+	}
+	if _, err := os.Stat(filepath.Join(root, expected)); err != nil {
+		t.Fatalf("expected canonical file to exist: %v", err)
+	}
+}
+
+func TestFindArtifactResolvesIndexedCIFileByRegistrationKind(t *testing.T) {
+	service, root := newTestService(t)
+	releaseDirectory := filepath.Join(root, "0.12.4", "stable", "android", "apk")
+	if err := os.MkdirAll(releaseDirectory, 0o755); err != nil {
+		t.Fatalf("create release directory: %v", err)
+	}
+	artifactPath := filepath.Join(releaseDirectory, "sprout-parent-app-v0.12.4.apk")
+	if err := os.WriteFile(artifactPath, []byte("apk"), 0o644); err != nil {
+		t.Fatalf("write artifact: %v", err)
+	}
+	if _, err := service.RefreshIndex(
+		context.Background(),
+		domain.IndexRefreshRequest{Version: "0.12.4", Channel: "stable"},
+	); err != nil {
+		t.Fatalf("refresh release index: %v", err)
+	}
+
+	artifact, err := service.FindArtifact(
+		context.Background(),
+		"0.12.4",
+		"client",
+		"android",
+	)
+	if err != nil {
+		t.Fatalf("FindArtifact() returned unexpected error: %v", err)
+	}
+	if artifact.Kind != "client" ||
+		artifact.DownloadURL !=
+			"https://download.example.test/0.12.4/stable/android/apk/sprout-parent-app-v0.12.4.apk" {
+		t.Fatalf("unexpected artifact: %+v", artifact)
+	}
+}
+
 func TestRefreshIndexRejectsInvalidReleaseDirectory(t *testing.T) {
 	service, _ := newTestService(t)
 	_, err := service.RefreshIndex(context.Background(), domain.IndexRefreshRequest{

@@ -21,6 +21,11 @@ type fakeReleaseStoreAdminService struct {
 	err             error
 	uploadPath      string
 	uploadOverwrite bool
+	uploadVersion   string
+	uploadChannel   string
+	uploadPlatform  string
+	uploadKind      string
+	uploadFileName  string
 	uploadBody      string
 	deletedPath     string
 	refreshInput    releaseStoredomain.IndexRefreshRequest
@@ -52,6 +57,11 @@ func (service *fakeReleaseStoreAdminService) UploadFile(
 	payload, _ := io.ReadAll(reader)
 	service.uploadPath = input.RelativePath
 	service.uploadOverwrite = input.Overwrite
+	service.uploadVersion = input.Version
+	service.uploadChannel = input.Channel
+	service.uploadPlatform = input.Platform
+	service.uploadKind = input.Kind
+	service.uploadFileName = input.FileName
 	service.uploadBody = string(payload)
 	return service.uploaded, service.err
 }
@@ -137,6 +147,38 @@ func TestUploadReleaseFilePassesPathAndStream(t *testing.T) {
 			service.uploadPath,
 			service.uploadOverwrite,
 			service.uploadBody,
+		)
+	}
+}
+
+func TestUploadReleaseFilePassesStructuredReleaseMetadata(t *testing.T) {
+	service := &fakeReleaseStoreAdminService{
+		uploaded: releaseStoredomain.File{
+			RelativePath: "0.12.4/stable/android/client/sprout-app.apk",
+			SHA256:       strings.Repeat("c", 64),
+		},
+	}
+	handler := adminHandler{releaseStoreService: service}
+	request := newStructuredUploadRequest(t)
+	response := httptest.NewRecorder()
+
+	handler.uploadReleaseFile(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, response.Code, response.Body.String())
+	}
+	if service.uploadVersion != "0.12.4" ||
+		service.uploadChannel != "stable" ||
+		service.uploadPlatform != "android" ||
+		service.uploadKind != "client" ||
+		service.uploadFileName != "sprout-app.apk" {
+		t.Fatalf(
+			"unexpected structured upload metadata: version=%q channel=%q platform=%q kind=%q filename=%q",
+			service.uploadVersion,
+			service.uploadChannel,
+			service.uploadPlatform,
+			service.uploadKind,
+			service.uploadFileName,
 		)
 	}
 }
@@ -296,6 +338,42 @@ func newUploadRequest(
 	request := httptest.NewRequest(
 		http.MethodPost,
 		"/api/v1/admin/release-files",
+		&requestBody,
+	)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	return request
+}
+
+func newStructuredUploadRequest(t *testing.T) *http.Request {
+	t.Helper()
+	var requestBody bytes.Buffer
+	writer := multipart.NewWriter(&requestBody)
+	for key, value := range map[string]string{
+		"directory":     "0.12.4/stable/android/client",
+		"filename":      "sprout-app.apk",
+		"version":       "0.12.4",
+		"channel":       "stable",
+		"platform":      "android",
+		"kind":          "client",
+		"relative_path": "0.12.4/stable/android/client/sprout-app.apk",
+	} {
+		if err := writer.WriteField(key, value); err != nil {
+			t.Fatalf("write %s field: %v", key, err)
+		}
+	}
+	filePart, err := writer.CreateFormFile("file", "sprout-app.apk")
+	if err != nil {
+		t.Fatalf("create file field: %v", err)
+	}
+	if _, err := filePart.Write([]byte("apk")); err != nil {
+		t.Fatalf("write file field: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/admin/storage/files/upload",
 		&requestBody,
 	)
 	request.Header.Set("Content-Type", writer.FormDataContentType())

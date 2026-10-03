@@ -65,6 +65,10 @@ func (handler adminHandler) uploadReleaseFile(
 		relativePath = strings.TrimSpace(request.FormValue("path"))
 	}
 	overwrite, _ := strconv.ParseBool(strings.TrimSpace(request.FormValue("overwrite")))
+	fileName := strings.TrimSpace(request.FormValue("filename"))
+	if fileName == "" {
+		fileName = strings.TrimSpace(request.FormValue("file_name"))
+	}
 	file, _, err := request.FormFile("file")
 	if err != nil {
 		writeError(response, request, http.StatusBadRequest, "missing_file", "请选择要上传的文件")
@@ -73,7 +77,15 @@ func (handler adminHandler) uploadReleaseFile(
 	defer file.Close()
 	uploaded, err := handler.releaseStoreService.UploadFile(
 		request.Context(),
-		domain.UploadInput{RelativePath: relativePath, Overwrite: overwrite},
+		domain.UploadInput{
+			RelativePath: relativePath,
+			Overwrite:    overwrite,
+			Version:      strings.TrimSpace(request.FormValue("version")),
+			Channel:      strings.TrimSpace(request.FormValue("channel")),
+			Platform:     strings.TrimSpace(request.FormValue("platform")),
+			Kind:         strings.TrimSpace(request.FormValue("kind")),
+			FileName:     fileName,
+		},
 		file,
 	)
 	if err != nil {
