@@ -162,8 +162,11 @@ services:
       DEVICE_PLATFORM_OTA_MANIFEST_BASE_URL: "${SPROUT_OTA_MANIFEST_BASE_URL:-}"
       DEVICE_PLATFORM_OTA_RESOURCE_BASE_URL: "${SPROUT_OTA_RESOURCE_BASE_URL:-}"
       DEVICE_PLATFORM_OTA_CLIENT_BASE_URL: "${SPROUT_OTA_CLIENT_BASE_URL:-}"
+      DEVICE_PLATFORM_SERVICE_VERSION_STATE_DIR: "${SPROUT_SERVICE_VERSION_STATE_DIR:-/var/lib/sprout-upgrades}"
+      SPROUT_SERVICE_VERSION_STATE_DIR: "${SPROUT_SERVICE_VERSION_STATE_DIR:-/var/lib/sprout-upgrades}"
     volumes:
       - ./mosquitto/certs/device:/run/sprout/mqtt:ro
+      - sprout_upgrade_data:${SPROUT_SERVICE_VERSION_STATE_DIR:-/var/lib/sprout-upgrades}
     depends_on:
       postgres:
         condition: service_healthy
@@ -297,6 +300,39 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  upgrade_worker:
+    image: alpine:3.22@sha256:3e9b4b680bfc9fb5269227cffbd6d42be39fbf7c0b908123913864aa4447e764
+    user: "0:0"
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      SPROUT_SERVICE_VERSION_STATE_DIR: "${SPROUT_SERVICE_VERSION_STATE_DIR:-/var/lib/sprout-upgrades}"
+      SPROUT_SERVICE_VERSION_CLOUD_DIR: "/opt/sprout-source/deploy/cloud"
+      SPROUT_SERVICE_VERSION_HOST_CLOUD_DIR: "${SPROUT_SERVICE_VERSION_HOST_CLOUD_DIR:-/opt/1panel/apps/sprout/deploy/cloud}"
+      SPROUT_SERVICE_VERSION_CHECK_INTERVAL_SECONDS: "${SPROUT_SERVICE_VERSION_CHECK_INTERVAL_SECONDS:-60}"
+      SPROUT_SERVICE_VERSION_RELEASE_CACHE_SECONDS: "${SPROUT_SERVICE_VERSION_RELEASE_CACHE_SECONDS:-300}"
+      SPROUT_SERVICE_VERSION_POLL_INTERVAL_SECONDS: "${SPROUT_SERVICE_VERSION_POLL_INTERVAL_SECONDS:-5}"
+      SPROUT_SERVICE_VERSION_MAX_REQUEST_BYTES: "${SPROUT_SERVICE_VERSION_MAX_REQUEST_BYTES:-65536}"
+      SPROUT_SERVICE_VERSION_STATE_UID: "${SPROUT_SERVICE_VERSION_STATE_UID:-65532}"
+      SPROUT_SERVICE_VERSION_STATE_GID: "${SPROUT_SERVICE_VERSION_STATE_GID:-65532}"
+      SPROUT_UPGRADE_HEALTH_TIMEOUT_SECONDS: "${SPROUT_UPGRADE_HEALTH_TIMEOUT_SECONDS:-180}"
+      SPROUT_UPGRADE_PLATFORM_REPOSITORY: "${SPROUT_UPGRADE_PLATFORM_REPOSITORY:-TissyBoxC/sprout-platform}"
+      SPROUT_UPGRADE_SUB2API_REPOSITORY: "${SPROUT_UPGRADE_SUB2API_REPOSITORY:-TissyBoxC/sprout-sub2api-fork}"
+      GITHUB_TOKEN: "${SPROUT_SERVICE_VERSION_GITHUB_TOKEN:-}"
+    volumes:
+      # Docker socket access is equivalent to host root. Do not expose this
+      # worker to the network and never turn user input into a shell command.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - sprout_upgrade_data:${SPROUT_SERVICE_VERSION_STATE_DIR:-/var/lib/sprout-upgrades}
+      - ../..:/opt/sprout-source
+    command:
+      [
+        "/bin/sh",
+        "-c",
+        "apk add --no-cache bash docker-cli docker-cli-compose git jq curl util-linux && exec bash /opt/sprout-source/deploy/cloud/scripts/service-upgrade-worker.sh",
+      ]
+    restart: unless-stopped
+
 volumes:
   sprout_postgres_data:
   sprout_redis_data:
@@ -304,3 +340,4 @@ volumes:
   sprout_mqtt_log:
   sprout_sub2api_data:
   sprout_download_data:
+  sprout_upgrade_data:

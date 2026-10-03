@@ -26,6 +26,8 @@ deploy/cloud/
     ├── create-parent-account.sh
     ├── check-family-ai-account.sh
     ├── upgrade-cloud.sh
+    ├── upgrade-service.sh
+    ├── service-upgrade-worker.sh
     ├── generate-download-ssh-host-keys.sh
     ├── verify-download-service.sh
     └── check-stack.sh
@@ -479,7 +481,129 @@ docker compose down -v
 `SPROUT_DOWNLOAD_PUBLIC_URL` 不是 Secret，集中维护在
 `deploy/public-endpoints.env`。
 
-### 5.3 云端一键升级
+### 5.3 品牌级服务版本管理与自动升级
+
+管理端的“系统设置 → 服务版本”是品牌级运维入口，不是“初芽”单个产品的功能页面。
+它管理整个“如此萌屋”品牌在服务器上的运行组件，因此升级对象使用服务标识，而不是
+产品名称或设备型号。当前纳入自动升级的服务只有：
+
+| 服务标识 | 含义 | 升级方式 |
+| --- | --- | --- |
+| `sub2api` | 品牌 AI 网关 | 独立镜像，独立版本 |
+| `device_platform` | 设备平台 | 平台版本镜像 |
+| `voice_gateway` | 语音网关 | 平台版本镜像 |
+| `admin_web` | 品牌管理端 | 平台版本镜像 |
+
+`postgres`、`redis`、`mqtt` 以及 `download_init`、`download_ftp`、`download_http`
+只做状态检测，不会被自动升级。基础设施升级涉及数据兼容、停机窗口和证书，必须
+单独评审并执行完整备份流程。
+
+管理端把共享状态写入 `SPROUT_SERVICE_VERSION_STATE_DIR`，默认是命名卷
+`sprout_upgrade_data` 内的 `/var/lib/sprout-upgrades`。该目录同时挂载给
+`device_platform` 和独立容器 `upgrade_worker`。生产部署目录不是默认
+`/opt/1panel/apps/sprout/deploy/cloud` 时，必须同步修改
+`SPROUT_SERVICE_VERSION_HOST_CLOUD_DIR`，否则 Docker CLI 会看不到 Compose
+引用的证书、下载目录和 `.env`：
+
+```text
+/var/lib/sprout-upgrades/
+├── status.json                        # 定时刷新的服务版本快照
+├── check-request.json                 # 管理端请求立即检查后由 worker 删除
+├── queue/<operation_id>.json          # 管理端原子写入的升级请求
+├── processing/<operation_id>.json     # worker 取走后的执行中请求
+└── results/<operation_id>.json        # 可轮询的执行进度与结果
+```
+
+`status.json` 的 `current_version` 从正在运行的容器镜像标签读取，不是从 `.env`
+推断。`latest_version` 只来自 GitHub Release；网络失败、仓库不可达或版本格式不正确
+时该字段留空并且状态为 `unknown`，不会编造版本。
+
+默认每 300 秒缓存一次 GitHub Release 查询，避免未认证请求触发限流。管理员在
+页面点击“检查更新”时，worker 会立即绕过缓存刷新一次快照；不影响定时状态展示。
+
+升级请求字段固定为：
+
+```json
+{
+  "id": "operation-id",
+  "target_service": "device_platform",
+  "target_version": "0.10.0",
+  "requested_at": "2026-10-03T10:00:00Z",
+  "requested_by": "admin-account-id"
+}
+```
+
+worker 只接受二进制/脚本内置的服务与版本白名单，不使用 `eval`，不会把请求字段
+拼进 shell 命令，也不会把 `.env`、令牌、密钥或密码写入结果。升级顺序始终是
+`sub2api → device_platform → voice_gateway → admin_web`，同一时间只执行一个任务。
+执行器先拉取目标镜像，再原子替换 `.env` 中的版本号，然后使用
+`docker compose up -d --no-deps <service>` 只重建目标服务。失败时会尝试恢复旧镜像
+和旧版本号，并把结果标记为 `failed`。
+
+`admin_web` 自升级是允许的：`upgrade_worker` 与 `admin_web` 是两个不同容器，
+升级管理端不会中断 worker。管理端重启期间结果文件仍会持续写入，完成后包含
+`succeeded` 和“管理端已重启，稍后自动恢复”状态，浏览器刷新后即可继续查看。
+
+#### 权限与安全边界
+
+`upgrade_worker` 挂载 `/var/run/docker.sock`，这等价于宿主机 `root` 权限。请同时满足：
+
+- worker 不发布任何端口，不接受外网连接，只从共享命名卷读取请求。
+- 只有管理端后端可以写入 `check-request.json` 和 `queue/*.json`；浏览器用户不能直接
+  写服务器文件。
+- 队列文件名、`operation_id`、服务名和目标版本都经过格式校验。
+- 结果目录和状态目录由 worker 以受限权限写入，管理端只能读取。
+- 不要把 `SPROUT_SERVICE_VERSION_GITHUB_TOKEN` 输出到日志、结果或界面；该变量只用于
+  提高 GitHub API 限流额度，不是必需项。
+
+#### 排障
+
+先确认 worker 与共享目录：
+
+```bash
+cd /opt/1panel/apps/sprout/deploy/cloud
+docker compose --env-file .env ps upgrade_worker device_platform admin_web
+docker compose --env-file .env logs --tail=200 upgrade_worker
+```
+
+再查看状态和最近一次结果：
+
+```bash
+docker compose --env-file .env exec -T upgrade_worker \
+  sh -c 'ls -la /var/lib/sprout-upgrades; cat /var/lib/sprout-upgrades/status.json'
+docker compose --env-file .env exec -T upgrade_worker \
+  sh -c 'ls -la /var/lib/sprout-upgrades/results'
+```
+
+如果任务长期停留在 `running`，检查目标服务健康状态和 worker 日志：
+
+```bash
+docker compose --env-file .env ps
+docker compose --env-file .env logs --tail=200 device_platform
+docker compose --env-file .env logs --tail=200 voice_gateway
+docker compose --env-file .env logs --tail=200 admin_web
+docker compose --env-file .env logs --tail=200 sub2api
+```
+
+如果 `status.json` 一直是 `unknown`，先确认 worker 容器能访问 GitHub，以及
+`SPROUT_UPGRADE_PLATFORM_REPOSITORY`、`SPROUT_UPGRADE_SUB2API_REPOSITORY` 没有被改错。
+
+#### 手动校验
+
+在服务器上可以直接调用执行器，检查结果不会修改 `.env`：
+
+```bash
+./scripts/upgrade-service.sh --check all
+./scripts/upgrade-service.sh --check admin_web
+```
+
+执行单服务升级时，命令会再次校验 Git 工作区、`.env` 和 Compose 配置：
+
+```bash
+./scripts/upgrade-service.sh admin_web
+```
+
+### 5.4 云端一键升级
 
 代码推送到 `main` 并等待 GitHub Actions 完成中文 Release 后，在服务器执行：
 
