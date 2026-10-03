@@ -123,6 +123,10 @@ export const useSystemSettingsStore = defineStore('admin-system-settings', () =>
       }
       defaultBalanceSource.value =
         defaults.source === 'sub2api' ? 'AI 服务统一设置' : defaults.source
+    } else {
+      // 统一默认值接口尚未上线时，至少以当前已保存的运营设置为准，避免页面
+      // 继续展示上一次部署遗留的余额。
+      defaultBalanceSource.value = '当前系统设置'
     }
 
     if (modelsResult.status === 'fulfilled') {
@@ -133,10 +137,7 @@ export const useSystemSettingsStore = defineStore('admin-system-settings', () =>
       }
     }
 
-    if (
-      defaultsResult.status === 'rejected' ||
-      modelsResult.status === 'rejected'
-    ) {
+    if (defaultsResult.status === 'rejected' || modelsResult.status === 'rejected') {
       integrationNotice.value =
         '暂时无法读取 AI 服务的最新配置，当前显示上次保存的内容。'
     }
