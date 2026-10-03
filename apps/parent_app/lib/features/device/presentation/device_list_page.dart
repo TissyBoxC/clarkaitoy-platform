@@ -21,14 +21,14 @@ class DeviceListPage extends ConsumerWidget {
         actions: [
           IconButton(
             tooltip: '添加设备',
-            onPressed: () => context.go('/devices/scan'),
+            onPressed: () => context.push('/devices/scan'),
             icon: const Icon(Icons.add_circle_outline_rounded),
           ),
           const SizedBox(width: 4),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.go('/devices/scan'),
+        onPressed: () => context.push('/devices/scan'),
         icon: const Icon(Icons.add_rounded),
         label: const Text('添加设备'),
       ),
@@ -85,7 +85,7 @@ class DeviceListPage extends ConsumerWidget {
                             const Text('带屏幕的初芽会显示二维码；没有屏幕时请在附近设备中选择。'),
                             const SizedBox(height: 16),
                             FilledButton.icon(
-                              onPressed: () => context.go('/devices/scan'),
+                              onPressed: () => context.push('/devices/scan'),
                               icon: const Icon(Icons.qr_code_scanner),
                               label: const Text('扫描设备绑定码'),
                             ),
@@ -231,7 +231,7 @@ class DeviceListPage extends ConsumerWidget {
             FilledButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                context.go('/devices/scan');
+                context.push('/devices/scan');
               },
               child: const Text('扫描设备二维码'),
             ),

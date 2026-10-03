@@ -48,7 +48,11 @@ class _BindEmailPageState extends ConsumerState<BindEmailPage> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('邮箱已绑定')));
-      context.go('/me');
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go('/me');
+      }
     } on Object catch (error) {
       if (mounted) {
         setState(() => _errorMessage = authErrorMessage(error));
@@ -66,7 +70,13 @@ class _BindEmailPageState extends ConsumerState<BindEmailPage> {
       appBar: AppBar(
         leading: IconButton(
           tooltip: '返回我的',
-          onPressed: () => context.go('/me'),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/me');
+            }
+          },
           icon: const Icon(Icons.arrow_back),
         ),
         title: const Text('绑定登录邮箱'),

@@ -361,16 +361,18 @@ class _DeviceProvisioningPageState
           Text('初芽已连接', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 6),
           Text(
-            binding == null
-                ? '现在可以在家长端查看设备状态。'
-                : '设备已加入“我的设备”，联网后会显示最新状态。',
+            binding == null ? '现在可以在家长端查看设备状态。' : '设备已加入“我的设备”，联网后会显示最新状态。',
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 20),
           FilledButton(
             onPressed: () {
               ref.read(deviceBindingControllerProvider.notifier).refresh();
-              context.go('/devices');
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/devices');
+              }
             },
             child: const Text('查看我的设备'),
           ),

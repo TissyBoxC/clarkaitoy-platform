@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,26 +12,80 @@ import '../application/app_update_service.dart';
 
 /// Checks the platform release service and installs client or resource updates.
 class AppUpdatePage extends ConsumerStatefulWidget {
-  const AppUpdatePage({super.key});
+  const AppUpdatePage({super.key, this.updateService, this.updateLoader});
+
+  /// Test seam for update installation without filesystem or network access.
+  final AppUpdateCoordinator? updateService;
+
+  /// Test seam for update discovery without platform package metadata.
+  final Future<AppUpdateInfo?> Function(
+    AppUpdateCoordinator service,
+    String currentVersion,
+  )?
+  updateLoader;
 
   @override
   ConsumerState<AppUpdatePage> createState() => _AppUpdatePageState();
 }
 
 class _AppUpdatePageState extends ConsumerState<AppUpdatePage> {
-  late final AppUpdateService _updateService;
+  late final AppUpdateCoordinator _updateService;
   bool _isChecking = true;
   bool _isInstalling = false;
+  bool _isLeaving = false;
   _UpdateCheckResult? _result;
   AppUpdateProgress? _progress;
   String? _checkError;
   String? _actionError;
+  CancelToken? _installCancelToken;
 
   @override
   void initState() {
     super.initState();
-    _updateService = ref.read(appUpdateServiceProvider);
+    _updateService = widget.updateService ?? ref.read(appUpdateServiceProvider);
     _check();
+  }
+
+  @override
+  void dispose() {
+    _installCancelToken?.cancel('update page closed');
+    super.dispose();
+  }
+
+  Future<bool> _handleBack() async {
+    if (_isLeaving) {
+      return false;
+    }
+    if (_isInstalling) {
+      final shouldStop = await _confirmStopUpdate(context);
+      if (!mounted || shouldStop != true) {
+        return false;
+      }
+    }
+    _isLeaving = true;
+    _installCancelToken?.cancel('update cancelled');
+    _installCancelToken = null;
+    if (mounted) {
+      setState(() {
+        _isInstalling = false;
+        _progress = null;
+      });
+    }
+    return true;
+  }
+
+  Future<void> _stopUpdate() async {
+    final shouldStop = await _confirmStopUpdate(context);
+    if (shouldStop != true || !mounted) {
+      return;
+    }
+    _installCancelToken?.cancel('update cancelled');
+    _installCancelToken = null;
+    setState(() {
+      _isInstalling = false;
+      _progress = null;
+      _actionError = '更新已停止，可以稍后重新开始';
+    });
   }
 
   Future<void> _check() async {
@@ -41,12 +96,7 @@ class _AppUpdatePageState extends ConsumerState<AppUpdatePage> {
     });
     try {
       final currentVersion = await _updateService.installedVersion();
-      final update = await ref
-          .read(authApiProvider)
-          .appUpdate(
-            platform: Platform.isAndroid ? 'android' : 'ios',
-            currentVersion: currentVersion,
-          );
+      final update = await _loadUpdate(currentVersion);
       if (!mounted) {
         return;
       }
@@ -69,6 +119,19 @@ class _AppUpdatePageState extends ConsumerState<AppUpdatePage> {
     }
   }
 
+  Future<AppUpdateInfo?> _loadUpdate(String currentVersion) {
+    final updateLoader = widget.updateLoader;
+    if (updateLoader != null) {
+      return updateLoader(_updateService, currentVersion);
+    }
+    return ref
+        .read(authApiProvider)
+        .appUpdate(
+          platform: Platform.isAndroid ? 'android' : 'ios',
+          currentVersion: currentVersion,
+        );
+  }
+
   Future<void> _install() async {
     final update = _result?.update;
     if (update == null || _isInstalling) {
@@ -87,21 +150,25 @@ class _AppUpdatePageState extends ConsumerState<AppUpdatePage> {
     setState(() {
       _isInstalling = true;
       _actionError = null;
+      _installCancelToken = CancelToken();
       _progress = const AppUpdateProgress(
         stage: AppUpdateStage.downloading,
         fraction: 0,
       );
     });
+    final cancelToken = _installCancelToken;
     try {
       if (update.isClientUpdate) {
         await _updateService.installClientUpdate(
           update: update,
           onProgress: _onProgress,
+          cancelToken: cancelToken,
         );
       } else {
         await _updateService.installResourceUpdate(
           update: update,
           onProgress: _onProgress,
+          cancelToken: cancelToken,
         );
       }
       if (!mounted) {
@@ -110,6 +177,7 @@ class _AppUpdatePageState extends ConsumerState<AppUpdatePage> {
       setState(() {
         _isInstalling = false;
         _progress = null;
+        _installCancelToken = null;
       });
       if (update.isClientUpdate) {
         _showMessage('请按系统提示完成安装');
@@ -117,12 +185,25 @@ class _AppUpdatePageState extends ConsumerState<AppUpdatePage> {
         _showMessage('内容已更新，可以继续使用');
         await _check();
       }
+    } on DioException catch (error) {
+      if (CancelToken.isCancel(error)) {
+        return;
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isInstalling = false;
+        _installCancelToken = null;
+        _actionError = _errorMessage(error);
+      });
     } on Object catch (error) {
       if (!mounted) {
         return;
       }
       setState(() {
         _isInstalling = false;
+        _installCancelToken = null;
         _actionError = _errorMessage(error);
       });
     }
@@ -144,9 +225,32 @@ class _AppUpdatePageState extends ConsumerState<AppUpdatePage> {
   @override
   Widget build(BuildContext context) {
     final update = _result?.update;
-    return Scaffold(
-      appBar: AppBar(title: const Text('软件更新')),
-      body: _buildBody(update),
+    final navigator = Navigator.of(context);
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop || !await _handleBack()) {
+          return;
+        }
+        if (mounted) {
+          navigator.pop();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('软件更新'),
+          leading: IconButton(
+            tooltip: '返回',
+            onPressed: () async {
+              if (await _handleBack() && context.mounted) {
+                Navigator.of(context).pop();
+              }
+            },
+            icon: const Icon(Icons.arrow_back_rounded),
+          ),
+        ),
+        body: _buildBody(update),
+      ),
     );
   }
 
@@ -168,6 +272,7 @@ class _AppUpdatePageState extends ConsumerState<AppUpdatePage> {
       isInstalling: _isInstalling,
       onInstall: _install,
       onCheckAgain: _check,
+      onStop: _stopUpdate,
     );
   }
 }
@@ -245,6 +350,7 @@ class _UpdateAvailableState extends StatelessWidget {
     required this.isInstalling,
     required this.onInstall,
     required this.onCheckAgain,
+    required this.onStop,
   });
 
   final AppUpdateInfo update;
@@ -254,6 +360,7 @@ class _UpdateAvailableState extends StatelessWidget {
   final bool isInstalling;
   final VoidCallback onInstall;
   final VoidCallback onCheckAgain;
+  final VoidCallback onStop;
 
   @override
   Widget build(BuildContext context) {
@@ -332,23 +439,26 @@ class _UpdateAvailableState extends StatelessWidget {
                     _ActionErrorNotice(message: actionError!),
                   ],
                   const SizedBox(height: 22),
-                  FilledButton.icon(
-                    onPressed: isInstalling || isBlocked ? null : onInstall,
-                    icon: Icon(
-                      isInstalling
-                          ? Icons.hourglass_top_rounded
-                          : isClientUpdate
-                          ? Icons.download_rounded
-                          : Icons.refresh_rounded,
+                  if (isInstalling)
+                    OutlinedButton.icon(
+                      onPressed: onStop,
+                      icon: const Icon(Icons.stop_circle_outlined),
+                      label: const Text('停止更新'),
+                    )
+                  else
+                    FilledButton.icon(
+                      onPressed: isBlocked ? null : onInstall,
+                      icon: Icon(
+                        isClientUpdate
+                            ? Icons.download_rounded
+                            : Icons.refresh_rounded,
+                      ),
+                      label: Text(
+                        isBlocked
+                            ? '暂时无法更新'
+                            : (isClientUpdate ? '下载并安装' : '立即更新'),
+                      ),
                     ),
-                    label: Text(
-                      isInstalling
-                          ? '正在准备更新'
-                          : isBlocked
-                          ? '暂时无法更新'
-                          : (isClientUpdate ? '下载并安装' : '立即更新'),
-                    ),
-                  ),
                   const SizedBox(height: 10),
                   Center(
                     child: TextButton(
@@ -526,6 +636,26 @@ Future<bool?> _confirmInstall(BuildContext context, AppUpdateInfo update) {
         FilledButton(
           onPressed: () => Navigator.of(context).pop(true),
           child: Text(update.isClientUpdate ? '开始下载' : '开始更新'),
+        ),
+      ],
+    ),
+  );
+}
+
+Future<bool?> _confirmStopUpdate(BuildContext context) {
+  return showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('停止更新'),
+      content: const Text('停止后会取消这次下载。已经完成的内容不会被应用，之后可以重新开始。'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('继续更新'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('停止更新'),
         ),
       ],
     ),

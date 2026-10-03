@@ -30,13 +30,32 @@ class AppUpdateProgress {
 
 enum AppUpdateStage { downloading, verifying, installing, extracting }
 
+/// Checks and applies one update through the page's cancellable flow.
+abstract interface class AppUpdateCoordinator {
+  Future<String> installedVersion();
+
+  String? updateProblem(AppUpdateInfo update);
+
+  Future<void> installClientUpdate({
+    required AppUpdateInfo update,
+    required void Function(AppUpdateProgress progress) onProgress,
+    CancelToken? cancelToken,
+  });
+
+  Future<void> installResourceUpdate({
+    required AppUpdateInfo update,
+    required void Function(AppUpdateProgress progress) onProgress,
+    CancelToken? cancelToken,
+  });
+}
+
 /// Installs client and resource updates after integrity verification.
 ///
 /// Client updates are handed to the Android package installer, which keeps
 /// application data in place. Resource updates are extracted into a private
 /// versioned directory and become visible only after the current-version
 /// marker is atomically replaced.
-class AppUpdateService {
+class AppUpdateService implements AppUpdateCoordinator {
   AppUpdateService({Dio? downloadClient})
     : _downloadClient =
           downloadClient ??
@@ -57,6 +76,7 @@ class AppUpdateService {
   /// The platform still returns update metadata during infrastructure
   /// migrations, so callers show an actionable state instead of failing only
   /// after the guardian starts the download.
+  @override
   String? updateProblem(AppUpdateInfo update) {
     if (update.downloadUrl.isEmpty) {
       return '更新还没有准备好，请稍后再试';
@@ -72,15 +92,18 @@ class AppUpdateService {
   }
 
   /// Returns the installed package version instead of a compile-time fallback.
+  @override
   Future<String> installedVersion() async {
     final packageInfo = await PackageInfo.fromPlatform();
     return packageInfo.version;
   }
 
   /// Downloads and opens the APK installer for a verified client package.
+  @override
   Future<void> installClientUpdate({
     required AppUpdateInfo update,
     required void Function(AppUpdateProgress progress) onProgress,
+    CancelToken? cancelToken,
   }) async {
     if (!Platform.isAndroid) {
       throw const AppException(
@@ -105,7 +128,9 @@ class AppUpdateService {
         destination: downloadedFile,
         stage: AppUpdateStage.downloading,
         onProgress: onProgress,
+        cancelToken: cancelToken,
       );
+      _throwIfCancelled(cancelToken);
       onProgress(
         const AppUpdateProgress(stage: AppUpdateStage.installing, fraction: 1),
       );
@@ -137,9 +162,11 @@ class AppUpdateService {
   ///
   /// A failed download, hash check, or extraction leaves the previous
   /// `current_version` marker untouched.
+  @override
   Future<void> installResourceUpdate({
     required AppUpdateInfo update,
     required void Function(AppUpdateProgress progress) onProgress,
+    CancelToken? cancelToken,
   }) async {
     _validateDownloadSpec(update);
     final supportDirectory = await getApplicationSupportDirectory();
@@ -171,7 +198,9 @@ class AppUpdateService {
         destination: archiveFile,
         stage: AppUpdateStage.downloading,
         onProgress: onProgress,
+        cancelToken: cancelToken,
       );
+      _throwIfCancelled(cancelToken);
       onProgress(
         const AppUpdateProgress(stage: AppUpdateStage.extracting, fraction: 0),
       );
@@ -179,6 +208,7 @@ class AppUpdateService {
         archiveFile: archiveFile,
         destination: stagingDirectory,
       );
+      _throwIfCancelled(cancelToken);
 
       if (await versionDirectory.exists()) {
         await versionDirectory.delete(recursive: true);
@@ -209,6 +239,7 @@ class AppUpdateService {
     required File destination,
     required AppUpdateStage stage,
     required void Function(AppUpdateProgress progress) onProgress,
+    CancelToken? cancelToken,
   }) async {
     try {
       await destination.parent.create(recursive: true);
@@ -216,6 +247,7 @@ class AppUpdateService {
         update.downloadUrl,
         destination.path,
         deleteOnError: true,
+        cancelToken: cancelToken,
         options: Options(
           responseType: ResponseType.stream,
           headers: const {'Accept': 'application/octet-stream'},
@@ -246,7 +278,15 @@ class AppUpdateService {
     onProgress(
       const AppUpdateProgress(stage: AppUpdateStage.verifying, fraction: 1),
     );
+    _throwIfCancelled(cancelToken);
     await _verifySha256(destination, update.sha256);
+  }
+
+  void _throwIfCancelled(CancelToken? cancelToken) {
+    final cancelError = cancelToken?.cancelError;
+    if (cancelError != null) {
+      throw cancelError;
+    }
   }
 
   Future<void> _verifySha256(File file, String expectedSha256) async {

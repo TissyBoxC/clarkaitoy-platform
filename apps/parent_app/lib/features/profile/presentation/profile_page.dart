@@ -72,8 +72,8 @@ class ProfilePage extends ConsumerWidget {
                   delay: const Duration(milliseconds: 160),
                   child: _SettingsCard(
                     account: account,
-                    onEmail: () => context.go('/account/email'),
-                    onUpdate: () => context.go('/me/update'),
+                    onEmail: () => context.push('/account/email'),
+                    onUpdate: () => context.push('/me/update'),
                     onLogout: () => _confirmLogout(context, ref),
                   ),
                 ),
