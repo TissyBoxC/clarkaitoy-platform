@@ -1,0 +1,102 @@
+{
+  "schema_version": "1.0.0",
+  "catalog_version": "1.0.0",
+  "codes": [
+    {
+      "code": "audio_codec_not_initialized",
+      "source": "firmware",
+      "retryable": true,
+      "diagnostic": "codec_session_missing"
+    },
+    {
+      "code": "audio_codec_invalid_argument",
+      "source": "firmware",
+      "retryable": false,
+      "diagnostic": "codec_argument_rejected"
+    },
+    {
+      "code": "audio_codec_invalid_packet_size",
+      "source": "firmware",
+      "retryable": false,
+      "diagnostic": "packet_outside_profile"
+    },
+    {
+      "code": "audio_codec_invalid_pcm_size",
+      "source": "firmware",
+      "retryable": false,
+      "diagnostic": "pcm_outside_frame"
+    },
+    {
+      "code": "audio_codec_encode_failed",
+      "source": "firmware",
+      "retryable": true,
+      "diagnostic": "capture_encode_error"
+    },
+    {
+      "code": "audio_codec_decode_failed",
+      "source": "firmware",
+      "retryable": true,
+      "diagnostic": "playback_decode_error"
+    },
+    {
+      "code": "audio_codec_output_too_small",
+      "source": "firmware",
+      "retryable": false,
+      "diagnostic": "codec_buffer_undersized"
+    },
+    {
+      "code": "audio_codec_internal",
+      "source": "firmware",
+      "retryable": true,
+      "diagnostic": "codec_internal_state"
+    },
+    {
+      "code": "audio_volume_invalid",
+      "source": "firmware",
+      "retryable": false,
+      "diagnostic": "volume_outside_range"
+    },
+    {
+      "code": "audio_queue_duplicate_item",
+      "source": "firmware",
+      "retryable": false,
+      "diagnostic": "queue_item_id_reused"
+    },
+    {
+      "code": "audio_queue_full",
+      "source": "firmware",
+      "retryable": true,
+      "diagnostic": "queue_capacity_reached"
+    },
+    {
+      "code": "audio_queue_payload_empty",
+      "source": "firmware",
+      "retryable": false,
+      "diagnostic": "queue_payload_missing"
+    },
+    {
+      "code": "audio_queue_interrupt_denied",
+      "source": "firmware",
+      "retryable": false,
+      "diagnostic": "active_item_protected"
+    },
+    {
+      "code": "audio_packet_size_invalid",
+      "source": "voice_gateway",
+      "retryable": false,
+      "diagnostic": "gateway_packet_outside_profile"
+    },
+    {
+      "code": "audio_pcm_window_invalid",
+      "source": "voice_gateway",
+      "retryable": false,
+      "diagnostic": "gateway_pcm_window_invalid"
+    },
+    {
+      "code": "audio_codec_unavailable",
+      "source": "voice_gateway",
+      "retryable": true,
+      "diagnostic": "gateway_codec_missing"
+    }
+  ]
+}
