@@ -8,6 +8,13 @@ permissions:
   contents: read
 
 jobs:
+  release-workflow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate release failure isolation
+        run: python3 tools/test_release_workflow.py
+
   local-deployment:
     runs-on: ubuntu-latest
     steps:
