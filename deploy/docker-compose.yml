@@ -198,6 +198,9 @@ services:
       DEVICE_PLATFORM_AI_DEFAULT_BALANCE_USD: ${SPROUT_AI_DEFAULT_BALANCE_USD:-0}
       DEVICE_PLATFORM_AI_DEFAULT_CONCURRENCY: ${SPROUT_AI_DEFAULT_CONCURRENCY:-1}
       DEVICE_PLATFORM_AI_DEFAULT_MODELS: ${SPROUT_AI_DEFAULT_MODELS:-}
+      DEVICE_PLATFORM_OTA_MANIFEST_BASE_URL: ${SPROUT_OTA_MANIFEST_BASE_URL:-}
+      DEVICE_PLATFORM_OTA_RESOURCE_BASE_URL: ${SPROUT_OTA_RESOURCE_BASE_URL:-}
+      DEVICE_PLATFORM_OTA_CLIENT_BASE_URL: ${SPROUT_OTA_CLIENT_BASE_URL:-}
     volumes:
       - ./mosquitto/certs:/run/sprout/mqtt:ro
     depends_on:
@@ -227,7 +230,10 @@ services:
       VOICE_GATEWAY_REDIS_PASSWORD: ${SPROUT_REDIS_PASSWORD:?set SPROUT_REDIS_PASSWORD in deploy/.env}
       VOICE_GATEWAY_SUB2API_BASE_URL: "http://sub2api:8080"
       VOICE_GATEWAY_SUB2API_API_KEY: ${SPROUT_SUB2API_API_KEY:?set SPROUT_SUB2API_API_KEY in deploy/.env}
+      VOICE_GATEWAY_DATABASE_DSN: "postgres://${SPROUT_POSTGRES_USER:-sprout}:${SPROUT_POSTGRES_PASSWORD:?set SPROUT_POSTGRES_PASSWORD in deploy/.env}@postgres:5432/${SPROUT_DEVICE_PLATFORM_DATABASE_NAME:-sprout_device_platform}?sslmode=disable"
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped

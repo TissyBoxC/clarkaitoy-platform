@@ -20,6 +20,9 @@ deploy/cloud/
     ├── export-local-data.ps1
     ├── import-cloud-data.sh
     ├── diagnose-sub2api.sh
+    ├── create-parent-account.sh
+    ├── check-family-ai-account.sh
+    ├── upgrade-cloud.sh
     └── check-stack.sh
 ```
 
@@ -308,20 +311,174 @@ SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS=sub.unsee.you,api.openai.com,api.anthropic
 
 ## 5. 升级方式
 
-1. 在 GitHub 确认新 Release 已发布，并记录版本号。
-2. 修改 `.env` 中的 `SPROUT_PLATFORM_VERSION` 和 `SPROUT_SUB2API_VERSION`。
-3. 在 1Panel 重新拉取镜像并重建：
+升级前先确认 GitHub Release 已发布。平台版本来自
+`TissyBoxC/sprout-platform`，Sub2API 版本来自
+`TissyBoxC/sprout-sub2api-fork`。不要把 `latest` 写入 `.env`。
+
+在服务器上执行：
 
 ```bash
-docker compose -f docker-compose.yml pull
-docker compose -f docker-compose.yml up -d --remove-orphans
+cd /opt/1panel/apps/sprout/deploy/cloud
+chmod 600 .env
+
+# 推荐：脚本会先备份两个数据库，再切换版本、拉取镜像、重建并检查健康状态。
+./scripts/upgrade-cloud.sh 0.8.0 0.2.14
+```
+
+省略第二个参数时保留当前 Sub2API 版本：
+
+```bash
+./scripts/upgrade-cloud.sh 0.8.0
+```
+
+脚本会执行以下检查与操作：
+
+1. 校验 `.env`、版本格式，以及当前目录是否为干净 Git 工作区。
+2. 启动并在必要时等待 PostgreSQL 就绪。
+3. 用 `pg_dump` 备份 `sprout_device_platform` 和 `sprout_sub2api`，默认写入
+   `deploy/cloud/migration-data/backups/<时间戳>/`，同时生成
+   `SHA256SUMS`。
+4. 在同一个目录中写入版本元数据，并用同目录临时文件原子替换 `.env` 中的
+   `SPROUT_PLATFORM_VERSION` 和 `SPROUT_SUB2API_VERSION`。
+5. 只拉取平台和 AI 网关版本化镜像，然后执行
+   `docker compose up -d --remove-orphans`。
+6. 运行 `scripts/check-stack.sh`，逐个检查设备平台、语音网关、Sub2API 和
+   管理端。
+
+如备份需要放到独立磁盘或加密目录，可在执行前覆盖默认位置：
+
+```bash
+SPROUT_CLOUD_BACKUP_DIR=/srv/sprout-backups \
+  ./scripts/upgrade-cloud.sh 0.8.0 0.2.14
+```
+
+备份目录包含儿童和业务数据，必须限制权限、通过加密通道同步到异地，并在
+保留期结束后删除。脚本不会自动恢复数据库，因为迁移后盲目回滚可能覆盖新
+写入的有效数据。升级失败时脚本会打印旧版本号、备份路径和容器回滚命令；
+只有确认数据库损坏且校验通过后，才手工执行数据库恢复。
+
+### 5.1 失败回滚
+
+先用 `sha256sum -c SHA256SUMS` 校验备份目录，然后按脚本输出的步骤恢复旧
+版本：
+
+```bash
+cd /opt/1panel/apps/sprout/deploy/cloud
+cd migration-data/backups/<时间戳>
+sha256sum -c SHA256SUMS
+cd /opt/1panel/apps/sprout/deploy/cloud
+docker compose -f docker-compose.yml --env-file .env stop device_platform sub2api
+```
+
+确认没有用户正在写入后，再按下面模板恢复数据库。把 `<时间戳>` 替换为实际
+备份目录名。`pg_restore --clean --if-exists` 会先删除现有对象，属于高风险
+操作：
+
+```bash
+postgres_id="$(docker compose -f docker-compose.yml --env-file .env ps -q postgres)"
+postgres_user="$(sed -n 's/^SPROUT_POSTGRES_USER=//p' .env | head -n 1)"
+device_platform_database="$(sed -n 's/^SPROUT_DEVICE_PLATFORM_DATABASE_NAME=//p' .env | head -n 1)"
+sub2api_database="$(sed -n 's/^SPROUT_SUB2API_DATABASE_NAME=//p' .env | head -n 1)"
+docker exec -i "$postgres_id" pg_restore \
+  -U "$postgres_user" -d "$device_platform_database" \
+  --clean --if-exists --no-owner \
+  < "migration-data/backups/<时间戳>/sprout_device_platform.dump"
+docker exec -i "$postgres_id" pg_restore \
+  -U "$postgres_user" -d "$sub2api_database" \
+  --clean --if-exists --no-owner \
+  < "migration-data/backups/<时间戳>/sprout_sub2api.dump"
+docker compose -f docker-compose.yml --env-file .env up -d --remove-orphans
 ./scripts/check-stack.sh
 ```
 
-PostgreSQL、Redis、MQTT 和 Sub2API 数据都在命名卷中，重建容器不会删除。
-不要执行 `docker compose down -v`。
+如果数据库名或用户名在 `.env` 中改过，命令中的值也必须同步修改。数据库
+恢复属于高风险操作，执行前应停止 `device_platform` 和 `sub2api`，并确认
+没有用户正在写入。
 
-## 6. 安全清单
+无论升级成功还是失败，都不要执行：
+
+```bash
+docker compose down -v
+```
+
+`-v` 会删除 PostgreSQL、Redis、MQTT 和 Sub2API 的命名卷。正常升级只需要
+`up -d --remove-orphans`。
+
+### 5.2 资源更新与客户端更新
+
+`.env` 中预留了三个不含密钥的基础地址：
+
+| 变量 | 作用 |
+| --- | --- |
+| `SPROUT_OTA_MANIFEST_BASE_URL` | 版本清单入口，用于判断是否有小升级或大升级 |
+| `SPROUT_OTA_RESOURCE_BASE_URL` | 资源包入口，用于文案、主题和内容资源的小升级 |
+| `SPROUT_OTA_CLIENT_BASE_URL` | APK 或客户端安装包入口，用于大升级下载 |
+
+这些地址必须是 HTTPS。实际下载 URL 应由后端在鉴权后生成短期签名地址，
+对象存储关闭公共列举，私钥只放在服务端密钥管理中，不能写入 `.env` 下发给
+设备或家长端。
+
+### 5.3 云端一键升级
+
+代码推送到 `main` 并等待 GitHub Actions 完成中文 Release 后，在服务器执行：
+
+```bash
+cd /opt/1panel/apps/sprout
+git pull --ff-only
+cd deploy/cloud
+chmod 600 .env
+./scripts/upgrade-cloud.sh 0.8.0 0.2.14
+```
+
+脚本会先备份两个数据库，再原子切换镜像版本、拉取发布镜像、重建服务并检查
+健康状态。平台 `VERSION` 是正式版本唯一来源；发布和 Docker 镜像必须使用相同
+版本号，不允许只更新其中一侧。只升级平台服务时可省略 Sub2API 版本参数：
+
+```bash
+./scripts/upgrade-cloud.sh 0.8.0
+```
+
+脚本不会自动删除数据卷，也不会在失败时自动恢复数据库。失败输出会保留旧版本
+号、备份目录和回滚命令；只有确认数据库损坏并验证备份校验值后，才执行上一节
+的手工恢复。
+
+## 6. 创建家长账号
+
+云端已经包含 `/device-platform-admin` 维护命令。创建账号时不会把密码写入
+shell 历史，脚本也不会在输出中打印密码。
+
+```bash
+cd /opt/1panel/apps/sprout/deploy/cloud
+
+SPROUT_PARENT_PASSWORD='替换为至少8位且包含字母和数字的密码' \
+  ./scripts/create-parent-account.sh \
+    --phone 13800138000 \
+    --guardian-family-name 王 \
+    --child-nickname 小芽 \
+    --child-birthday 2022-05-20
+```
+
+如果不设置 `SPROUT_PARENT_PASSWORD`，脚本会在终端中隐藏输入密码。也可以用
+`--password`，但不建议，因为参数可能进入 shell 历史。
+
+创建后检查家长账号和附属 AI 账号：
+
+```bash
+./scripts/check-family-ai-account.sh --phone 13800138000
+```
+
+输出只包含脱敏手机号、家长状态、AI 账号状态、凭据是否就绪和余额，不输出
+邮箱、API Key 或数据库密文。如果 AI 账号显示“未创建”或“未就绪”，先确认
+Sub2API 健康并查看诊断输出：
+
+```bash
+./scripts/diagnose-sub2api.sh
+```
+
+管理端“家长账号”页面也提供“重新开通 AI 服务”。该操作不会创建第二个家长
+账号，只会复用现有家长身份幂等修复附属 AI 账号和凭据。
+
+## 7. 安全清单
 
 - `.env` 权限设为 `600`，不提交 Git。
 - Sub2API 只绑定 `127.0.0.1`，公网入口由 1Panel 终止 HTTPS 后转发；禁止
