@@ -2,6 +2,10 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
 import { mapApiError, type ApiError } from '@/api/apiError'
+import {
+  createAdminOperationsClient,
+  type AIModelOption,
+} from '@/api/adminOperations'
 import { createHttpClient } from '@/api/httpClient'
 
 export interface SystemSettings {
@@ -43,7 +47,11 @@ export const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
 // 设置按后端文档整体读取与整体保存，避免局部写入造成运行策略不一致。
 export const useSystemSettingsStore = defineStore('admin-system-settings', () => {
   const httpClient = createHttpClient()
+  const operationsClient = createAdminOperationsClient(httpClient)
   const settings = ref<SystemSettings>({ ...DEFAULT_SYSTEM_SETTINGS })
+  const modelOptions = ref<AIModelOption[]>([])
+  const defaultBalanceSource = ref('')
+  const integrationNotice = ref('')
   const isLoading = ref(false)
   const isSaving = ref(false)
   const error = ref<ApiError | null>(null)
@@ -52,6 +60,7 @@ export const useSystemSettingsStore = defineStore('admin-system-settings', () =>
   async function load(): Promise<void> {
     isLoading.value = true
     error.value = null
+    integrationNotice.value = ''
     try {
       const response = await httpClient.get('/api/v1/admin/settings')
       settings.value = toSettings(response.data.data?.settings ?? {})
@@ -60,6 +69,8 @@ export const useSystemSettingsStore = defineStore('admin-system-settings', () =>
     } finally {
       isLoading.value = false
     }
+
+    await synchronizeAIProviderDefaults()
   }
 
   async function save(): Promise<boolean> {
@@ -83,15 +94,69 @@ export const useSystemSettingsStore = defineStore('admin-system-settings', () =>
   }
 
   return {
+    defaultBalanceSource,
     error,
+    integrationNotice,
     isLoading,
     isSaving,
     lastMessage,
     load,
+    modelOptions,
     save,
     settings,
   }
+
+  async function synchronizeAIProviderDefaults(): Promise<void> {
+    const [defaultsResult, modelsResult] = await Promise.allSettled([
+      operationsClient.loadAIAccountDefaults(),
+      operationsClient.loadAIModels(),
+    ])
+
+    if (defaultsResult.status === 'fulfilled' && defaultsResult.value !== null) {
+      const defaults = defaultsResult.value
+      if (defaults.defaultBalanceUsd !== null) {
+        settings.value.defaultBalanceUsd = defaults.defaultBalanceUsd
+      }
+      if (defaults.defaultConcurrencyLimit !== null) {
+        settings.value.defaultConcurrencyLimit =
+          defaults.defaultConcurrencyLimit
+      }
+      defaultBalanceSource.value =
+        defaults.source === 'sub2api' ? 'AI 服务统一设置' : defaults.source
+    }
+
+    if (modelsResult.status === 'fulfilled') {
+      modelOptions.value = modelsResult.value
+      const fastestModel = fastestAvailableModel(modelsResult.value)
+      if (fastestModel !== null) {
+        settings.value.defaultModels = [fastestModel.id]
+      }
+    }
+
+    if (
+      defaultsResult.status === 'rejected' ||
+      modelsResult.status === 'rejected'
+    ) {
+      integrationNotice.value =
+        '暂时无法读取 AI 服务的最新配置，当前显示上次保存的内容。'
+    }
+  }
 })
+
+function fastestAvailableModel(models: AIModelOption[]): AIModelOption | null {
+  const availableModels = models.filter(
+    (model) => model.id && model.latencyMs !== null && model.latencyMs >= 0,
+  )
+  if (availableModels.length === 0) {
+    return null
+  }
+  return availableModels.reduce((fastest, model) =>
+    (model.latencyMs ?? Number.POSITIVE_INFINITY) <
+    (fastest.latencyMs ?? Number.POSITIVE_INFINITY)
+      ? model
+      : fastest,
+  )
+}
 
 function toSettings(value: Record<string, unknown>): SystemSettings {
   const defaults = DEFAULT_SYSTEM_SETTINGS

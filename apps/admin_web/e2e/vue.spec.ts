@@ -1,4 +1,32 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
+
+async function useAdminSession(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    globalThis.sessionStorage.setItem(
+      'sprout.admin.accessToken',
+      'test-access-token',
+    )
+    globalThis.sessionStorage.setItem(
+      'sprout.admin.refreshToken',
+      'test-refresh-token',
+    )
+  })
+  await page.route('**/api/v1/auth/me', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          account: {
+            id: 'test-admin',
+            email: 'admin@sprout.local',
+            display_name: '管理员',
+            role: 'admin',
+          },
+        },
+      }),
+    })
+  })
+}
 
 test('visits the app root url', async ({ page }) => {
   await page.goto('/')
@@ -54,4 +82,105 @@ test('shows the invalid verification code instead of a generic error', async ({ 
 
   await expect(page.getByText('验证码不正确，请重新输入')).toBeVisible()
   await expect(page.getByText('操作没有完成，请稍后重试')).toHaveCount(0)
+})
+
+test('uses the fastest available model and the provider default balance', async ({
+  page,
+}) => {
+  await useAdminSession(page)
+  await page.route('**/api/v1/admin/settings', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            settings: {
+              ai: {
+                default_balance_usd: 0,
+                default_concurrency: 1,
+                default_models: [],
+              },
+              account: {},
+              safety: {},
+              update: {},
+              retention: {},
+            },
+          },
+        }),
+      })
+      return
+    }
+    await route.continue()
+  })
+  await page.route('**/api/v1/admin/ai-account-defaults', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          default_balance_usd: 6.5,
+          default_concurrency: 2,
+          source: 'sub2api',
+        },
+      }),
+    })
+  })
+  await page.route('**/api/v1/admin/ai-models', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          models: [
+            { id: 'slow-model', latency_ms: 500 },
+            { id: 'fast-model', latency_ms: 80 },
+          ],
+        },
+      }),
+    })
+  })
+
+  await page.goto('/settings')
+
+  await expect(page.getByLabel('初始余额（美元）')).toHaveValue('6.5')
+  await expect(page.getByLabel('默认模型')).toHaveValue('fast-model')
+})
+
+test('fills the current version and the release artifact automatically', async ({
+  page,
+}) => {
+  await useAdminSession(page)
+  await page.route('**/api/v1/admin/releases', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ data: { releases: [] } }),
+    })
+  })
+  await page.route(
+    '**/api/v1/admin/release-artifacts/*',
+    async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            artifact: {
+              version: '0.8.1',
+              kind: 'client',
+              platform: 'android',
+              download_url: 'https://downloads.example.com/0.8.1/app.apk',
+              sha256: 'a'.repeat(64),
+            },
+          },
+        }),
+      })
+    },
+  )
+
+  await page.goto('/releases')
+  await page.getByRole('button', { name: '登记新版本' }).click()
+  await expect(page.getByLabel('版本号')).toHaveValue(/\d+\.\d+\.\d+/)
+  await page.getByRole('button', { name: '自动查找更新文件' }).click()
+
+  await expect(page.getByLabel('下载地址')).toHaveValue(
+    'https://downloads.example.com/0.8.1/app.apk',
+  )
+  await expect(page.getByLabel('文件校验值')).toHaveValue('a'.repeat(64))
 })

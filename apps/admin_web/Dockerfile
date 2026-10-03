@@ -29,6 +29,7 @@ RUN npm ci
 WORKDIR /src
 COPY apps/admin_web ./apps/admin_web
 COPY packages/contracts/generated/typescript ./packages/contracts/generated/typescript
+COPY VERSION ./VERSION
 WORKDIR /src/apps/admin_web
 RUN npm run build
 

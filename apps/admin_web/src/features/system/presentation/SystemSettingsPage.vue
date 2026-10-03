@@ -4,13 +4,10 @@ import { computed, onMounted } from 'vue'
 import { useSystemSettingsStore } from '@/features/system/application/systemSettingsStore'
 
 const store = useSystemSettingsStore()
-const defaultModelsText = computed({
-  get: () => store.settings.defaultModels.join('、'),
+const selectedDefaultModel = computed({
+  get: () => store.settings.defaultModels[0] ?? '',
   set: (value: string) => {
-    store.settings.defaultModels = value
-      .split(/[,\s，、]+/)
-      .map((model) => model.trim())
-      .filter(Boolean)
+    store.settings.defaultModels = value ? [value] : []
   },
 })
 
@@ -40,6 +37,11 @@ onMounted(() => {
     <Transition name="toast">
       <p v-if="store.error" class="error-message">{{ store.error.message }}</p>
     </Transition>
+    <Transition name="toast">
+      <p v-if="store.integrationNotice" class="notice-message">
+        {{ store.integrationNotice }}
+      </p>
+    </Transition>
 
     <div v-if="store.isLoading" class="state-panel">
       <span class="state-spinner" aria-hidden="true"></span>
@@ -63,7 +65,11 @@ onMounted(() => {
               type="number"
               min="0"
               step="0.01"
+              readonly
             />
+            <small class="field-hint">
+              与{{ store.defaultBalanceSource || ' AI 服务统一设置' }}保持一致，保存时会同步写入。
+            </small>
           </label>
           <label>
             <span>默认同时对话数量</span>
@@ -76,11 +82,20 @@ onMounted(() => {
           </label>
           <label class="span-two">
             <span>默认模型</span>
-            <input
-              v-model.trim="defaultModelsText"
-              type="text"
-              placeholder="多个模型之间用顿号或逗号分隔"
-            />
+            <select v-model="selectedDefaultModel">
+              <option value="">暂时使用 AI 服务推荐模型</option>
+              <option
+                v-for="model in store.modelOptions"
+                :key="model.id"
+                :value="model.id"
+              >
+                {{ model.id }}
+                {{ model.latencyMs === null ? '' : `· ${model.latencyMs} ms` }}
+              </option>
+            </select>
+            <small class="field-hint">
+              读取可用模型后自动选择延迟最低的一项，也可以在列表中调整。
+            </small>
           </label>
         </div>
       </section>
@@ -432,6 +447,28 @@ button:disabled {
   color: var(--sprout-text-muted);
   font-size: 13px;
   line-height: 1.6;
+}
+
+.field-hint {
+  color: var(--sprout-text-muted);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.55;
+}
+
+.notice-message {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid #f0d39b;
+  border-radius: 14px;
+  background: #fffaf0;
+  color: #755600;
+}
+
+input[readonly] {
+  cursor: not-allowed;
+  background: #f7f1f3;
+  color: #6b4f5a;
 }
 
 input,

@@ -12,7 +12,7 @@ const isCreateOpen = ref(false)
 const pendingDelete = ref<AdminRelease | null>(null)
 const pendingPublish = ref<AdminRelease | null>(null)
 const createForm = reactive<CreateReleaseInput>({
-  version: '',
+  version: store.adminBuildVersion,
   channel: 'stable',
   kind: 'resource',
   platform: 'android',
@@ -30,6 +30,25 @@ onMounted(() => {
 function openCreate(): void {
   isCreateOpen.value = true
   store.lastMessage = ''
+  if (!createForm.version) {
+    createForm.version = store.adminBuildVersion
+  }
+}
+
+async function resolveArtifact(): Promise<void> {
+  const artifactInput = await store.resolveArtifact({
+    version: createForm.version,
+    kind: createForm.kind,
+    platform: createForm.platform,
+  })
+  if (artifactInput === null) {
+    return
+  }
+  createForm.downloadUrl = artifactInput.downloadUrl
+  createForm.sha256 = artifactInput.sha256
+  createForm.version = artifactInput.version
+  createForm.kind = artifactInput.kind
+  createForm.platform = artifactInput.platform
 }
 
 async function createRelease(): Promise<void> {
@@ -42,7 +61,7 @@ async function createRelease(): Promise<void> {
 }
 
 function resetCreateForm(): void {
-  createForm.version = ''
+  createForm.version = store.adminBuildVersion
   createForm.channel = 'stable'
   createForm.kind = 'resource'
   createForm.platform = 'android'
@@ -226,7 +245,20 @@ function formatTime(value: string): string {
       <div v-if="isCreateOpen" class="dialog-backdrop" @click.self="isCreateOpen = false">
         <form class="dialog" @submit.prevent="createRelease">
           <h2>登记新版本</h2>
-          <p class="dialog-hint">文件上传完成后，填写验收信息并登记。确认无误后再发布。</p>
+          <p class="dialog-hint">
+            版本号默认使用当前发布版本。更新文件会自动查找并填入，确认无误后再发布。
+          </p>
+          <div class="artifact-toolbar">
+            <button
+              type="button"
+              class="secondary"
+              :disabled="store.isResolvingArtifact || !createForm.version"
+              @click="resolveArtifact"
+            >
+              {{ store.isResolvingArtifact ? '正在查找…' : '自动查找更新文件' }}
+            </button>
+            <span>按照版本、更新类型和适用平台查找。</span>
+          </div>
           <div class="field-grid">
             <label>
               <span>版本号</span>
@@ -263,7 +295,7 @@ function formatTime(value: string): string {
                 v-model.trim="createForm.downloadUrl"
                 type="url"
                 required
-                placeholder="填写文件的安全下载地址"
+                placeholder="自动查找后填入，也可以手动修正"
               />
             </label>
             <label class="span-two">
@@ -272,7 +304,7 @@ function formatTime(value: string): string {
                 v-model.trim="createForm.sha256"
                 type="text"
                 required
-                placeholder="填写文件校验值，用于确认下载完整"
+                placeholder="自动查找后填入，也可以手动修正"
               />
             </label>
             <label class="span-two">
@@ -601,6 +633,25 @@ tbody tr:hover {
 .dialog-hint {
   margin-top: -6px !important;
   color: #6b4f5a;
+}
+
+.artifact-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid #f7d9e2;
+  border-radius: 16px;
+  background: #fffbfc;
+}
+
+.artifact-toolbar span {
+  color: #6b4f5a;
+  font-size: 13px;
+}
+
+.artifact-toolbar button {
+  flex: 0 0 auto;
 }
 
 .field-grid {
