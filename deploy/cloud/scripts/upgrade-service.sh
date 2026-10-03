@@ -237,6 +237,13 @@ resolve_release_by_version() {
   return 1
 }
 
+release_version_is_published() {
+  service="$1"
+  requested_version="$2"
+  repository="$(service_repository "$service")"
+  resolve_release_by_version "$repository" "$requested_version"
+}
+
 version_is_older() {
   current_version="$1"
   latest_version="$2"
@@ -584,8 +591,11 @@ upgrade_services() {
       echo "无法读取 $service 当前版本，升级已停止。" >&2
       exit 1
     fi
-    if version_is_older "$target_version" "$current_version"; then
-      echo "拒绝将 ${service} 从 ${current_version} 降级到 ${target_version}。" >&2
+    # An explicit target is an operator-approved version change. It may be a
+    # reinstall or rollback, but only a published release is accepted.
+    if version_is_older "$target_version" "$current_version" &&
+      ! release_version_is_published "$service" "$target_version"; then
+      echo "目标版本 ${target_version} 不是 ${service} 的已发布版本，拒绝降级。" >&2
       exit 1
     fi
     if [ "$current_version" != "$target_version" ]; then

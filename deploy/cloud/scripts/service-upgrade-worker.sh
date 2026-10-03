@@ -22,6 +22,7 @@ state_uid="${SPROUT_SERVICE_VERSION_STATE_UID:-65532}"
 state_gid="${SPROUT_SERVICE_VERSION_STATE_GID:-65532}"
 release_cache_dir="$root_dir/.release-cache"
 release_cache_ttl="${SPROUT_SERVICE_VERSION_RELEASE_CACHE_SECONDS:-300}"
+release_catalog_limit="${SPROUT_SERVICE_VERSION_RELEASE_CATALOG_LIMIT:-100}"
 
 service_ids="device_platform voice_gateway admin_web sub2api postgres redis mqtt download_init download_ftp download_http"
 upgrade_order="sub2api device_platform voice_gateway admin_web"
@@ -405,6 +406,70 @@ resolve_latest_release() {
   date +%s > "$cache_stamp"
 }
 
+list_releases_for_repository() {
+  repository="$1"
+  per_page="$2"
+  response_file="$(mktemp)"
+  curl_args=(
+    --fail
+    --silent
+    --show-error
+    --location
+    --max-time 20
+    --header "Accept: application/vnd.github+json"
+    --header "User-Agent: sprout-service-upgrade-worker"
+  )
+  if [ -n "${GITHUB_TOKEN:-}" ]; then
+    curl_args+=(--header "Authorization: Bearer ${GITHUB_TOKEN}")
+  fi
+
+  if ! curl "${curl_args[@]}" \
+    "https://api.github.com/repos/${repository}/releases?per_page=${per_page}&page=1" \
+    --output "$response_file"; then
+    rm -f "$response_file"
+    return 1
+  fi
+
+  jq -c '
+    [
+      .[]
+      | select(.draft == false and .prerelease == false)
+      | {
+          version: (.tag_name | sub("^v"; "")),
+          release_url: (.html_url // ""),
+          published_at: (.published_at // null),
+          is_current: false,
+          is_latest: false
+        }
+      | select(.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
+    ]
+  ' "$response_file"
+  rm -f "$response_file"
+}
+
+write_release_catalog() {
+  generated_at="$(iso_timestamp)"
+  platform_releases="$(list_releases_for_repository "$platform_repository" "$release_catalog_limit")" || return 1
+  sub2api_releases="$(list_releases_for_repository "$sub2api_repository" "$release_catalog_limit")" || return 1
+
+  jq -n \
+    --arg generated_at "$generated_at" \
+    --argjson platform_releases "$platform_releases" \
+    --argjson sub2api_releases "$sub2api_releases" \
+    '{
+      generated_at: $generated_at,
+      services: {
+        device_platform: $platform_releases,
+        voice_gateway: $platform_releases,
+        admin_web: $platform_releases,
+        sub2api: $sub2api_releases
+      }
+    }' > "$root_dir/.releases.json"
+  chmod 640 "$root_dir/.releases.json"
+  chown "$state_uid:$state_gid" "$root_dir/.releases.json" 2>/dev/null || true
+  mv "$root_dir/.releases.json" "$root_dir/releases.json"
+}
+
 write_status_snapshot() {
   force_refresh="${1:-0}"
   status_temp="$(mktemp "$root_dir/.status.XXXXXX")"
@@ -449,6 +514,8 @@ write_status_snapshot() {
       esac
     fi
 
+    releases_json="$(jq -c --arg id "$service" \
+      '.services[$id] // []' "$root_dir/releases.json" 2>/dev/null || printf '%s' '[]')"
     jq -n \
       --arg id "$service" \
       --arg display_name "$display_name" \
@@ -459,6 +526,7 @@ write_status_snapshot() {
       --arg status "$status" \
       --arg release_url "$release_url" \
       --arg checked_at "$checked_at" \
+      --argjson releases "$releases_json" \
       '{
         id: $id,
         display_name: $display_name,
@@ -468,6 +536,7 @@ write_status_snapshot() {
         latest_version: $latest_version,
         status: $status,
         release_url: $release_url,
+        releases: $releases,
         checked_at: $checked_at,
         # Older backend readers used last_checked_at; keep both names while
         # the file contract and console model are being aligned.
@@ -493,6 +562,10 @@ consume_check_request() {
 
   # Refresh first. A malformed request is removed afterwards so it can never
   # block future checks, but the admin still receives a fresh snapshot.
+  if ! write_release_catalog; then
+    rm -f "$request_file"
+    return 1
+  fi
   write_status_snapshot 1
   rm -f "$request_file"
   return 0
@@ -620,6 +693,7 @@ main() {
   validate_positive_integer "SPROUT_SERVICE_VERSION_POLL_INTERVAL_SECONDS" "$poll_interval" 1 3600
   validate_positive_integer "SPROUT_SERVICE_VERSION_MAX_REQUEST_BYTES" "$max_request_bytes" 1024 1048576
   validate_positive_integer "SPROUT_SERVICE_VERSION_RELEASE_CACHE_SECONDS" "$release_cache_ttl" 0 86400
+  validate_positive_integer "SPROUT_SERVICE_VERSION_RELEASE_CATALOG_LIMIT" "$release_catalog_limit" 1 500
   validate_positive_integer "SPROUT_SERVICE_VERSION_STATE_UID" "$state_uid" 0 4294967295
   validate_positive_integer "SPROUT_SERVICE_VERSION_STATE_GID" "$state_gid" 0 4294967295
 
@@ -634,6 +708,10 @@ main() {
   require_command docker
   require_command jq
   require_command curl
+
+  if ! write_release_catalog; then
+    echo "发布版本列表初始化失败，worker 将在下一轮重试。" >&2
+  fi
 
   next_status_at=0
   while true; do
