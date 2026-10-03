@@ -57,6 +57,60 @@ require_env_key() {
   fi
 }
 
+# merge_missing_env_keys appends keys that a previous release did not have.
+#
+# Older deployments predate the release download service, so a strict
+# validator would otherwise refuse to upgrade them. Existing values are never
+# overwritten: only keys that are completely absent are appended.
+merge_missing_env_keys() {
+  template_file="$cloud_dir/.env.example"
+  if [ ! -f "$template_file" ]; then
+    return 0
+  fi
+
+  added_keys=""
+  while IFS= read -r line; do
+    case "$line" in
+      ''|\#*)
+        continue
+        ;;
+    esac
+    key="${line%%=*}"
+    case "$key" in
+      *[!A-Z0-9_]*|'')
+        continue
+        ;;
+    esac
+    if grep -q "^${key}=" "$env_file"; then
+      continue
+    fi
+    printf '%s\n' "$line" >> "$env_file"
+    added_keys="$added_keys $key"
+  done < "$template_file"
+
+  if [ -n "$added_keys" ]; then
+    echo "已从 .env.example 补齐缺失变量:$added_keys" >&2
+    echo "带有 example 占位值的变量仍需手工填写后再升级。" >&2
+  fi
+}
+
+# ensure_download_host_keys creates stable SFTP host keys when absent.
+#
+# Compose bind-mounts these files read-only; a missing file makes Docker
+# create a directory and sshd cannot start.
+ensure_download_host_keys() {
+  key_script="$cloud_dir/scripts/generate-download-ssh-host-keys.sh"
+  key_dir="$cloud_dir/download/sftp"
+  if [ ! -f "$key_dir/ssh_host_ed25519_key" ] ||
+    [ ! -f "$key_dir/ssh_host_rsa_key" ]; then
+    if [ ! -x "$key_script" ]; then
+      echo "缺少发布文件服务主机密钥，且无法自动生成: $key_script" >&2
+      return 1
+    fi
+    "$key_script"
+  fi
+}
+
 write_env_versions() {
   temp_file="$(mktemp "${env_file}.tmp.XXXXXX")"
   if ! awk \
@@ -241,7 +295,8 @@ else
   echo "未检测到 Git 工作区；跳过工作区检查。" >&2
 fi
 
-trap 'print_rollback_instructions "$?"' ERR
+merge_missing_env_keys
+ensure_download_host_keys
 
 "$cloud_dir/scripts/validate-cloud-env.sh" "$env_file"
 
@@ -262,6 +317,9 @@ ensure_postgres_ready
 backup_databases
 
 echo "升级前备份完成: $backup_dir"
+# Only arm rollback guidance once a mutation is possible; pre-flight failures
+# change nothing and must not look like a failed upgrade.
+trap 'print_rollback_instructions "$?"' ERR
 write_env_versions
 echo "版本已原子切换到 platform=$platform_version sub2api=$sub2api_version"
 
