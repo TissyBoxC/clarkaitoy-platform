@@ -160,6 +160,51 @@ def download_remote_file(
         known_hosts=known_hosts,
     )
 
+def download_optional_index(
+    *,
+    host: str,
+    port: int,
+    user: str,
+    private_key: Path,
+    known_hosts: Path,
+    remote_path: str,
+    local_path: Path,
+) -> None:
+    """Download the current index, treating the first publish as empty state."""
+    probe_file = known_hosts.parent / "probe-index.batch"
+    probe_file.write_text(
+        f"ls {shell_quote(remote_path)}\n",
+        encoding="utf-8",
+    )
+    try:
+        run_sftp(
+            batch_file=probe_file,
+            host=host,
+            port=port,
+            user=user,
+            private_key=private_key,
+            known_hosts=known_hosts,
+        )
+    except RuntimeError as error:
+        detail = str(error).lower()
+        if "no such file" not in detail and "not found" not in detail:
+            raise
+        # A missing first-publish index is normal. Return with no local file
+        # so the caller writes a fresh index.
+        local_path.unlink(missing_ok=True)
+        return
+    finally:
+        probe_file.unlink(missing_ok=True)
+    download_remote_file(
+        host=host,
+        port=port,
+        user=user,
+        private_key=private_key,
+        known_hosts=known_hosts,
+        remote_path=remote_path,
+        local_path=local_path,
+    )
+
 
 def upload_remote_file(
     *,
@@ -275,7 +320,7 @@ def main() -> None:
             private_key=args.private_key,
             known_hosts=args.known_hosts,
         )
-        download_remote_file(
+        download_optional_index(
             host=args.host,
             port=args.port,
             user=args.user,

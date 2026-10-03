@@ -229,9 +229,10 @@ jobs:
           SFTP_PRIVATE_KEY: ${{ secrets.SPROUT_DOWNLOAD_SFTP_PRIVATE_KEY }}
           SFTP_HOST: ${{ secrets.SPROUT_DOWNLOAD_SFTP_HOST }}
           SFTP_PORT: ${{ secrets.SPROUT_DOWNLOAD_SFTP_PORT }}
+          SFTP_USER: ${{ secrets.SPROUT_DOWNLOAD_SFTP_USER }}
         run: |
           set -euo pipefail
-          if [[ -z "${SFTP_PRIVATE_KEY:-}" || -z "${SFTP_HOST:-}" || -z "${SFTP_PORT:-}" ]]; then
+          if [[ -z "${SFTP_PRIVATE_KEY:-}" || -z "${SFTP_HOST:-}" || -z "${SFTP_PORT:-}" || -z "${SFTP_USER:-}" ]]; then
             echo "Release upload credentials are incomplete." >&2
             exit 1
           fi
@@ -263,7 +264,7 @@ jobs:
             --private-key "$RUNNER_TEMP/sprout-sftp/id_ed25519" \
             --known-hosts "$RUNNER_TEMP/sprout-sftp/known_hosts" \
             --remote-root releases \
-            --index-root . \
+            --index-root releases \
             --manifest "dist/releases/${{ steps.detect.outputs.version }}/stable/manifest.json" \
             --public-base-url "$download_base_url" \
             --title "如此萌屋平台 ${{ steps.detect.outputs.version }}" \
