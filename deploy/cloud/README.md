@@ -322,7 +322,7 @@ cd /opt/1panel/apps/sprout/deploy/cloud
 chmod 600 .env
 
 # 推荐：脚本会先备份两个数据库，再切换版本、拉取镜像、重建并检查健康状态。
-./scripts/upgrade-cloud.sh 0.8.0 0.2.14
+./scripts/upgrade-cloud.sh 0.8.0 0.2.15
 ```
 
 省略第二个参数时保留当前 Sub2API 版本：
@@ -349,7 +349,7 @@ chmod 600 .env
 
 ```bash
 SPROUT_CLOUD_BACKUP_DIR=/srv/sprout-backups \
-  ./scripts/upgrade-cloud.sh 0.8.0 0.2.14
+  ./scripts/upgrade-cloud.sh 0.8.0 0.2.15
 ```
 
 备份目录包含儿童和业务数据，必须限制权限、通过加密通道同步到异地，并在
@@ -427,7 +427,7 @@ cd /opt/1panel/apps/sprout
 git pull --ff-only
 cd deploy/cloud
 chmod 600 .env
-./scripts/upgrade-cloud.sh 0.8.0 0.2.14
+./scripts/upgrade-cloud.sh 0.8.0 0.2.15
 ```
 
 脚本会先备份两个数据库，再原子切换镜像版本、拉取发布镜像、重建服务并检查
