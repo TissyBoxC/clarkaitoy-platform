@@ -352,7 +352,21 @@ func NewRouter(options RouterOptions) http.Handler {
 				),
 			)
 			mux.Handle(
+				"POST /api/v1/release-publication/files",
+				requireServiceToken(
+					options.InternalAPIConfig.ReleaseUploadToken,
+					http.HandlerFunc(internalHandler.uploadReleaseFile),
+				),
+			)
+			mux.Handle(
 				"POST /internal/v1/release-index/refresh",
+				requireServiceToken(
+					options.InternalAPIConfig.ReleaseUploadToken,
+					http.HandlerFunc(internalHandler.refreshReleaseIndex),
+				),
+			)
+			mux.Handle(
+				"POST /api/v1/release-publication/index-refresh",
 				requireServiceToken(
 					options.InternalAPIConfig.ReleaseUploadToken,
 					http.HandlerFunc(internalHandler.refreshReleaseIndex),

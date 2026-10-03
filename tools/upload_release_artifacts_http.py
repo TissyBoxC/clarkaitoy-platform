@@ -128,7 +128,10 @@ def upload_artifact(
         source,
     )
     request = urllib.request.Request(
-        urllib.parse.urljoin(api_base_url.rstrip("/") + "/", "internal/v1/release-files"),
+        urllib.parse.urljoin(
+            api_base_url.rstrip("/") + "/",
+            "api/v1/release-publication/files",
+        ),
         data=body,
         method="POST",
         headers={
@@ -161,7 +164,7 @@ def refresh_index(
     request = urllib.request.Request(
         urllib.parse.urljoin(
             api_base_url.rstrip("/") + "/",
-            "internal/v1/release-index/refresh",
+            "api/v1/release-publication/index-refresh",
         ),
         data=payload,
         method="POST",

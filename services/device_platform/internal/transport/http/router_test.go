@@ -216,6 +216,25 @@ func TestInternalReleaseUploadRouteIsHiddenWithoutReleaseToken(t *testing.T) {
 	}
 }
 
+func TestPublicReleasePublicationRouteRequiresReleaseToken(t *testing.T) {
+	options := newTestRouterOptions()
+	options.InternalAPIConfig = config.InternalAPIConfig{
+		Enabled:            true,
+		AuthToken:          strings.Repeat("t", 32),
+		ReleaseUploadToken: strings.Repeat("r", 32),
+	}
+	options.ReleaseStoreService = new(releasestoreservice.Service)
+
+	request := newInternalReleaseUploadRequest(t)
+	request.URL.Path = "/api/v1/release-publication/files"
+	recorder := httptest.NewRecorder()
+	NewRouter(options).ServeHTTP(recorder, request)
+
+	if recorder.Code != stdhttp.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", stdhttp.StatusUnauthorized, recorder.Code)
+	}
+}
+
 type testEnvelope struct {
 	SchemaVersion string             `json:"schema_version"`
 	RequestID     string             `json:"request_id"`

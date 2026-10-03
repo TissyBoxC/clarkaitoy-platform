@@ -106,10 +106,14 @@ class UploadReleaseArtifactsHTTPTest(unittest.TestCase):
             upload_request = requests[0][0]
             index_request = requests[1][0]
             self.assertTrue(
-                upload_request.full_url.endswith("/internal/v1/release-files")
+                upload_request.full_url.endswith(
+                    "/api/v1/release-publication/files"
+                )
             )
             self.assertTrue(
-                index_request.full_url.endswith("/internal/v1/release-index/refresh")
+                index_request.full_url.endswith(
+                    "/api/v1/release-publication/index-refresh"
+                )
             )
             self.assertEqual(
                 index_request.get_header("Authorization"),
