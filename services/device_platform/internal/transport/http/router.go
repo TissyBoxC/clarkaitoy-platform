@@ -146,6 +146,7 @@ func NewRouter(options RouterOptions) http.Handler {
 				parentService:         options.AuthService,
 				operationsService:     options.OperationsService,
 				serviceVersionService: options.ServiceVersionService,
+				deviceStatusService:   options.RuntimeService,
 			}
 			mux.HandleFunc(
 				"PUT /api/v1/auth/ai-models",
@@ -162,6 +163,18 @@ func NewRouter(options RouterOptions) http.Handler {
 			mux.HandleFunc(
 				"POST /api/v1/admin/families/{parent_account_id}/ai-account",
 				authHandler.requireAdmin(adminHandler.retryParentAIAccount),
+			)
+			mux.HandleFunc(
+				"PUT /api/v1/admin/families/{parent_account_id}/profile",
+				authHandler.requireAdmin(adminHandler.updateParentProfile),
+			)
+			mux.HandleFunc(
+				"POST /api/v1/admin/families/{parent_account_id}/password",
+				authHandler.requireAdmin(adminHandler.resetParentPassword),
+			)
+			mux.HandleFunc(
+				"GET /api/v1/admin/families/{parent_account_id}/devices",
+				authHandler.requireAdmin(adminHandler.listParentDevices),
 			)
 			mux.HandleFunc(
 				"GET /api/v1/admin/ai-accounts",

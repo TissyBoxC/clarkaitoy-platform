@@ -87,6 +87,13 @@ type Service struct {
 	defaultConcurrency int
 }
 
+// providerModelCatalog is the live model policy returned by the gateway.
+// Keeping the pool and recommendation together prevents selection drift.
+type providerModelCatalog struct {
+	availableModels  []string
+	recommendedModel string
+}
+
 // RuntimePolicyReader supplies the operator defaults used when a new AI
 // account is provisioned. A missing reader keeps the configured bootstrap
 // values, which is required for the first administrator-created account.
@@ -163,6 +170,108 @@ func (s *Service) effectiveDefaults(
 	return policy.DefaultBalanceUSD, policy.DefaultConcurrency, models, nil
 }
 
+// resolveModelCatalog prefers the gateway's live model catalog because it is
+// the only source that can identify a model currently reachable by a parent.
+// A catalog failure falls back to the configured policy so sign-in and account
+// repair remain available during transient gateway outages.
+func (s *Service) resolveModelCatalog(
+	ctx context.Context,
+) (providerModelCatalog, error) {
+	runtimeConfig, err := s.provider.GetRuntimeConfig(ctx)
+	if err == nil && runtimeConfig != nil {
+		availableModels := modelIDsFromRuntimeConfig(runtimeConfig.Models)
+		if len(availableModels) > 0 {
+			return providerModelCatalog{
+				availableModels: availableModels,
+				recommendedModel: recommendedModelForPool(
+					runtimeConfig.RecommendedModel,
+					availableModels,
+				),
+			}, nil
+		}
+	}
+
+	_, _, defaultModels, defaultsErr := s.effectiveDefaults(ctx)
+	if defaultsErr != nil {
+		return providerModelCatalog{}, defaultsErr
+	}
+	availableModels := normalizeModelIDs(defaultModels)
+	return providerModelCatalog{
+		availableModels: availableModels,
+		recommendedModel: recommendedModelForPool(
+			"",
+			availableModels,
+		),
+	}, nil
+}
+
+// repairModelCatalog fills a legacy empty pool and pushes the effective
+// allowlist to the provider. An existing valid selection is retained.
+func (s *Service) repairModelCatalog(
+	ctx context.Context,
+	account *domain.Account,
+	catalog providerModelCatalog,
+) error {
+	if account == nil {
+		return domain.ErrAccountNotFound
+	}
+	if len(account.AvailableModels) == 0 && len(catalog.availableModels) > 0 {
+		account.AvailableModels = append(
+			[]string(nil),
+			catalog.availableModels...,
+		)
+	}
+	if len(account.AvailableModels) == 0 {
+		return nil
+	}
+
+	account.SelectedModels = defaultSelectedModels(
+		account.SelectedModels,
+		account.AvailableModels,
+		catalog.recommendedModel,
+	)
+	allowedModels := effectiveModels(
+		account.SelectedModels,
+		account.AvailableModels,
+	)
+	providerAccount, err := s.provider.GetAccount(
+		ctx,
+		account.ProviderAccountID,
+	)
+	if err != nil {
+		return err
+	}
+	if providerAccount == nil {
+		return domain.ErrProviderUnavailable
+	}
+	status := providerAccount.Status
+	if status == "" {
+		status = account.Status
+	}
+	concurrencyLimit := providerAccount.ConcurrencyLimit
+	if concurrencyLimit < 1 {
+		concurrencyLimit = account.ConcurrencyLimit
+	}
+	providerAccount, err = s.provider.UpdateAccount(
+		ctx,
+		account.ProviderAccountID,
+		domain.ProviderAccount{
+			ProviderAccountID: account.ProviderAccountID,
+			Status:            status,
+			ConcurrencyLimit:  concurrencyLimit,
+			AllowedModels:     allowedModels,
+		},
+		"repair parent AI model catalog",
+	)
+	if err != nil {
+		return err
+	}
+	account.Status = providerAccount.Status
+	account.ConcurrencyLimit = providerAccount.ConcurrencyLimit
+	account.AllowedModels = allowedModels
+	return nil
+}
+
 // EnsureForParent creates or repairs the account projection and API key.
 //
 // The operation is idempotent. A retry that finds a provider account with a
@@ -184,19 +293,19 @@ func (s *Service) EnsureForParent(
 	}
 	if isProviderCredentialReady(existing) {
 		if len(existing.AvailableModels) == 0 {
-			_, _, defaultModels, defaultsErr := s.effectiveDefaults(ctx)
-			if defaultsErr != nil {
-				return nil, defaultsErr
+			catalog, catalogErr := s.resolveModelCatalog(ctx)
+			if catalogErr != nil {
+				return nil, catalogErr
 			}
-			existing.AvailableModels = append(
-				[]string(nil),
-				defaultModels...,
+			if err := s.repairModelCatalog(ctx, existing, catalog); err != nil {
+				return nil, err
+			}
+		} else {
+			existing.AllowedModels = effectiveModels(
+				existing.SelectedModels,
+				existing.AvailableModels,
 			)
 		}
-		existing.AllowedModels = effectiveModels(
-			existing.SelectedModels,
-			existing.AvailableModels,
-		)
 		existing.UpdatedAt = s.timeSource.Now().UTC()
 		if err := s.repository.UpdateFromProvider(ctx, existing); err != nil {
 			return nil, err
@@ -205,7 +314,7 @@ func (s *Service) EnsureForParent(
 	}
 
 	providerAccountID := providerAccountIDForParent(parentAccountID)
-	providerAccount, err := s.loadOrCreateProviderAccount(
+	providerAccount, catalog, err := s.loadOrCreateProviderAccount(
 		ctx,
 		providerAccountID,
 		parentAccountID,
@@ -237,14 +346,19 @@ func (s *Service) EnsureForParent(
 
 	now := s.timeSource.Now().UTC()
 	if existing == nil {
-		availableModels := append([]string(nil), providerAccount.AllowedModels...)
+		availableModels := append([]string(nil), catalog.availableModels...)
 		if len(availableModels) == 0 {
-			_, _, defaults, defaultsErr := s.effectiveDefaults(ctx)
-			if defaultsErr != nil {
-				return nil, defaultsErr
-			}
-			availableModels = append([]string(nil), defaults...)
+			availableModels = append(
+				[]string(nil),
+				providerAccount.AllowedModels...,
+			)
 		}
+		selectedModels := defaultSelectedModels(
+			nil,
+			availableModels,
+			catalog.recommendedModel,
+		)
+		allowedModels := effectiveModels(selectedModels, availableModels)
 		existing = &domain.Account{
 			ID:                   uuid.NewString(),
 			ParentAccountID:      parentAccountID,
@@ -257,13 +371,11 @@ func (s *Service) EnsureForParent(
 			APIKeyNonce:          nonce,
 			ProviderAPIKeyID:     providerKey.ID,
 			CredentialKeyVersion: 1,
-			// A new account starts with the platform-approved pool available and
-			// no explicit guardian selection, which means "all available".
-			AvailableModels: availableModels,
-			SelectedModels:  nil,
-			AllowedModels:   availableModels,
-			CreatedAt:       now,
-			UpdatedAt:       now,
+			AvailableModels:      availableModels,
+			SelectedModels:       selectedModels,
+			AllowedModels:        allowedModels,
+			CreatedAt:            now,
+			UpdatedAt:            now,
 		}
 		stored, err := s.repository.UpsertProvisioning(ctx, existing)
 		if err != nil {
@@ -288,16 +400,19 @@ func (s *Service) EnsureForParent(
 	existing.BalanceUSD = providerAccount.BalanceUSD
 	existing.ConcurrencyLimit = providerAccount.ConcurrencyLimit
 	if len(existing.AvailableModels) == 0 {
-		existing.AvailableModels = append([]string(nil), providerAccount.AllowedModels...)
+		if err := s.repairModelCatalog(ctx, existing, catalog); err != nil {
+			return nil, err
+		}
+	} else {
+		existing.SelectedModels = intersectModels(
+			existing.SelectedModels,
+			existing.AvailableModels,
+		)
+		existing.AllowedModels = effectiveModels(
+			existing.SelectedModels,
+			existing.AvailableModels,
+		)
 	}
-	existing.SelectedModels = intersectModels(
-		existing.SelectedModels,
-		existing.AvailableModels,
-	)
-	existing.AllowedModels = effectiveModels(
-		existing.SelectedModels,
-		existing.AvailableModels,
-	)
 	existing.UpdatedAt = now
 	stored, err := s.repository.UpsertProvisioning(ctx, existing)
 	if err != nil {
@@ -321,21 +436,32 @@ func (s *Service) loadOrCreateProviderAccount(
 	providerAccountID string,
 	parentAccountID string,
 	parentEmail string,
-) (*domain.ProviderAccount, error) {
+) (*domain.ProviderAccount, providerModelCatalog, error) {
+	catalog, catalogErr := s.resolveModelCatalog(ctx)
+	if catalogErr != nil {
+		return nil, providerModelCatalog{}, catalogErr
+	}
+	selectedModels := defaultSelectedModels(
+		nil,
+		catalog.availableModels,
+		catalog.recommendedModel,
+	)
+	allowedModels := effectiveModels(selectedModels, catalog.availableModels)
+
 	providerAccount, err := s.provider.GetAccount(ctx, providerAccountID)
 	if err == nil {
 		if providerAccount == nil {
-			return nil, domain.ErrProviderUnavailable
+			return nil, providerModelCatalog{}, domain.ErrProviderUnavailable
 		}
-		return providerAccount, nil
+		return providerAccount, catalog, nil
 	}
 	if !errors.Is(err, domain.ErrAccountNotFound) {
-		return nil, err
+		return nil, providerModelCatalog{}, err
 	}
-	defaultBalance, defaultConcurrency, defaultModels, defaultsErr :=
+	defaultBalance, defaultConcurrency, _, defaultsErr :=
 		s.effectiveDefaults(ctx)
 	if defaultsErr != nil {
-		return nil, defaultsErr
+		return nil, providerModelCatalog{}, defaultsErr
 	}
 	providerAccount, err = s.provider.CreateAccount(
 		ctx,
@@ -346,23 +472,23 @@ func (s *Service) loadOrCreateProviderAccount(
 			BalanceUSD:           defaultBalance,
 			HasBalanceUSD:        true,
 			ConcurrencyLimit:     defaultConcurrency,
-			AllowedModels:        append([]string(nil), defaultModels...),
+			AllowedModels:        allowedModels,
 		},
 		randomProviderPassword(),
 	)
 	if err != nil && errors.Is(err, domain.ErrProviderRejected) {
 		recovered, recoverErr := s.provider.GetAccount(ctx, providerAccountID)
 		if recoverErr == nil && recovered != nil {
-			return recovered, nil
+			return recovered, catalog, nil
 		}
 	}
 	if err != nil {
-		return nil, err
+		return nil, providerModelCatalog{}, err
 	}
 	if providerAccount == nil {
-		return nil, domain.ErrProviderUnavailable
+		return nil, providerModelCatalog{}, domain.ErrProviderUnavailable
 	}
-	return providerAccount, nil
+	return providerAccount, catalog, nil
 }
 
 // ensureProviderKey returns a usable provider credential.
@@ -464,8 +590,44 @@ func (s *Service) UpdateForAdmin(
 	if err != nil {
 		return nil, err
 	}
-	availableModels = append([]string(nil), availableModels...)
+	availableModels = normalizeModelIDs(availableModels)
+	// Older clients omit the model field entirely. Treat that as "keep the
+	// current pool" so a quota-only edit cannot silently disable every model.
+	if len(availableModels) == 0 {
+		if len(account.AvailableModels) > 0 {
+			availableModels = append(
+				[]string(nil),
+				account.AvailableModels...,
+			)
+		} else {
+			catalog, catalogErr := s.resolveModelCatalog(ctx)
+			if catalogErr != nil {
+				return nil, catalogErr
+			}
+			availableModels = append(
+				[]string(nil),
+				catalog.availableModels...,
+			)
+			if len(account.SelectedModels) == 0 &&
+				len(availableModels) > 0 {
+				account.SelectedModels = []string{
+					recommendedModelForPool(
+						catalog.recommendedModel,
+						availableModels,
+					),
+				}
+			}
+		}
+	}
+	previousSelection := append([]string(nil), account.SelectedModels...)
 	selectedModels := intersectModels(account.SelectedModels, availableModels)
+	if len(previousSelection) > 0 &&
+		len(selectedModels) == 0 &&
+		len(availableModels) > 0 {
+		// The previous selection was removed from the pool. Keep one
+		// deterministic model instead of widening the restriction to all.
+		selectedModels = []string{availableModels[0]}
+	}
 	allowedModels := effectiveModels(selectedModels, availableModels)
 	providerAccount, err := s.provider.UpdateAccount(
 		ctx,
@@ -514,11 +676,14 @@ func (s *Service) UpdateModelsForParent(
 	}
 	availableModels := account.AvailableModels
 	if len(availableModels) == 0 {
-		_, _, defaultModels, err := s.effectiveDefaults(ctx)
-		if err != nil {
-			return nil, err
+		catalog, catalogErr := s.resolveModelCatalog(ctx)
+		if catalogErr != nil {
+			return nil, catalogErr
 		}
-		availableModels = append([]string(nil), defaultModels...)
+		availableModels = append(
+			[]string(nil),
+			catalog.availableModels...,
+		)
 	}
 	if !isModelSubset(normalizedModels, availableModels) {
 		return nil, domain.ErrModelNotAllowed
@@ -599,6 +764,76 @@ func normalizeModelSelection(models []string) ([]string, error) {
 		normalized = append(normalized, model)
 	}
 	return normalized, nil
+}
+
+func modelIDsFromRuntimeConfig(
+	models []domain.ProviderModelLatency,
+) []string {
+	modelIDs := make([]string, 0, len(models))
+	for _, model := range models {
+		modelID := strings.TrimSpace(model.Model)
+		if modelID == "" || len(modelID) > 128 {
+			continue
+		}
+		modelIDs = append(modelIDs, modelID)
+	}
+	return normalizeModelIDs(modelIDs)
+}
+
+func normalizeModelIDs(models []string) []string {
+	normalized := make([]string, 0, len(models))
+	seen := make(map[string]struct{}, len(models))
+	for _, model := range models {
+		model = strings.TrimSpace(model)
+		if model == "" || len(model) > 128 {
+			continue
+		}
+		key := strings.ToLower(model)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, model)
+	}
+	return normalized
+}
+
+func recommendedModelForPool(
+	recommendedModel string,
+	availableModels []string,
+) string {
+	recommendedModel = strings.TrimSpace(recommendedModel)
+	for _, model := range availableModels {
+		if strings.EqualFold(model, recommendedModel) {
+			return model
+		}
+	}
+	if len(availableModels) == 0 {
+		return ""
+	}
+	return availableModels[0]
+}
+
+// defaultSelectedModels preserves a valid explicit selection and otherwise
+// chooses the recommended model. Returning no selection is safe only when the
+// pool itself is empty because callers interpret nil as "all available".
+func defaultSelectedModels(
+	selectedModels []string,
+	availableModels []string,
+	recommendedModel string,
+) []string {
+	selectedModels = intersectModels(selectedModels, availableModels)
+	if len(selectedModels) > 0 {
+		return selectedModels
+	}
+	recommendedModel = recommendedModelForPool(
+		recommendedModel,
+		availableModels,
+	)
+	if recommendedModel == "" {
+		return nil
+	}
+	return []string{recommendedModel}
 }
 
 func isModelSubset(selectedModels []string, availableModels []string) bool {

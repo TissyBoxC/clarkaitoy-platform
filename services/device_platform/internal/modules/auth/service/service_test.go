@@ -226,7 +226,8 @@ func TestBindEmailAcceptsAnEmailAsAnAlternateLoginIdentifier(t *testing.T) {
 }
 
 type memoryRepository struct {
-	account *domain.ParentAccount
+	account             *domain.ParentAccount
+	passwordHashUpdates int
 }
 
 func (r *memoryRepository) CreateParentAccount(
@@ -269,9 +270,14 @@ func (r *memoryRepository) GetParentAccountByID(
 
 func (r *memoryRepository) UpdatePasswordHash(
 	_ context.Context,
-	_ string,
-	_ string,
+	accountID string,
+	passwordHash string,
 ) error {
+	if r.account == nil || r.account.ID != accountID {
+		return domain.ErrAccountNotFound
+	}
+	r.passwordHashUpdates++
+	r.account.PasswordHash = passwordHash
 	return nil
 }
 

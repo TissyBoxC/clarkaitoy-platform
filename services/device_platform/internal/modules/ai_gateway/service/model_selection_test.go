@@ -3,6 +3,8 @@ package service
 import (
 	"reflect"
 	"testing"
+
+	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/ai_gateway/domain"
 )
 
 func TestEffectiveModelsExpandsEmptySelectionToWholePool(t *testing.T) {
@@ -78,5 +80,43 @@ func TestNormalizeModelSelectionTrimsAndDeduplicates(t *testing.T) {
 func TestNormalizeModelSelectionRejectsBlankModel(t *testing.T) {
 	if _, err := normalizeModelSelection([]string{"   "}); err == nil {
 		t.Fatal("expected a blank model to be rejected")
+	}
+}
+
+func TestModelIDsFromRuntimeConfigTrimsDeduplicatesAndPreservesOrder(t *testing.T) {
+	got := modelIDsFromRuntimeConfig([]domain.ProviderModelLatency{
+		{Model: " model-b "},
+		{Model: "model-a"},
+		{Model: "MODEL-B"},
+		{Model: "   "},
+	})
+
+	if !reflect.DeepEqual(got, []string{"model-b", "model-a"}) {
+		t.Fatalf("unexpected runtime model pool: %v", got)
+	}
+}
+
+func TestRecommendedModelForPoolUsesFallbackWhenRecommendationIsMissing(
+	t *testing.T,
+) {
+	got := recommendedModelForPool(
+		"retired-model",
+		[]string{"model-a", "model-b"},
+	)
+
+	if got != "model-a" {
+		t.Fatalf("expected the first available model, got %q", got)
+	}
+}
+
+func TestDefaultSelectedModelsPreservesValidSelection(t *testing.T) {
+	got := defaultSelectedModels(
+		[]string{"model-b"},
+		[]string{"model-a", "model-b"},
+		"model-a",
+	)
+
+	if !reflect.DeepEqual(got, []string{"model-b"}) {
+		t.Fatalf("expected the explicit selection, got %v", got)
 	}
 }

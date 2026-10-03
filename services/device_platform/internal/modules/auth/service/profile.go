@@ -60,3 +60,22 @@ func (s *Service) UpdateProfile(
 	}
 	return account, nil
 }
+
+// UpdateParentProfile updates guardian-editable fields for one parent account.
+//
+// The administrator-facing entry point refuses non-parent roles before
+// delegating to the shared profile validation and persistence path.
+func (s *Service) UpdateParentProfile(
+	ctx context.Context,
+	accountID string,
+	update ProfileUpdate,
+) (*domain.ParentAccount, error) {
+	account, err := s.GetIdentity(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if account.Role != domain.RoleParent {
+		return nil, domain.ErrInsufficientPrivilege
+	}
+	return s.UpdateProfile(ctx, accountID, update)
+}

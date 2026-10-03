@@ -154,8 +154,7 @@ func (s *Service) ResetAdminPassword(
 		strings.HasPrefix(email, "@") || strings.HasSuffix(email, "@") {
 		return domain.ErrInvalidEmail
 	}
-	if len(password) < 8 || len(password) > 128 ||
-		!containsLetterAndNumber(password) {
+	if !isStrongPassword(password) {
 		return domain.ErrWeakPassword
 	}
 
@@ -175,4 +174,43 @@ func (s *Service) ResetAdminPassword(
 		return fmt.Errorf("hash administrator password: %w", err)
 	}
 	return s.repository.UpdatePasswordHash(ctx, account.ID, string(passwordHash))
+}
+
+// ResetParentPassword replaces the password for one existing parent account.
+//
+// It intentionally refuses administrator accounts and revokes every active
+// session through the repository so the previous password cannot be reused.
+func (s *Service) ResetParentPassword(
+	ctx context.Context,
+	accountID string,
+	password string,
+) error {
+	if !isStrongPassword(password) {
+		return domain.ErrWeakPassword
+	}
+
+	account, err := s.repository.GetParentAccountByID(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	if account.Role != domain.RoleParent {
+		return domain.ErrInsufficientPrivilege
+	}
+
+	passwordHash, err := bcrypt.GenerateFromPassword(
+		[]byte(password),
+		bcrypt.DefaultCost,
+	)
+	if err != nil {
+		// bcrypt's only input error is an overlong password; other failures
+		// indicate invalid cost configuration and must not reach the caller.
+		return domain.ErrWeakPassword
+	}
+	return s.repository.UpdatePasswordHash(ctx, account.ID, string(passwordHash))
+}
+
+func isStrongPassword(password string) bool {
+	return len(password) >= 8 &&
+		len(password) <= 128 &&
+		containsLetterAndNumber(password)
 }

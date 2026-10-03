@@ -129,6 +129,67 @@ func TestCommandLifecycleIsAcknowledgedOnce(t *testing.T) {
 	}
 }
 
+func TestListDeviceStatusesReturnsOnlineAndMissingRuntimeStates(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.October, 3, 12, 0, 0, 0, time.UTC)
+	repository := newMemoryRepository()
+	repository.statuses["device_test_001"] = domain.RuntimeStatus{
+		Heartbeat: domain.Heartbeat{
+			DeviceID:        "device_test_001",
+			ConnectionState: domain.ConnectionStateOnline,
+			ReceivedAt:      now.Add(-30 * time.Second),
+		},
+	}
+	repository.statuses["device_test_002"] = domain.RuntimeStatus{
+		Heartbeat: domain.Heartbeat{
+			DeviceID:        "device_test_002",
+			ConnectionState: domain.ConnectionStateOnline,
+			ReceivedAt:      now.Add(-2 * time.Minute),
+		},
+	}
+	service, err := New(Options{
+		Repository: repository,
+		BindingService: &memoryBindingReader{
+			bindings: []bindingdomain.Binding{
+				{
+					DeviceID:   "device_test_001",
+					DeviceName: "初芽",
+				},
+				{
+					DeviceID:   "device_test_002",
+					DeviceName: "备用设备",
+				},
+				{
+					DeviceID:   "device_test_003",
+					DeviceName: "尚未连接设备",
+				},
+			},
+		},
+		Clock:            fixedClock{now: now},
+		OfflineThreshold: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("create runtime service: %v", err)
+	}
+
+	statuses, err := service.ListDeviceStatuses(context.Background(), "parent-001")
+	if err != nil {
+		t.Fatalf("list device statuses: %v", err)
+	}
+	if len(statuses) != 3 {
+		t.Fatalf("expected three bound devices, got %d", len(statuses))
+	}
+	if statuses[0].Runtime == nil || !statuses[0].Runtime.IsOnline {
+		t.Fatal("expected the fresh heartbeat to be online")
+	}
+	if statuses[1].Runtime == nil || statuses[1].Runtime.IsOnline {
+		t.Fatal("expected the stale heartbeat to be offline")
+	}
+	if statuses[2].Runtime != nil {
+		t.Fatal("expected a device without runtime data to remain safely unknown")
+	}
+}
+
 type fixedClock struct {
 	now time.Time
 }

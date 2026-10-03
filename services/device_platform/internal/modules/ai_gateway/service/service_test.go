@@ -16,6 +16,13 @@ func TestEnsureForParentPersistsCredentialOnFirstCreate(t *testing.T) {
 	provider := &stubProvider{
 		account: nil,
 		key:     &domain.ProviderAPIKey{ID: 41, UserID: 7, Key: "provider-secret"},
+		runtimeConfig: &domain.ProviderRuntimeConfig{
+			RecommendedModel: "model-b",
+			Models: []domain.ProviderModelLatency{
+				{Model: "model-a"},
+				{Model: "model-b"},
+			},
+		},
 	}
 	service := newTestService(t, repository, provider)
 
@@ -56,6 +63,253 @@ func TestEnsureForParentPersistsCredentialOnFirstCreate(t *testing.T) {
 			"expected the configured initial balance to be persisted, got %#v",
 			repository.created,
 		)
+	}
+	if !reflect.DeepEqual(
+		repository.created.AvailableModels,
+		[]string{"model-a", "model-b"},
+	) {
+		t.Fatalf(
+			"expected the full runtime model pool, got %v",
+			repository.created.AvailableModels,
+		)
+	}
+	if !reflect.DeepEqual(
+		repository.created.SelectedModels,
+		[]string{"model-b"},
+	) {
+		t.Fatalf(
+			"expected the recommended model to be preselected, got %v",
+			repository.created.SelectedModels,
+		)
+	}
+	if !reflect.DeepEqual(
+		provider.createdAccount.AllowedModels,
+		[]string{"model-b"},
+	) {
+		t.Fatalf(
+			"expected the effective allowlist on create, got %v",
+			provider.createdAccount.AllowedModels,
+		)
+	}
+}
+
+func TestEnsureForParentBackfillsLegacyModelPool(t *testing.T) {
+	repository := &memoryRepository{
+		account: &domain.Account{
+			ID:                   "ai-account-001",
+			ParentAccountID:      "parent-001",
+			ProviderAccountID:    "parent_parent001",
+			APIKeyCiphertext:     []byte("ciphertext"),
+			APIKeyNonce:          []byte("nonce"),
+			ProviderAPIKeyID:     19,
+			CredentialKeyVersion: 1,
+			Status:               statusActive,
+			BalanceUSD:           6,
+			ConcurrencyLimit:     2,
+		},
+	}
+	provider := &stubProvider{
+		account: &domain.ProviderAccount{
+			ProviderAccountID: "parent_parent001",
+			Status:            statusActive,
+			BalanceUSD:        6,
+			ConcurrencyLimit:  2,
+		},
+		runtimeConfig: &domain.ProviderRuntimeConfig{
+			RecommendedModel: "model-b",
+			Models: []domain.ProviderModelLatency{
+				{Model: "model-a"},
+				{Model: "model-b"},
+			},
+		},
+	}
+	service := newTestService(t, repository, provider)
+
+	summary, err := service.EnsureForParent(
+		context.Background(),
+		"parent-001",
+		"guardian@example.com",
+	)
+	if err != nil {
+		t.Fatalf("repair legacy AI account: %v", err)
+	}
+	if !reflect.DeepEqual(
+		summary.AvailableModels,
+		[]string{"model-a", "model-b"},
+	) {
+		t.Fatalf("expected the runtime pool, got %v", summary.AvailableModels)
+	}
+	if !reflect.DeepEqual(summary.SelectedModels, []string{"model-b"}) {
+		t.Fatalf("expected the recommended selection, got %v", summary.SelectedModels)
+	}
+}
+
+func TestEnsureForParentPreservesValidLegacySelection(t *testing.T) {
+	repository := &memoryRepository{
+		account: &domain.Account{
+			ID:                   "ai-account-001",
+			ParentAccountID:      "parent-001",
+			ProviderAccountID:    "parent_parent001",
+			APIKeyCiphertext:     []byte("ciphertext"),
+			APIKeyNonce:          []byte("nonce"),
+			ProviderAPIKeyID:     19,
+			CredentialKeyVersion: 1,
+			Status:               statusActive,
+			BalanceUSD:           6,
+			ConcurrencyLimit:     2,
+			SelectedModels:       []string{"model-a"},
+		},
+	}
+	provider := &stubProvider{
+		account: &domain.ProviderAccount{
+			ProviderAccountID: "parent_parent001",
+			Status:            statusActive,
+			BalanceUSD:        6,
+			ConcurrencyLimit:  2,
+		},
+		runtimeConfig: &domain.ProviderRuntimeConfig{
+			RecommendedModel: "model-b",
+			Models: []domain.ProviderModelLatency{
+				{Model: "model-a"},
+				{Model: "model-b"},
+			},
+		},
+	}
+	service := newTestService(t, repository, provider)
+
+	summary, err := service.EnsureForParent(
+		context.Background(),
+		"parent-001",
+		"guardian@example.com",
+	)
+	if err != nil {
+		t.Fatalf("repair legacy AI account: %v", err)
+	}
+	if !reflect.DeepEqual(summary.SelectedModels, []string{"model-a"}) {
+		t.Fatalf("expected the existing selection, got %v", summary.SelectedModels)
+	}
+	if !reflect.DeepEqual(summary.AvailableModels, []string{"model-a", "model-b"}) {
+		t.Fatalf("expected the runtime pool, got %v", summary.AvailableModels)
+	}
+}
+
+func TestEnsureForParentFallsBackToDefaultModelsWhenRuntimeConfigFails(
+	t *testing.T,
+) {
+	provider := &stubProvider{
+		runtimeConfigErr: errors.New("runtime config unavailable"),
+		key:              &domain.ProviderAPIKey{ID: 41, UserID: 7, Key: "provider-secret"},
+	}
+	service := newTestService(t, &memoryRepository{}, provider)
+
+	summary, err := service.EnsureForParent(
+		context.Background(),
+		"parent-001",
+		"guardian@example.com",
+	)
+	if err != nil {
+		t.Fatalf("provision with runtime config failure: %v", err)
+	}
+	if !reflect.DeepEqual(summary.AvailableModels, []string{"model-a"}) {
+		t.Fatalf("expected the fallback pool, got %v", summary.AvailableModels)
+	}
+	if !reflect.DeepEqual(summary.SelectedModels, []string{"model-a"}) {
+		t.Fatalf("expected a fallback selection, got %v", summary.SelectedModels)
+	}
+}
+
+func TestUpdateForAdminPreservesModelPoolWhenModelsAreOmitted(t *testing.T) {
+	repository := &memoryRepository{
+		account: &domain.Account{
+			ID:                "ai-account-001",
+			ParentAccountID:   "parent-001",
+			ProviderAccountID: "parent_parent001",
+			Status:            statusActive,
+			BalanceUSD:        4,
+			ConcurrencyLimit:  1,
+			AvailableModels:   []string{"model-a", "model-b"},
+			SelectedModels:    []string{"model-b"},
+			AllowedModels:     []string{"model-b"},
+		},
+	}
+	provider := &stubProvider{
+		account: &domain.ProviderAccount{
+			ProviderAccountID: "parent_parent001",
+			Status:            statusActive,
+			BalanceUSD:        10,
+			ConcurrencyLimit:  2,
+		},
+	}
+	service := newTestService(t, repository, provider)
+
+	account, err := service.UpdateForAdmin(
+		context.Background(),
+		"parent_parent001",
+		statusActive,
+		10,
+		2,
+		nil,
+		"admin quota update",
+	)
+	if err != nil {
+		t.Fatalf("update AI account: %v", err)
+	}
+	if !reflect.DeepEqual(account.AvailableModels, []string{"model-a", "model-b"}) {
+		t.Fatalf("expected the existing pool, got %v", account.AvailableModels)
+	}
+	if !reflect.DeepEqual(account.SelectedModels, []string{"model-b"}) {
+		t.Fatalf("expected the existing selection, got %v", account.SelectedModels)
+	}
+	if !reflect.DeepEqual(account.AllowedModels, []string{"model-b"}) {
+		t.Fatalf("expected the effective allowlist, got %v", account.AllowedModels)
+	}
+}
+
+func TestUpdateForAdminBackfillsLegacyModelPoolFromRuntimeConfig(t *testing.T) {
+	repository := &memoryRepository{
+		account: &domain.Account{
+			ID:                "ai-account-001",
+			ParentAccountID:   "parent-001",
+			ProviderAccountID: "parent_parent001",
+			Status:            statusActive,
+			BalanceUSD:        4,
+			ConcurrencyLimit:  1,
+		},
+	}
+	provider := &stubProvider{
+		account: &domain.ProviderAccount{
+			ProviderAccountID: "parent_parent001",
+			Status:            statusActive,
+			BalanceUSD:        10,
+			ConcurrencyLimit:  2,
+		},
+		runtimeConfig: &domain.ProviderRuntimeConfig{
+			RecommendedModel: "model-b",
+			Models: []domain.ProviderModelLatency{
+				{Model: "model-a"},
+				{Model: "model-b"},
+			},
+		},
+	}
+	service := newTestService(t, repository, provider)
+
+	account, err := service.UpdateForAdmin(
+		context.Background(),
+		"parent_parent001",
+		statusActive,
+		10,
+		2,
+		nil,
+		"admin quota update",
+	)
+	if err != nil {
+		t.Fatalf("update legacy AI account: %v", err)
+	}
+	if !reflect.DeepEqual(account.AvailableModels, []string{"model-a", "model-b"}) {
+		t.Fatalf("expected the runtime pool, got %v", account.AvailableModels)
+	}
+	if !reflect.DeepEqual(account.SelectedModels, []string{"model-b"}) {
+		t.Fatalf("expected the recommended selection, got %v", account.SelectedModels)
 	}
 }
 

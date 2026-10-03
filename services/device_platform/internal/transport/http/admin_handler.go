@@ -10,6 +10,8 @@ import (
 	gatewaydomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/ai_gateway/domain"
 	gatewayservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/ai_gateway/service"
 	authdomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/domain"
+	authservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/service"
+	deviceruntimedomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_runtime/domain"
 	operationsdomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/operations/domain"
 	serviceversiondomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/service_version/domain"
 	serviceversionservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/service_version/service"
@@ -20,6 +22,7 @@ type adminHandler struct {
 	parentService         parentAccountService
 	operationsService     operationsAdminService
 	serviceVersionService serviceVersionAdminService
+	deviceStatusService   adminDeviceStatusService
 }
 
 type parentAccountService interface {
@@ -31,6 +34,16 @@ type parentAccountService interface {
 		ctx context.Context,
 		accountID string,
 	) (*authdomain.ParentAccount, error)
+	UpdateParentProfile(
+		ctx context.Context,
+		accountID string,
+		update authservice.ProfileUpdate,
+	) (*authdomain.ParentAccount, error)
+	ResetParentPassword(
+		ctx context.Context,
+		accountID string,
+		password string,
+	) error
 }
 
 // operationsAdminService is the management-facing operations surface needed by
@@ -126,6 +139,27 @@ type updateAIAccountRequest struct {
 
 type updateAIModelsRequest struct {
 	SelectedModels []string `json:"selected_models"`
+}
+
+type updateParentProfileRequest struct {
+	DisplayName        string `json:"display_name"`
+	GuardianFamilyName string `json:"guardian_family_name"`
+	ChildNickname      string `json:"child_nickname"`
+	ChildBirthday      string `json:"child_birthday"`
+}
+
+type resetParentPasswordRequest struct {
+	Password string `json:"password"`
+}
+
+// adminDeviceStatusService is the narrow device surface the management console
+// needs. It is scoped to one parent so an operator can never read another
+// family's devices by guessing a device id.
+type adminDeviceStatusService interface {
+	ListDeviceStatuses(
+		ctx context.Context,
+		parentAccountID string,
+	) ([]deviceruntimedomain.DeviceStatus, error)
 }
 
 type aiAccountDefaultsResponse struct {
@@ -228,6 +262,116 @@ func (handler adminHandler) retryParentAIAccount(
 			"allowed_models":    summary.AllowedModels,
 			"provider_ready":    summary.ProviderReady,
 		},
+	})
+}
+
+// updateParentProfile lets an operator correct guardian-editable profile
+// fields for one family. Identity fields (phone, email, role) stay immutable
+// here because changing them would move the account between families.
+func (handler adminHandler) updateParentProfile(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	parentAccountID := strings.TrimSpace(
+		request.PathValue("parent_account_id"),
+	)
+	if parentAccountID == "" {
+		writeError(response, request, http.StatusBadRequest, "invalid_request", "请检查要修改的家长账号")
+		return
+	}
+	var payload updateParentProfileRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(response, request, http.StatusBadRequest, "invalid_request", "请检查填写的内容")
+		return
+	}
+	account, err := handler.parentService.UpdateParentProfile(
+		request.Context(),
+		parentAccountID,
+		authservice.ProfileUpdate{
+			DisplayName:        payload.DisplayName,
+			GuardianFamilyName: payload.GuardianFamilyName,
+			ChildNickname:      payload.ChildNickname,
+			ChildBirthday:      payload.ChildBirthday,
+		},
+	)
+	if err != nil {
+		writeAuthServiceError(response, request, err)
+		return
+	}
+	writeSuccess(response, request, http.StatusOK, map[string]any{
+		"account": map[string]any{
+			"parent_account_id":    account.ID,
+			"display_name":         account.DisplayName,
+			"guardian_family_name": account.GuardianFamilyName,
+			"child_nickname":       account.ChildNickname,
+			"child_birthday":       account.ChildBirthday,
+		},
+	})
+}
+
+// resetParentPassword replaces one family's password. The repository revokes
+// every active session as part of the same operation, so a stolen refresh
+// token cannot survive an operator reset.
+func (handler adminHandler) resetParentPassword(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	parentAccountID := strings.TrimSpace(
+		request.PathValue("parent_account_id"),
+	)
+	if parentAccountID == "" {
+		writeError(response, request, http.StatusBadRequest, "invalid_request", "请检查要重置的家长账号")
+		return
+	}
+	var payload resetParentPasswordRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(response, request, http.StatusBadRequest, "invalid_request", "请检查填写的内容")
+		return
+	}
+	if err := handler.parentService.ResetParentPassword(
+		request.Context(),
+		parentAccountID,
+		payload.Password,
+	); err != nil {
+		writeAuthServiceError(response, request, err)
+		return
+	}
+	writeSuccess(response, request, http.StatusOK, map[string]any{
+		"password_reset": true,
+	})
+}
+
+// listParentDevices returns the bound devices of one family together with
+// their most recent runtime state so an operator can see who is online.
+func (handler adminHandler) listParentDevices(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	parentAccountID := strings.TrimSpace(
+		request.PathValue("parent_account_id"),
+	)
+	if parentAccountID == "" {
+		writeError(response, request, http.StatusBadRequest, "invalid_request", "请检查要查看的家长账号")
+		return
+	}
+	if handler.deviceStatusService == nil {
+		writeError(response, request, http.StatusServiceUnavailable, "service_unavailable", "设备信息暂时无法读取，请稍后重试")
+		return
+	}
+	statuses, err := handler.deviceStatusService.ListDeviceStatuses(
+		request.Context(),
+		parentAccountID,
+	)
+	if err != nil {
+		writeDeviceRuntimeError(response, request, err)
+		return
+	}
+	devices := make([]map[string]any, 0, len(statuses))
+	for index := range statuses {
+		devices = append(devices, deviceStatusResponse(&statuses[index]))
+	}
+	writeSuccess(response, request, http.StatusOK, map[string]any{
+		"devices": devices,
 	})
 }
 

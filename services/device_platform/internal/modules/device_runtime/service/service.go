@@ -198,6 +198,8 @@ func (s *Service) GetDeviceStatus(
 }
 
 // ListDeviceStatuses returns runtime state for every device owned by a parent.
+// Authenticated administrator transport reuses this method after resolving the
+// target parent; authorization remains a transport concern.
 func (s *Service) ListDeviceStatuses(
 	ctx context.Context,
 	parentAccountID string,
