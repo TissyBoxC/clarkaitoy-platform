@@ -235,6 +235,22 @@ send_timeout 3600s;
 
 管理端镜像已内置 `/api/` 同源代理，不需要为管理端再单独配置 API 路径。
 
+`api.clarkhub.cn` 还要承载发布流水线的文件上传，单个 APK 体积远大于 Nginx
+默认的 1 MB 请求体上限。如果只配置普通反向代理，上传会在 TLS 握手后被
+连接重置，`SPROUT_RELEASE_UPLOAD_TOKEN` 正确也无法成功。在 1Panel 站点
+`api.clarkhub.cn` 的反向代理目录新增 `release-upload.conf`：
+
+```nginx
+client_max_body_size 512m;
+proxy_request_buffering off;
+proxy_read_timeout 600s;
+proxy_send_timeout 600s;
+send_timeout 600s;
+```
+
+该文件由站点配置末尾的 `include .../proxy/*.conf;` 加载，保存后重载 Nginx
+即可生效。此配置只放宽请求体上限，不改变 `/api/` 的鉴权规则。
+
 设备 MQTT 使用独立域名（待确认），在 1Panel 或云防火墙中放行
 `8883/tcp`。不要对公网放行 `1883/tcp`。
 
