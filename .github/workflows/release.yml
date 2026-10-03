@@ -175,6 +175,7 @@ jobs:
           flutter build apk \
             --release \
             --dart-define "API_BASE_URL=$API_BASE_URL" \
+            --dart-define "APP_VERSION=$RELEASE_VERSION" \
             --build-name "$RELEASE_VERSION" \
             --build-number "$GITHUB_RUN_NUMBER" \
             --target-platform android-arm,android-arm64,android-x64

@@ -31,7 +31,7 @@ AI 网关 fork 保持独立仓库，不在本仓库中重复版本化。
 
 ## 当前状态
 
-仓库当前版本为 `0.6.0`，处于工程底座和音频链路实现阶段。功能状态以可运行的
+仓库当前版本为 `0.8.0`，处于账号、设备、运营更新和语音计量闭环阶段。功能状态以可运行的
 端到端闭环为准，不以目录、接口或占位文件是否存在为准。
 
 | 标记 | 含义 |
@@ -571,6 +571,7 @@ $env:VOICE_GATEWAY_REDIS_ADDRESS = "127.0.0.1:6379"
 $env:VOICE_GATEWAY_REDIS_PASSWORD = "<redis-password>"
 $env:VOICE_GATEWAY_SUB2API_BASE_URL = "http://127.0.0.1:8080"
 $env:VOICE_GATEWAY_SUB2API_API_KEY = "<local-api-key>"
+$env:VOICE_GATEWAY_DATABASE_DSN = "postgres://sprout:<password>@127.0.0.1:5432/sprout_device_platform?sslmode=disable"
 ```
 
 不要把真实密钥写入 README、源码、镜像、日志或前端配置。
