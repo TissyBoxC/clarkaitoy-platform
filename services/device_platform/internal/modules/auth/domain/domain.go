@@ -34,6 +34,8 @@ var (
 	ErrInvalidChildBirthday  = errors.New("child birthday is invalid")
 	ErrAIAccountUnavailable  = errors.New("AI account is unavailable")
 	ErrInsufficientPrivilege = errors.New("insufficient privilege")
+	ErrRegistrationDisabled  = errors.New("registration is disabled")
+	ErrEmailLoginDisabled    = errors.New("email login is disabled")
 )
 
 const (

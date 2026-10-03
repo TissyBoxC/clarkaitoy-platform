@@ -15,6 +15,7 @@ import (
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/ai_gateway/domain"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/ai_gateway/repository"
 	authdomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/domain"
+	operationsdomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/operations/domain"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/platform/clock"
 	"github.com/google/uuid"
 )
@@ -71,9 +72,17 @@ type Service struct {
 	provider           Provider
 	cipher             CredentialCipher
 	timeSource         clock.Clock
+	policyReader       RuntimePolicyReader
 	defaultBalance     float64
 	defaultModels      []string
 	defaultConcurrency int
+}
+
+// RuntimePolicyReader supplies the operator defaults used when a new AI
+// account is provisioned. A missing reader keeps the configured bootstrap
+// values, which is required for the first administrator-created account.
+type RuntimePolicyReader interface {
+	RuntimePolicy(ctx context.Context) (*operationsdomain.RuntimePolicy, error)
 }
 
 // Options contains AI account service dependencies and defaults.
@@ -82,6 +91,7 @@ type Options struct {
 	Provider           Provider
 	Cipher             CredentialCipher
 	Clock              clock.Clock
+	PolicyReader       RuntimePolicyReader
 	DefaultBalanceUSD  float64
 	DefaultModels      []string
 	DefaultConcurrency int
@@ -110,10 +120,38 @@ func New(options Options) (*Service, error) {
 		provider:           options.Provider,
 		cipher:             options.Cipher,
 		timeSource:         timeSource,
+		policyReader:       options.PolicyReader,
 		defaultBalance:     options.DefaultBalanceUSD,
 		defaultModels:      append([]string(nil), options.DefaultModels...),
 		defaultConcurrency: options.DefaultConcurrency,
 	}, nil
+}
+
+// SetPolicyReader wires the operations policy after both modules are built.
+// Keeping it separate avoids an initialization cycle between AI and settings.
+func (s *Service) SetPolicyReader(reader RuntimePolicyReader) {
+	s.policyReader = reader
+}
+
+// effectiveDefaults returns the current operator defaults. A policy read
+// failure is fatal for a new account because silently falling back could grant
+// a different balance or model pool than the administrator configured.
+func (s *Service) effectiveDefaults(
+	ctx context.Context,
+) (float64, int, []string, error) {
+	if s.policyReader == nil {
+		return s.defaultBalance, s.defaultConcurrency,
+			append([]string(nil), s.defaultModels...), nil
+	}
+	policy, err := s.policyReader.RuntimePolicy(ctx)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	models := append([]string(nil), policy.DefaultModels...)
+	if len(models) == 0 {
+		models = append([]string(nil), s.defaultModels...)
+	}
+	return policy.DefaultBalanceUSD, policy.DefaultConcurrency, models, nil
 }
 
 // EnsureForParent creates or repairs the account projection and API key.
@@ -126,27 +164,50 @@ func (s *Service) EnsureForParent(
 	parentAccountID string,
 	parentEmail string,
 ) (*authdomain.AIAccountSummary, error) {
+	parentAccountID = strings.TrimSpace(parentAccountID)
+	if parentAccountID == "" {
+		return nil, domain.ErrAccountNotFound
+	}
 	existing, err := s.repository.GetByParentAccountID(ctx, parentAccountID)
 	if err != nil && !errors.Is(err, domain.ErrAccountNotFound) {
 		return nil, err
 	}
 	if existing != nil && len(existing.APIKeyCiphertext) > 0 &&
 		len(existing.APIKeyNonce) > 0 {
+		if len(existing.AvailableModels) == 0 {
+			existing.AvailableModels = append(
+				[]string(nil),
+				s.defaultModels...,
+			)
+			existing.AllowedModels = effectiveModels(
+				existing.SelectedModels,
+				existing.AvailableModels,
+			)
+			existing.UpdatedAt = s.timeSource.Now().UTC()
+			if err := s.repository.UpdateFromProvider(ctx, existing); err != nil {
+				return nil, err
+			}
+		}
 		return s.summaryFromAccount(existing), nil
 	}
 
 	providerAccountID := providerAccountIDForParent(parentAccountID)
 	providerAccount, err := s.provider.GetAccount(ctx, providerAccountID)
 	if errors.Is(err, domain.ErrAccountNotFound) {
+		defaultBalance, defaultConcurrency, defaultModels, defaultsErr :=
+			s.effectiveDefaults(ctx)
+		if defaultsErr != nil {
+			return nil, defaultsErr
+		}
 		providerAccount, err = s.provider.CreateAccount(
 			ctx,
 			domain.ProviderAccount{
 				ProviderAccountID:    providerAccountID,
 				ProviderAccountEmail: controlledEmail(parentEmail, parentAccountID),
 				Status:               statusActive,
-				BalanceUSD:           s.defaultBalance,
-				ConcurrencyLimit:     s.defaultConcurrency,
-				AllowedModels:        append([]string(nil), s.defaultModels...),
+				BalanceUSD:           defaultBalance,
+				ConcurrencyLimit:     defaultConcurrency,
+				AllowedModels:        append([]string(nil), defaultModels...),
 			},
 			randomProviderPassword(),
 		)
@@ -175,7 +236,11 @@ func (s *Service) EnsureForParent(
 	if existing == nil {
 		availableModels := append([]string(nil), providerAccount.AllowedModels...)
 		if len(availableModels) == 0 {
-			availableModels = append([]string(nil), s.defaultModels...)
+			_, _, defaults, defaultsErr := s.effectiveDefaults(ctx)
+			if defaultsErr != nil {
+				return nil, defaultsErr
+			}
+			availableModels = append([]string(nil), defaults...)
 		}
 		existing = &domain.Account{
 			ID:                   uuid.NewString(),
@@ -190,8 +255,8 @@ func (s *Service) EnsureForParent(
 			AvailableModels: availableModels,
 			SelectedModels:  nil,
 			AllowedModels:   availableModels,
-			CreatedAt:            now,
-			UpdatedAt:            now,
+			CreatedAt:       now,
+			UpdatedAt:       now,
 		}
 		if err := s.repository.Create(ctx, existing); err != nil {
 			// Do not leave a usable provider credential if the platform could
@@ -209,9 +274,6 @@ func (s *Service) EnsureForParent(
 	existing.ConcurrencyLimit = providerAccount.ConcurrencyLimit
 	if len(existing.AvailableModels) == 0 {
 		existing.AvailableModels = append([]string(nil), providerAccount.AllowedModels...)
-	}
-	if len(existing.AvailableModels) == 0 {
-		existing.AvailableModels = append([]string(nil), s.defaultModels...)
 	}
 	existing.SelectedModels = intersectModels(
 		existing.SelectedModels,
@@ -312,7 +374,11 @@ func (s *Service) UpdateModelsForParent(
 	}
 	availableModels := account.AvailableModels
 	if len(availableModels) == 0 {
-		availableModels = append([]string(nil), s.defaultModels...)
+		_, _, defaultModels, err := s.effectiveDefaults(ctx)
+		if err != nil {
+			return nil, err
+		}
+		availableModels = append([]string(nil), defaultModels...)
 	}
 	if !isModelSubset(normalizedModels, availableModels) {
 		return nil, domain.ErrModelNotAllowed

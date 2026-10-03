@@ -22,6 +22,7 @@ type Repository interface {
 	GetParentAccountByID(ctx context.Context, accountID string) (*domain.ParentAccount, error)
 	UpdatePasswordHash(ctx context.Context, accountID string, passwordHash string) error
 	UpdateEmail(ctx context.Context, accountID string, email string) error
+	UpdateProfile(ctx context.Context, account *domain.ParentAccount) error
 	UpdateLastLogin(ctx context.Context, accountID string) error
 	CreateSession(ctx context.Context, session *domain.Session) error
 	GetSessionByRefreshTokenHash(
@@ -150,6 +151,38 @@ func (r *PostgresRepository) UpdateEmail(
 			return domain.ErrEmailExists
 		}
 		return fmt.Errorf("update parent email: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrAccountNotFound
+	}
+	return nil
+}
+
+// UpdateProfile persists guardian-editable fields and leaves identity,
+// authorization, and verification state untouched.
+func (r *PostgresRepository) UpdateProfile(
+	ctx context.Context,
+	account *domain.ParentAccount,
+) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE parent_accounts
+		SET display_name = $2,
+		    guardian_family_name = $3,
+		    child_nickname = NULLIF($4, ''),
+		    child_birthday = NULLIF($5, '')::date,
+		    updated_at = $6
+		WHERE id = $1
+		  AND status = 'active'
+	`,
+		account.ID,
+		account.DisplayName,
+		account.GuardianFamilyName,
+		account.ChildNickname,
+		account.ChildBirthday,
+		account.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("update parent profile: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrAccountNotFound

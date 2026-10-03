@@ -15,6 +15,7 @@ import (
 	authservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/service"
 	bindingservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_binding/service"
 	runtimeservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_runtime/service"
+	operationsservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/operations/service"
 )
 
 // RouterOptions contains dependencies for the device platform HTTP transport.
@@ -23,6 +24,7 @@ type RouterOptions struct {
 	InternalAPIConfig config.InternalAPIConfig
 	AuthService       *authservice.Service
 	AIService         *gatewayservice.Service
+	OperationsService *operationsservice.Service
 	BindingService    *bindingservice.Service
 	RuntimeService    *runtimeservice.Service
 }
@@ -51,6 +53,14 @@ func NewRouter(options RouterOptions) http.Handler {
 		mux.HandleFunc(
 			"PUT /api/v1/auth/email",
 			authHandler.requireAuthentication(authHandler.bindEmail),
+		)
+		mux.HandleFunc(
+			"PUT /api/v1/auth/profile",
+			authHandler.requireAuthentication(authHandler.updateProfile),
+		)
+		mux.HandleFunc(
+			"GET /api/v1/auth/overview",
+			authHandler.requireAuthentication(authHandler.parentOverview),
 		)
 		mux.HandleFunc("POST /api/v1/auth/refresh", authHandler.refresh)
 		mux.HandleFunc("POST /api/v1/auth/logout", authHandler.logout)
@@ -129,10 +139,26 @@ func NewRouter(options RouterOptions) http.Handler {
 			)
 		}
 		if options.AIService != nil {
-			adminHandler := adminHandler{service: options.AIService}
+			adminHandler := adminHandler{
+				service:           options.AIService,
+				parentService:     options.AuthService,
+				operationsService: options.OperationsService,
+			}
 			mux.HandleFunc(
 				"PUT /api/v1/auth/ai-models",
 				authHandler.requireAuthentication(adminHandler.updateParentAIModels),
+			)
+			mux.HandleFunc(
+				"GET /api/v1/admin/families",
+				authHandler.requireAdmin(adminHandler.listFamilies),
+			)
+			mux.HandleFunc(
+				"POST /api/v1/admin/families",
+				authHandler.requireAdmin(adminHandler.createParent),
+			)
+			mux.HandleFunc(
+				"POST /api/v1/admin/families/{parent_account_id}/ai-account",
+				authHandler.requireAdmin(adminHandler.retryParentAIAccount),
 			)
 			mux.HandleFunc(
 				"GET /api/v1/admin/ai-accounts",
@@ -142,6 +168,40 @@ func NewRouter(options RouterOptions) http.Handler {
 				"PUT /api/v1/admin/ai-accounts/{provider_account_id}",
 				authHandler.requireAdmin(adminHandler.updateAIAccount),
 			)
+			if options.OperationsService != nil {
+				mux.HandleFunc(
+					"GET /api/v1/admin/overview",
+					authHandler.requireAdmin(adminHandler.getOverview),
+				)
+				mux.HandleFunc(
+					"GET /api/v1/admin/settings",
+					authHandler.requireAdmin(adminHandler.getSettings),
+				)
+				mux.HandleFunc(
+					"PUT /api/v1/admin/settings",
+					authHandler.requireAdmin(adminHandler.updateSettings),
+				)
+				mux.HandleFunc(
+					"GET /api/v1/admin/releases",
+					authHandler.requireAdmin(adminHandler.listReleases),
+				)
+				mux.HandleFunc(
+					"POST /api/v1/admin/releases",
+					authHandler.requireAdmin(adminHandler.createRelease),
+				)
+				mux.HandleFunc(
+					"PUT /api/v1/admin/releases/{version}/publish",
+					authHandler.requireAdmin(adminHandler.publishRelease),
+				)
+				mux.HandleFunc(
+					"DELETE /api/v1/admin/releases/{version}",
+					authHandler.requireAdmin(adminHandler.deleteRelease),
+				)
+				mux.HandleFunc(
+					"GET /api/v1/app/update",
+					adminHandler.appUpdate,
+				)
+			}
 		}
 	}
 

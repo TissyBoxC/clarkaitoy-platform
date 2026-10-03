@@ -8,6 +8,7 @@ import (
 
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/domain"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/repository"
+	operationsdomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/operations/domain"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/platform/security"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -87,6 +88,59 @@ func TestRegisterRejectsInvalidChildBirthday(t *testing.T) {
 
 	if !errors.Is(err, domain.ErrInvalidChildBirthday) {
 		t.Fatalf("expected invalid child birthday, got %v", err)
+	}
+}
+
+func TestRegisterHonoursOperationsRegistrationPolicy(t *testing.T) {
+	service, err := New(Options{
+		Repository:    &memoryRepository{},
+		TokenIssuer:   mustTokenIssuer(t),
+		PhoneVerifier: noOpPhoneVerifier{},
+		PolicyReader: staticPolicyReader{policy: operationsdomain.RuntimePolicy{
+			RegistrationEnabled:       false,
+			PhoneVerificationRequired: false,
+			EmailLoginEnabled:         false,
+		}},
+		AccessTTL:  time.Minute,
+		RefreshTTL: time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("create authentication service: %v", err)
+	}
+
+	_, _, _, err = service.Register(context.Background(), domain.RegisterInput{
+		Phone:                  "13800138000",
+		Password:               "sprout123",
+		GuardianConsentVersion: defaultConsent,
+	})
+	if !errors.Is(err, domain.ErrRegistrationDisabled) {
+		t.Fatalf("expected registration disabled, got %v", err)
+	}
+}
+
+func TestRegisterCanSkipPhoneVerificationWhenPolicyAllowsIt(t *testing.T) {
+	service, err := New(Options{
+		Repository:  &memoryRepository{},
+		TokenIssuer: mustTokenIssuer(t),
+		PolicyReader: staticPolicyReader{policy: operationsdomain.RuntimePolicy{
+			RegistrationEnabled:       true,
+			PhoneVerificationRequired: false,
+			EmailLoginEnabled:         true,
+		}},
+		AccessTTL:  time.Minute,
+		RefreshTTL: time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("create authentication service: %v", err)
+	}
+
+	_, _, _, err = service.Register(context.Background(), domain.RegisterInput{
+		Phone:                  "13800138000",
+		Password:               "sprout123",
+		GuardianConsentVersion: defaultConsent,
+	})
+	if err != nil {
+		t.Fatalf("register without phone verification: %v", err)
 	}
 }
 
@@ -235,6 +289,21 @@ func (r *memoryRepository) UpdateEmail(
 	return nil
 }
 
+func (r *memoryRepository) UpdateProfile(
+	_ context.Context,
+	account *domain.ParentAccount,
+) error {
+	if r.account == nil || r.account.ID != account.ID {
+		return domain.ErrAccountNotFound
+	}
+	r.account.DisplayName = account.DisplayName
+	r.account.GuardianFamilyName = account.GuardianFamilyName
+	r.account.ChildNickname = account.ChildNickname
+	r.account.ChildBirthday = account.ChildBirthday
+	r.account.UpdatedAt = account.UpdatedAt
+	return nil
+}
+
 func (r *memoryRepository) UpdateLastLogin(
 	_ context.Context,
 	_ string,
@@ -324,6 +393,18 @@ func (r *memoryRepository) ConsumePhoneVerificationCode(
 var _ repository.Repository = (*memoryRepository)(nil)
 
 type noOpPhoneVerifier struct{}
+
+type staticPolicyReader struct {
+	policy operationsdomain.RuntimePolicy
+}
+
+func (r staticPolicyReader) RuntimePolicy(
+	_ context.Context,
+) (*operationsdomain.RuntimePolicy, error) {
+	copy := r.policy
+	copy.DefaultModels = append([]string(nil), r.policy.DefaultModels...)
+	return &copy, nil
+}
 
 func (noOpPhoneVerifier) SendVerificationCode(
 	_ context.Context,

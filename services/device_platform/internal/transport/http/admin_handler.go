@@ -1,16 +1,62 @@
 package http
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
 
 	gatewaydomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/ai_gateway/domain"
 	gatewayservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/ai_gateway/service"
+	authdomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/domain"
+	operationsdomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/operations/domain"
 )
 
 type adminHandler struct {
-	service *gatewayservice.Service
+	service           *gatewayservice.Service
+	parentService     parentAccountService
+	operationsService operationsAdminService
+}
+
+type parentAccountService interface {
+	CreateParent(
+		ctx context.Context,
+		input authdomain.RegisterInput,
+	) (*authdomain.ParentAccount, *authdomain.AIAccountSummary, error)
+	GetIdentity(
+		ctx context.Context,
+		accountID string,
+	) (*authdomain.ParentAccount, error)
+}
+
+// operationsAdminService is the management-facing operations surface needed by
+// the HTTP layer. Keeping it narrow avoids coupling transport to persistence.
+type operationsAdminService interface {
+	Settings(ctx context.Context) (*operationsdomain.Settings, int64, error)
+	UpdateSettings(
+		ctx context.Context,
+		settings *operationsdomain.Settings,
+		actorAccountID string,
+	) (*operationsdomain.Settings, int64, error)
+	Overview(ctx context.Context) (*operationsdomain.Overview, error)
+	ListFamilyAccounts(ctx context.Context) ([]operationsdomain.FamilyAccount, error)
+	ListReleases(ctx context.Context) ([]operationsdomain.Release, error)
+	CreateRelease(
+		ctx context.Context,
+		input operationsdomain.ReleaseInput,
+	) (*operationsdomain.Release, error)
+	PublishRelease(
+		ctx context.Context,
+		version string,
+		actorAccountID string,
+	) error
+	DeleteRelease(ctx context.Context, version string) error
+	AppUpdate(
+		ctx context.Context,
+		platform string,
+		channel string,
+		currentVersion string,
+	) (*operationsdomain.AppUpdate, error)
 }
 
 type updateAIAccountRequest struct {
@@ -23,6 +69,98 @@ type updateAIAccountRequest struct {
 
 type updateAIModelsRequest struct {
 	SelectedModels []string `json:"selected_models"`
+}
+
+type createParentRequest struct {
+	Phone              string `json:"phone"`
+	Password           string `json:"password"`
+	GuardianFamilyName string `json:"guardian_family_name"`
+	ChildNickname      string `json:"child_nickname"`
+	ChildBirthday      string `json:"child_birthday"`
+}
+
+func (handler adminHandler) createParent(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	var payload createParentRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(response, request, http.StatusBadRequest, "invalid_request", "请检查填写的内容")
+		return
+	}
+	account, summary, err := handler.service.CreateParentWithAIAccount(
+		request.Context(),
+		handler.parentService,
+		authdomain.RegisterInput{
+			Phone:                  payload.Phone,
+			Password:               payload.Password,
+			GuardianFamilyName:     payload.GuardianFamilyName,
+			ChildNickname:          payload.ChildNickname,
+			ChildBirthday:          payload.ChildBirthday,
+			GuardianConsentVersion: "2026-01",
+		},
+	)
+	if err != nil {
+		writeAuthServiceError(response, request, err)
+		return
+	}
+	writeSuccess(response, request, http.StatusCreated, accountResponse(account, summary))
+}
+
+// retryParentAIAccount repairs the dependent AI account for an existing
+// guardian. It is safe to call repeatedly and never creates another parent.
+func (handler adminHandler) retryParentAIAccount(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	parentAccountID := strings.TrimSpace(
+		request.PathValue("parent_account_id"),
+	)
+	if parentAccountID == "" {
+		writeError(response, request, http.StatusBadRequest, "invalid_request", "请检查要开通的家长账号")
+		return
+	}
+	account, err := handler.parentService.GetIdentity(
+		request.Context(),
+		parentAccountID,
+	)
+	if err != nil {
+		if errors.Is(err, authdomain.ErrAccountNotFound) {
+			writeError(response, request, http.StatusNotFound, "account_not_found", "没有找到这个家长账号")
+			return
+		}
+		writeError(response, request, http.StatusInternalServerError, "service_error", "暂时无法读取家长账号")
+		return
+	}
+	if account.Role != authdomain.RoleParent {
+		writeError(response, request, http.StatusUnprocessableEntity, "invalid_account", "这个账号不是家长账号")
+		return
+	}
+	summary, err := handler.service.RepairParentAIAccount(
+		request.Context(),
+		account.ID,
+		account.Email,
+	)
+	if err != nil {
+		if errors.Is(err, gatewaydomain.ErrProviderUnavailable) ||
+			errors.Is(err, gatewaydomain.ErrProviderRejected) {
+			writeError(response, request, http.StatusBadGateway, "provider_error", "AI 服务暂时不可用，请稍后重试")
+			return
+		}
+		writeError(response, request, http.StatusInternalServerError, "service_error", "家长 AI 账号没有开通，请稍后重试")
+		return
+	}
+	writeSuccess(response, request, http.StatusOK, map[string]any{
+		"ai_account": map[string]any{
+			"status":            summary.Status,
+			"balance_usd":       summary.BalanceUSD,
+			"concurrency_limit": summary.ConcurrencyLimit,
+			"available_models":  summary.AvailableModels,
+			"selected_models":   summary.SelectedModels,
+			"allowed_models":    summary.AllowedModels,
+			"provider_ready":    summary.ProviderReady,
+		},
+	})
 }
 
 func (handler adminHandler) listAIAccounts(

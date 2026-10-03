@@ -15,6 +15,7 @@ import (
 
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/domain"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/repository"
+	operationsdomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/operations/domain"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/platform/clock"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/platform/security"
 	"github.com/google/uuid"
@@ -54,10 +55,30 @@ type Service struct {
 	aiProvisioner   AIAccountProvisioner
 	mfaCipher       MFACipher
 	phoneVerifier   PhoneVerifier
+	overviewReader  ParentOverviewReader
+	policyReader    RegistrationPolicyReader
 	timeSource      clock.Clock
 	accessTTL       time.Duration
 	refreshTTL      time.Duration
 	mfaChallengeTTL time.Duration
+}
+
+// ParentOverviewReader supplies the guardian dashboard projection.
+//
+// The auth module owns the endpoint but not device or usage persistence, so
+// this dependency stays narrow and read-only.
+type ParentOverviewReader interface {
+	ParentOverview(
+		ctx context.Context,
+		parentAccountID string,
+	) (*domain.ParentOverview, error)
+}
+
+// RegistrationPolicyReader exposes the registration and sign-in switches owned
+// by the operations module. Keeping it narrow avoids a package cycle while
+// still making the administrative settings authoritative.
+type RegistrationPolicyReader interface {
+	RuntimePolicy(ctx context.Context) (*operationsdomain.RuntimePolicy, error)
 }
 
 // PhoneVerifier sends and validates guardian mobile verification codes.
@@ -83,6 +104,8 @@ type Options struct {
 	AIProvisioner   AIAccountProvisioner
 	MFACipher       MFACipher
 	PhoneVerifier   PhoneVerifier
+	OverviewReader  ParentOverviewReader
+	PolicyReader    RegistrationPolicyReader
 	MFAChallengeTTL time.Duration
 	Clock           clock.Clock
 	AccessTTL       time.Duration
@@ -114,11 +137,39 @@ func New(options Options) (*Service, error) {
 		aiProvisioner:   options.AIProvisioner,
 		mfaCipher:       options.MFACipher,
 		phoneVerifier:   options.PhoneVerifier,
+		overviewReader:  options.OverviewReader,
+		policyReader:    options.PolicyReader,
 		timeSource:      timeSource,
 		accessTTL:       options.AccessTTL,
 		refreshTTL:      options.RefreshTTL,
 		mfaChallengeTTL: mfaChallengeTTL,
 	}, nil
+}
+
+// SetOverviewReader wires the optional dashboard projection after both
+// modules are constructed. Keeping this setter separate avoids a package cycle
+// between authentication and operations.
+func (s *Service) SetOverviewReader(reader ParentOverviewReader) {
+	s.overviewReader = reader
+}
+
+// SetPolicyReader wires the operations policy after both modules are built.
+func (s *Service) SetPolicyReader(reader RegistrationPolicyReader) {
+	s.policyReader = reader
+}
+
+// ParentOverview returns the authenticated guardian's dashboard counters.
+func (s *Service) ParentOverview(
+	ctx context.Context,
+	parentAccountID string,
+) (*domain.ParentOverview, error) {
+	if _, err := s.GetIdentity(ctx, parentAccountID); err != nil {
+		return nil, err
+	}
+	if s.overviewReader == nil {
+		return nil, domain.ErrAIAccountUnavailable
+	}
+	return s.overviewReader.ParentOverview(ctx, parentAccountID)
 }
 
 // Register creates a guardian account and best-effort creates its AI account.
@@ -130,6 +181,13 @@ func (s *Service) Register(
 	ctx context.Context,
 	input domain.RegisterInput,
 ) (*domain.ParentAccount, *domain.TokenPair, *domain.AIAccountSummary, error) {
+	policy, err := s.registrationPolicy(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if !policy.RegistrationEnabled {
+		return nil, nil, nil, domain.ErrRegistrationDisabled
+	}
 	input.Phone = strings.TrimSpace(input.Phone)
 	input.GuardianFamilyName = strings.TrimSpace(input.GuardianFamilyName)
 	input.ChildNickname = strings.TrimSpace(input.ChildNickname)
@@ -141,13 +199,15 @@ func (s *Service) Register(
 	if err := validateRegistration(input); err != nil {
 		return nil, nil, nil, err
 	}
-	if err := s.verifyPhoneCode(
-		ctx,
-		input.Phone,
-		phoneVerificationPurposeRegister,
-		input.PhoneVerificationCode,
-	); err != nil {
-		return nil, nil, nil, err
+	if policy.PhoneVerificationRequired {
+		if err := s.verifyPhoneCode(
+			ctx,
+			input.Phone,
+			phoneVerificationPurposeRegister,
+			input.PhoneVerificationCode,
+		); err != nil {
+			return nil, nil, nil, err
+		}
 	}
 
 	passwordHash, err := bcrypt.GenerateFromPassword(
@@ -241,6 +301,13 @@ func (s *Service) SendPhoneVerificationCode(
 	phone string,
 	purpose string,
 ) error {
+	policy, err := s.registrationPolicy(ctx)
+	if err != nil {
+		return err
+	}
+	if purpose == phoneVerificationPurposeRegister && !policy.RegistrationEnabled {
+		return domain.ErrRegistrationDisabled
+	}
 	if !isValidPhone(phone) {
 		return domain.ErrInvalidPhone
 	}
@@ -666,9 +733,39 @@ func (s *Service) resolveParentAccountByIdentifier(
 		return s.repository.GetParentAccountByPhone(ctx, normalizePhone(identifier))
 	}
 	if isValidEmail(identifier) {
+		policy, err := s.registrationPolicy(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !policy.EmailLoginEnabled {
+			return nil, domain.ErrEmailLoginDisabled
+		}
 		return s.repository.GetParentAccountByEmail(ctx, normalizeEmail(identifier))
 	}
 	return nil, domain.ErrInvalidCredentials
+}
+
+// registrationPolicy fails closed when the policy document cannot be read.
+// Registration and email sign-in are security-sensitive switches, so a
+// database outage must not silently re-enable either path.
+func (s *Service) registrationPolicy(
+	ctx context.Context,
+) (*operationsdomain.RuntimePolicy, error) {
+	if s.policyReader == nil {
+		return &operationsdomain.RuntimePolicy{
+			RegistrationEnabled:       true,
+			PhoneVerificationRequired: true,
+			EmailLoginEnabled:         true,
+		}, nil
+	}
+	policy, err := s.policyReader.RuntimePolicy(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if policy == nil {
+		return nil, domain.ErrRegistrationDisabled
+	}
+	return policy, nil
 }
 
 func (s *Service) verifyPhoneCode(

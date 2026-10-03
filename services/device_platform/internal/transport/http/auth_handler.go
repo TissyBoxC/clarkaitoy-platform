@@ -41,6 +41,13 @@ type bindEmailRequest struct {
 	Password string `json:"password"`
 }
 
+type updateProfileRequest struct {
+	DisplayName        string `json:"display_name"`
+	GuardianFamilyName string `json:"guardian_family_name"`
+	ChildNickname      string `json:"child_nickname"`
+	ChildBirthday      string `json:"child_birthday"`
+}
+
 type sendPhoneVerificationRequest struct {
 	Phone   string `json:"phone"`
 	Purpose string `json:"purpose"`
@@ -207,6 +214,39 @@ func (handler authHandler) bindEmail(response http.ResponseWriter, request *http
 	writeSuccess(response, request, http.StatusOK, accountResponse(account, nil))
 }
 
+// updateProfile changes only guardian-editable profile fields. Phone and role
+// remain immutable to prevent account takeover through profile mutation.
+func (handler authHandler) updateProfile(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	accountID, ok := authenticatedAccountID(request)
+	if !ok {
+		writeError(response, request, http.StatusUnauthorized, "unauthenticated", "请重新登录")
+		return
+	}
+	var payload updateProfileRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeError(response, request, http.StatusBadRequest, "invalid_request", "请检查填写的内容")
+		return
+	}
+	account, err := handler.service.UpdateProfile(
+		request.Context(),
+		accountID,
+		authservice.ProfileUpdate{
+			DisplayName:        payload.DisplayName,
+			GuardianFamilyName: payload.GuardianFamilyName,
+			ChildNickname:      payload.ChildNickname,
+			ChildBirthday:      payload.ChildBirthday,
+		},
+	)
+	if err != nil {
+		writeAuthServiceError(response, request, err)
+		return
+	}
+	writeSuccess(response, request, http.StatusOK, accountResponse(account, nil))
+}
+
 func (handler authHandler) refresh(response http.ResponseWriter, request *http.Request) {
 	var payload refreshRequest
 	if err := decodeJSON(request, &payload); err != nil {
@@ -250,6 +290,26 @@ func (handler authHandler) me(response http.ResponseWriter, request *http.Reques
 		return
 	}
 	writeSuccess(response, request, http.StatusOK, accountResponse(account, summary))
+}
+
+// parentOverview returns the guardian dashboard counters for the authenticated
+// account. It is intentionally separate from admin statistics and never
+// exposes another family's data.
+func (handler authHandler) parentOverview(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	accountID, ok := authenticatedAccountID(request)
+	if !ok {
+		writeError(response, request, http.StatusUnauthorized, "unauthenticated", "请重新登录")
+		return
+	}
+	overview, err := handler.service.ParentOverview(request.Context(), accountID)
+	if err != nil {
+		writeError(response, request, http.StatusInternalServerError, "service_error", "暂时无法读取首页数据")
+		return
+	}
+	writeSuccess(response, request, http.StatusOK, overview)
 }
 
 // updateAIModels lets a guardian select from the provider-approved models.
@@ -358,6 +418,10 @@ func writeAuthServiceError(
 		writeError(response, request, http.StatusServiceUnavailable, "phone_verification_unavailable", "短信验证暂时不可用，请稍后重试")
 	case errors.Is(err, authdomain.ErrWeakPassword):
 		writeError(response, request, http.StatusUnprocessableEntity, "weak_password", "密码至少 8 位，并同时包含字母和数字")
+	case errors.Is(err, authdomain.ErrRegistrationDisabled):
+		writeError(response, request, http.StatusForbidden, "registration_disabled", "新账号注册暂时关闭")
+	case errors.Is(err, authdomain.ErrEmailLoginDisabled):
+		writeError(response, request, http.StatusForbidden, "email_login_disabled", "邮箱登录暂时关闭，请使用手机号登录")
 	case errors.Is(err, authdomain.ErrInvalidDisplayName):
 		writeError(response, request, http.StatusUnprocessableEntity, "invalid_display_name", "请输入家长称呼")
 	case errors.Is(err, authdomain.ErrInvalidGuardianName):

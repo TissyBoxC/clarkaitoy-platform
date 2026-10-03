@@ -16,6 +16,7 @@ type Config struct {
 	Internal      InternalAPIConfig
 	Auth          AuthConfig
 	AI            AIConfig
+	OTA           OTAConfig
 	Log           LogConfig
 	Database      DatabaseConfig
 	Redis         RedisConfig
@@ -61,6 +62,14 @@ type AIConfig struct {
 	DefaultBalanceUSD  float64
 	DefaultConcurrency int
 	DefaultModels      []string
+}
+
+// OTAConfig contains the public object-storage prefixes used when publishing
+// resource and client updates. Credentials never belong in these values.
+type OTAConfig struct {
+	ManifestBaseURL string
+	ResourceBaseURL string
+	ClientBaseURL   string
 }
 
 // LogConfig contains logging settings.
@@ -142,6 +151,11 @@ func Load() (Config, error) {
 			DefaultBalanceUSD:  envFloat("DEVICE_PLATFORM_AI_DEFAULT_BALANCE_USD", 0),
 			DefaultConcurrency: envInt("DEVICE_PLATFORM_AI_DEFAULT_CONCURRENCY", 1),
 			DefaultModels:      envList("DEVICE_PLATFORM_AI_DEFAULT_MODELS", []string{}),
+		},
+		OTA: OTAConfig{
+			ManifestBaseURL: env("DEVICE_PLATFORM_OTA_MANIFEST_BASE_URL", ""),
+			ResourceBaseURL: env("DEVICE_PLATFORM_OTA_RESOURCE_BASE_URL", ""),
+			ClientBaseURL:   env("DEVICE_PLATFORM_OTA_CLIENT_BASE_URL", ""),
 		},
 		Log: LogConfig{
 			Level: env("DEVICE_PLATFORM_LOG_LEVEL", "info"),
