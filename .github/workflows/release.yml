@@ -228,58 +228,29 @@ jobs:
             --public-base-url "$download_base_url" \
             --title "如此萌屋平台 ${{ steps.detect.outputs.version }}"
 
-      - name: Configure SFTP
-        id: configure_sftp
-        if: steps.detect.outputs.should_release == 'true'
-        continue-on-error: true
-        shell: bash
-        env:
-          SFTP_PRIVATE_KEY: ${{ secrets.SPROUT_DOWNLOAD_SFTP_PRIVATE_KEY }}
-          SFTP_HOST: ${{ secrets.SPROUT_DOWNLOAD_SFTP_HOST }}
-          SFTP_PORT: ${{ secrets.SPROUT_DOWNLOAD_SFTP_PORT }}
-          SFTP_USER: ${{ secrets.SPROUT_DOWNLOAD_SFTP_USER }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${SFTP_PRIVATE_KEY:-}" ||
-                -z "${SFTP_HOST:-}" ||
-                -z "${SFTP_PORT:-}" ||
-                -z "${SFTP_USER:-}" ]]; then
-            echo "::warning::Download upload credentials are incomplete. Release and container images will continue without download-service publication."
-            exit 1
-          fi
-          install -d -m 700 "$RUNNER_TEMP/sprout-sftp"
-          printf '%s\n' "$SFTP_PRIVATE_KEY" > "$RUNNER_TEMP/sprout-sftp/id_ed25519"
-          chmod 600 "$RUNNER_TEMP/sprout-sftp/id_ed25519"
-          timeout 30 ssh-keyscan -p "$SFTP_PORT" -H "$SFTP_HOST" \
-            > "$RUNNER_TEMP/sprout-sftp/known_hosts"
-          test -s "$RUNNER_TEMP/sprout-sftp/known_hosts"
-
-      - name: Upload release artifacts
+      - name: Publish release artifacts
         id: upload_release
-        if: steps.detect.outputs.should_release == 'true' && steps.configure_sftp.outcome == 'success'
-        continue-on-error: true
+        if: steps.detect.outputs.should_release == 'true'
         shell: bash
         env:
-          SFTP_HOST: ${{ secrets.SPROUT_DOWNLOAD_SFTP_HOST }}
-          SFTP_PORT: ${{ secrets.SPROUT_DOWNLOAD_SFTP_PORT }}
-          SFTP_USER: ${{ secrets.SPROUT_DOWNLOAD_SFTP_USER }}
+          RELEASE_UPLOAD_TOKEN: ${{ secrets.SPROUT_RELEASE_UPLOAD_TOKEN }}
+          API_BASE_URL: ${{ steps.endpoints.outputs.api_url }}
           DOWNLOAD_BASE_URL: ${{ steps.endpoints.outputs.download_url }}
         run: |
           set -euo pipefail
+          if [[ -z "${RELEASE_UPLOAD_TOKEN:-}" ]]; then
+            echo "SPROUT_RELEASE_UPLOAD_TOKEN is missing. Release publication cannot continue." >&2
+            exit 1
+          fi
+          api_base_url="${API_BASE_URL:-https://api.clarkhub.cn}"
           download_base_url="${DOWNLOAD_BASE_URL:-https://download.clarkhub.cn}"
-          python3 tools/upload_release_artifacts.py \
+          python3 tools/upload_release_artifacts_http.py \
+            --api-base-url "$api_base_url" \
+            --token "$RELEASE_UPLOAD_TOKEN" \
             --dist dist \
             --version "${{ steps.detect.outputs.version }}" \
             --channel stable \
-            --host "$SFTP_HOST" \
-            --port "$SFTP_PORT" \
-            --user "$SFTP_USER" \
-            --private-key "$RUNNER_TEMP/sprout-sftp/id_ed25519" \
-            --known-hosts "$RUNNER_TEMP/sprout-sftp/known_hosts" \
-            --remote-root releases \
-            --index-root releases \
             --manifest "dist/releases/${{ steps.detect.outputs.version }}/stable/manifest.json" \
-            --public-base-url "$download_base_url" \
             --title "如此萌屋平台 ${{ steps.detect.outputs.version }}" \
             --published-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -323,16 +294,6 @@ jobs:
                   raise SystemExit(f"checksum mismatch: {artifact['url']}")
           print(f"verified {len(manifest['artifacts'])} download artifacts")
           PY
-
-      - name: Report download publication status
-        if: |
-          steps.detect.outputs.should_release == 'true' &&
-          (steps.configure_sftp.outcome != 'success' ||
-           steps.upload_release.outcome != 'success' ||
-           steps.verify_download.outcome != 'success')
-        shell: bash
-        run: |
-          echo "::warning::Download artifacts were not published because the download service was unreachable. GitHub Release and container image publication will continue."
 
       - name: Log in to GitHub Container Registry
         if: steps.detect.outputs.should_release == 'true'
