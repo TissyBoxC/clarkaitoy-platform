@@ -3,11 +3,12 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/error/app_exception.dart';
 import '../../auth/data/auth_api.dart';
@@ -69,6 +70,9 @@ class AppUpdateService implements AppUpdateCoordinator {
 
   static const _resourceRootName = 'resources';
   static const _currentVersionFileName = 'current_version';
+  static const _clientUpdateDirectoryName = 'updates';
+  static const _clientUpdateFilePrefix = 'sprout-update-';
+  static const _clientUpdateRetention = Duration(hours: 24);
   final Dio _downloadClient;
 
   /// Describes why an advertised update cannot be installed, if any.
@@ -113,48 +117,66 @@ class AppUpdateService implements AppUpdateCoordinator {
       );
     }
     _validateDownloadSpec(update);
-    final temporaryDirectory = await getTemporaryDirectory();
+    final applicationDocumentsDirectory =
+        await getApplicationDocumentsDirectory();
+    final updatesDirectory = Directory(
+      path.join(applicationDocumentsDirectory.path, _clientUpdateDirectoryName),
+    );
     final safeVersion = _safeVersionDirectory(update.version);
     final downloadedFile = File(
       path.join(
-        temporaryDirectory.path,
-        'sprout-update-$safeVersion-${DateTime.now().microsecondsSinceEpoch}.apk',
+        updatesDirectory.path,
+        '$_clientUpdateFilePrefix$safeVersion-'
+        '${DateTime.now().microsecondsSinceEpoch}.apk',
       ),
     );
 
-    try {
-      await _downloadAndVerify(
-        update: update,
-        destination: downloadedFile,
-        stage: AppUpdateStage.downloading,
-        onProgress: onProgress,
-        cancelToken: cancelToken,
-      );
-      _throwIfCancelled(cancelToken);
-      onProgress(
-        const AppUpdateProgress(stage: AppUpdateStage.installing, fraction: 1),
-      );
-      final result = await OpenFilex.open(
-        downloadedFile.path,
-        type: 'application/vnd.android.package-archive',
-      );
-      if (result.type != ResultType.done) {
+    await removeExpiredClientUpdates(
+      updatesDirectory: updatesDirectory,
+      currentUpdate: downloadedFile,
+    );
+    await _downloadAndVerify(
+      update: update,
+      destination: downloadedFile,
+      stage: AppUpdateStage.downloading,
+      onProgress: onProgress,
+      cancelToken: cancelToken,
+    );
+    _throwIfCancelled(cancelToken);
+    onProgress(
+      const AppUpdateProgress(stage: AppUpdateStage.installing, fraction: 1),
+    );
+    final result = await OpenFilex.open(
+      downloadedFile.path,
+      type: 'application/vnd.android.package-archive',
+    );
+    switch (result.type) {
+      case ResultType.done:
+        break;
+      case ResultType.noAppToOpen:
         throw const AppException(
           kind: AppErrorKind.serviceUnavailable,
           message: '没有打开安装页面，请稍后重试',
           retryable: true,
         );
-      }
-    } finally {
-      // The installer copies the package before this future completes on
-      // supported Android versions; removing a missing file is harmless.
-      if (await downloadedFile.exists()) {
-        try {
-          await downloadedFile.delete();
-        } on FileSystemException {
-          // A failed cleanup must not hide the installation outcome.
-        }
-      }
+      case ResultType.fileNotFound:
+        throw const AppException(
+          kind: AppErrorKind.notFound,
+          message: '更新包已不存在，请重新下载更新',
+          retryable: true,
+        );
+      case ResultType.permissionDenied:
+        throw const AppException(
+          kind: AppErrorKind.insufficientPermission,
+          message: '请允许安装应用后重试',
+          retryable: true,
+        );
+      case ResultType.error:
+        throw const AppException(
+          kind: AppErrorKind.serviceUnavailable,
+          message: '安装页面没有正常打开，请稍后重试',
+          retryable: true,
+        );
     }
   }
 
@@ -279,7 +301,7 @@ class AppUpdateService implements AppUpdateCoordinator {
       const AppUpdateProgress(stage: AppUpdateStage.verifying, fraction: 1),
     );
     _throwIfCancelled(cancelToken);
-    await _verifySha256(destination, update.sha256);
+    await verifySha256(destination, update.sha256);
   }
 
   void _throwIfCancelled(CancelToken? cancelToken) {
@@ -289,7 +311,44 @@ class AppUpdateService implements AppUpdateCoordinator {
     }
   }
 
-  Future<void> _verifySha256(File file, String expectedSha256) async {
+  /// Removes client update packages that are safe to clean up.
+  ///
+  /// A pending Android installer may still read a recent package, so only
+  /// APKs older than the retention window are removed.
+  @visibleForTesting
+  static Future<void> removeExpiredClientUpdates({
+    required Directory updatesDirectory,
+    required File currentUpdate,
+    DateTime? now,
+  }) async {
+    if (!await updatesDirectory.exists()) {
+      return;
+    }
+
+    final cutoff = (now ?? DateTime.now()).subtract(_clientUpdateRetention);
+    await for (final entity in updatesDirectory.list(followLinks: false)) {
+      if (entity is! File ||
+          path.extension(entity.path).toLowerCase() != '.apk') {
+        continue;
+      }
+      // The current download is reserved for the installer opened by this call.
+      if (path.equals(entity.path, currentUpdate.path)) {
+        continue;
+      }
+      if (!(await entity.lastModified()).isBefore(cutoff)) {
+        continue;
+      }
+
+      try {
+        await entity.delete();
+      } on FileSystemException {
+        // A file still held by the installer can be retried on a later update.
+      }
+    }
+  }
+
+  @visibleForTesting
+  static Future<void> verifySha256(File file, String expectedSha256) async {
     final digest = await sha256.bind(file.openRead()).first;
     final actual = digest.toString().toLowerCase();
     if (actual != expectedSha256.toLowerCase()) {
