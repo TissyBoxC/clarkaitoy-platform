@@ -25,6 +25,8 @@ import (
 	runtimeService "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_runtime/service"
 	operationsRepository "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/operations/repository"
 	operationsService "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/operations/service"
+	serviceVersionRepository "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/service_version/repository"
+	serviceVersionService "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/service_version/service"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/platform/cache"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/platform/database"
 	"github.com/TissyBoxC/sprout-platform/services/device_platform/internal/platform/security"
@@ -150,16 +152,26 @@ func Run() error {
 	parentAuthService.SetPolicyReader(operations)
 	parentAuthService.SetOverviewReader(operations)
 
+	serviceVersions, err := serviceVersionService.New(serviceVersionService.Options{
+		Repository: serviceVersionRepository.NewFileRepository(
+			cfg.ServiceVersion.StateDir,
+		),
+	})
+	if err != nil {
+		return fmt.Errorf("create service version service: %w", err)
+	}
+
 	server := &http.Server{
 		Addr: cfg.HTTP.Address(),
 		Handler: platformhttp.NewRouter(platformhttp.RouterOptions{
-			Logger:            logger,
-			InternalAPIConfig: cfg.Internal,
-			AuthService:       parentAuthService,
-			AIService:         aiAccountService,
-			OperationsService: operations,
-			BindingService:    deviceBindingService,
-			RuntimeService:    deviceRuntimeService,
+			Logger:                logger,
+			InternalAPIConfig:     cfg.Internal,
+			AuthService:           parentAuthService,
+			AIService:             aiAccountService,
+			OperationsService:     operations,
+			BindingService:        deviceBindingService,
+			RuntimeService:        deviceRuntimeService,
+			ServiceVersionService: serviceVersions,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}

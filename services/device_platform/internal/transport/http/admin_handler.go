@@ -5,17 +5,21 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	gatewaydomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/ai_gateway/domain"
 	gatewayservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/ai_gateway/service"
 	authdomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/domain"
 	operationsdomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/operations/domain"
+	serviceversiondomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/service_version/domain"
+	serviceversionservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/service_version/service"
 )
 
 type adminHandler struct {
-	service           *gatewayservice.Service
-	parentService     parentAccountService
-	operationsService operationsAdminService
+	service               *gatewayservice.Service
+	parentService         parentAccountService
+	operationsService     operationsAdminService
+	serviceVersionService serviceVersionAdminService
 }
 
 type parentAccountService interface {
@@ -63,6 +67,38 @@ type operationsAdminService interface {
 		channel string,
 		currentVersion string,
 	) (*operationsdomain.AppUpdate, error)
+}
+
+// serviceVersionAdminService is the management-facing surface for the brand
+// service inventory and its container upgrades.
+type serviceVersionAdminService interface {
+	Snapshot(
+		ctx context.Context,
+	) ([]serviceversiondomain.Service, time.Time, error)
+	AllCurrent(services []serviceversiondomain.Service) bool
+	RequestCheck(ctx context.Context) error
+	PlanUpgrade(
+		ctx context.Context,
+		serviceID string,
+	) (serviceversionservice.UpgradePlan, error)
+	PlanUpgradeAll(
+		ctx context.Context,
+	) ([]serviceversionservice.UpgradePlan, error)
+	Enqueue(
+		ctx context.Context,
+		plan serviceversionservice.UpgradePlan,
+		actorAccountID string,
+	) (*serviceversiondomain.Operation, error)
+	EnqueueAll(
+		ctx context.Context,
+		plans []serviceversionservice.UpgradePlan,
+		actorAccountID string,
+	) ([]serviceversiondomain.Operation, error)
+	ListOperations(ctx context.Context) ([]serviceversiondomain.Operation, error)
+	FindOperation(
+		ctx context.Context,
+		operationID string,
+	) (*serviceversiondomain.Operation, error)
 }
 
 type updateAIAccountRequest struct {

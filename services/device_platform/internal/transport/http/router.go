@@ -16,17 +16,19 @@ import (
 	bindingservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_binding/service"
 	runtimeservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/device_runtime/service"
 	operationsservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/operations/service"
+	serviceversionservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/service_version/service"
 )
 
 // RouterOptions contains dependencies for the device platform HTTP transport.
 type RouterOptions struct {
-	Logger            *slog.Logger
-	InternalAPIConfig config.InternalAPIConfig
-	AuthService       *authservice.Service
-	AIService         *gatewayservice.Service
-	OperationsService *operationsservice.Service
-	BindingService    *bindingservice.Service
-	RuntimeService    *runtimeservice.Service
+	Logger                *slog.Logger
+	InternalAPIConfig     config.InternalAPIConfig
+	AuthService           *authservice.Service
+	AIService             *gatewayservice.Service
+	OperationsService     *operationsservice.Service
+	BindingService        *bindingservice.Service
+	RuntimeService        *runtimeservice.Service
+	ServiceVersionService *serviceversionservice.Service
 }
 
 // NewRouter returns the HTTP router for the device platform.
@@ -140,9 +142,10 @@ func NewRouter(options RouterOptions) http.Handler {
 		}
 		if options.AIService != nil {
 			adminHandler := adminHandler{
-				service:           options.AIService,
-				parentService:     options.AuthService,
-				operationsService: options.OperationsService,
+				service:               options.AIService,
+				parentService:         options.AuthService,
+				operationsService:     options.OperationsService,
+				serviceVersionService: options.ServiceVersionService,
 			}
 			mux.HandleFunc(
 				"PUT /api/v1/auth/ai-models",
@@ -212,6 +215,32 @@ func NewRouter(options RouterOptions) http.Handler {
 				mux.HandleFunc(
 					"GET /api/v1/app/update",
 					adminHandler.appUpdate,
+				)
+			}
+			if options.ServiceVersionService != nil {
+				mux.HandleFunc(
+					"GET /api/v1/admin/service-versions",
+					authHandler.requireAdmin(adminHandler.listServiceVersions),
+				)
+				mux.HandleFunc(
+					"POST /api/v1/admin/service-versions/check",
+					authHandler.requireAdmin(adminHandler.checkServiceVersions),
+				)
+				mux.HandleFunc(
+					"POST /api/v1/admin/service-versions/upgrade",
+					authHandler.requireAdmin(adminHandler.upgradeAllServices),
+				)
+				mux.HandleFunc(
+					"POST /api/v1/admin/service-versions/{service}/upgrade",
+					authHandler.requireAdmin(adminHandler.upgradeService),
+				)
+				mux.HandleFunc(
+					"GET /api/v1/admin/service-version-operations",
+					authHandler.requireAdmin(adminHandler.listServiceVersionOperations),
+				)
+				mux.HandleFunc(
+					"GET /api/v1/admin/service-version-operations/{operation_id}",
+					authHandler.requireAdmin(adminHandler.getServiceVersionOperation),
 				)
 			}
 		}

@@ -12,16 +12,17 @@ import (
 
 // Config contains runtime settings for the device platform service.
 type Config struct {
-	HTTP          HTTPConfig
-	Internal      InternalAPIConfig
-	Auth          AuthConfig
-	AI            AIConfig
-	OTA           OTAConfig
-	Log           LogConfig
-	Database      DatabaseConfig
-	Redis         RedisConfig
-	MQTT          MQTTConfig
-	DeviceRuntime DeviceRuntimeConfig
+	HTTP           HTTPConfig
+	Internal       InternalAPIConfig
+	Auth           AuthConfig
+	AI             AIConfig
+	OTA            OTAConfig
+	Log            LogConfig
+	Database       DatabaseConfig
+	Redis          RedisConfig
+	MQTT           MQTTConfig
+	DeviceRuntime  DeviceRuntimeConfig
+	ServiceVersion ServiceVersionConfig
 }
 
 // HTTPConfig contains HTTP server settings.
@@ -121,6 +122,13 @@ type DeviceRuntimeConfig struct {
 	CommandTTL       time.Duration
 }
 
+// ServiceVersionConfig points at the shared state directory owned by the
+// upgrade worker. The device platform only reads status and writes command
+// files there; it never receives the Docker socket.
+type ServiceVersionConfig struct {
+	StateDir string
+}
+
 // Load reads configuration from environment variables with local defaults.
 func Load() (Config, error) {
 	cfg := Config{
@@ -188,6 +196,12 @@ func Load() (Config, error) {
 				15*time.Minute,
 			),
 		},
+		ServiceVersion: ServiceVersionConfig{
+			StateDir: env(
+				"DEVICE_PLATFORM_SERVICE_VERSION_STATE_DIR",
+				"/var/lib/sprout-upgrades",
+			),
+		},
 	}
 
 	if cfg.Internal.Enabled && len(strings.TrimSpace(cfg.Internal.AuthToken)) < 32 {
@@ -229,6 +243,9 @@ func Load() (Config, error) {
 	}
 	if cfg.DeviceRuntime.CommandTTL <= 0 {
 		return Config{}, fmt.Errorf("DEVICE_PLATFORM_RUNTIME_COMMAND_TTL must be positive")
+	}
+	if !strings.HasPrefix(strings.TrimSpace(cfg.ServiceVersion.StateDir), "/") {
+		return Config{}, fmt.Errorf("DEVICE_PLATFORM_SERVICE_VERSION_STATE_DIR must be an absolute path")
 	}
 
 	return cfg, nil
