@@ -12,6 +12,18 @@ import {
 import { createHttpClient } from '@/api/httpClient'
 
 const activeOperationStatuses = new Set(['queued', 'running', 'recovering'])
+export const UPGRADEABLE_SERVICE_IDS = [
+  'sub2api',
+  'device_platform',
+  'voice_gateway',
+  'admin_web',
+] as const
+
+const upgradeableServiceIds = new Set<string>(UPGRADEABLE_SERVICE_IDS)
+
+export function isUpgradeableService(serviceId: string): boolean {
+  return upgradeableServiceIds.has(serviceId)
+}
 
 export interface ServiceReleaseState {
   releases: ServiceVersionRelease[]
@@ -217,6 +229,9 @@ export const useVersionManagementStore = defineStore('admin-version-management',
   }
 
   async function loadServiceReleases(service: AdminServiceVersion): Promise<void> {
+    if (!isUpgradeableService(service.id)) {
+      return
+    }
     releaseStates.value = {
       ...releaseStates.value,
       [service.id]: {
@@ -250,7 +265,10 @@ export const useVersionManagementStore = defineStore('admin-version-management',
   }
 
   async function loadReleaseStates(targetServices: AdminServiceVersion[]): Promise<void> {
-    await Promise.all(targetServices.map((service) => loadServiceReleases(service)))
+    const upgradeableServices = targetServices.filter((service) =>
+      isUpgradeableService(service.id),
+    )
+    await Promise.all(upgradeableServices.map((service) => loadServiceReleases(service)))
   }
 
   function selectServiceVersion(serviceId: string, version: string): void {

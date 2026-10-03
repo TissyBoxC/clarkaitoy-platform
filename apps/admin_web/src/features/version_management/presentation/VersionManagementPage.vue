@@ -7,7 +7,10 @@ import type {
   ServiceVersionOperationStatus,
   ServiceVersionStatus,
 } from '@/api/adminVersionManagement'
-import { useVersionManagementStore } from '@/features/version_management/application/versionManagementStore'
+import {
+  isUpgradeableService,
+  useVersionManagementStore,
+} from '@/features/version_management/application/versionManagementStore'
 
 const store = useVersionManagementStore()
 const isUpgradeAllOpen = ref(false)
@@ -92,14 +95,10 @@ function targetVersion(service: AdminServiceVersion): string {
   return state.selectedVersion || service.latestVersion
 }
 
-function isManagedService(service: AdminServiceVersion): boolean {
-  return ['sub2api', 'device_platform', 'voice_gateway', 'admin_web'].includes(service.id)
-}
-
 function canStartUpgrade(service: AdminServiceVersion): boolean {
   const selectedVersion = targetVersion(service)
   return (
-    isManagedService(service) &&
+    isUpgradeableService(service.id) &&
     selectedVersion !== '' &&
     selectedVersion !== service.currentVersion &&
     !store.isServiceUpgrading(service.id) &&
@@ -313,7 +312,7 @@ function operationLog(operation: AdminServiceVersionOperation | null): string {
                   </a>
                 </td>
                 <td>
-                  <div v-if="isManagedService(service)" class="version-picker">
+                  <div v-if="isUpgradeableService(service.id)" class="version-picker">
                     <label :for="`service-version-${service.id}`">
                       {{ service.displayName || service.id }}版本
                     </label>
@@ -362,7 +361,7 @@ function operationLog(operation: AdminServiceVersionOperation | null): string {
                 <td>
                   <div class="row-action">
                     <button
-                      v-if="isManagedService(service)"
+                      v-if="isUpgradeableService(service.id)"
                       type="button"
                       class="upgrade-button"
                       :disabled="!canStartUpgrade(service)"

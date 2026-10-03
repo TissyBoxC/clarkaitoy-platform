@@ -79,6 +79,7 @@ export function createAdminVersionManagementClient(
     async loadServiceReleases(serviceId: string): Promise<ServiceVersionRelease[]> {
       const response = await httpClient.get(
         `/api/v1/admin/service-versions/${encodeURIComponent(serviceId)}/releases`,
+        { params: { page_size: 100 } },
       )
       return toReleases(response.data?.data)
     },

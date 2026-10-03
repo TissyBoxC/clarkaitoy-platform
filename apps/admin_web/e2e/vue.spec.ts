@@ -2,14 +2,8 @@ import { test, expect, type Page } from '@playwright/test'
 
 async function useAdminSession(page: Page): Promise<void> {
   await page.addInitScript(() => {
-    globalThis.sessionStorage.setItem(
-      'sprout.admin.accessToken',
-      'test-access-token',
-    )
-    globalThis.sessionStorage.setItem(
-      'sprout.admin.refreshToken',
-      'test-refresh-token',
-    )
+    globalThis.sessionStorage.setItem('sprout.admin.accessToken', 'test-access-token')
+    globalThis.sessionStorage.setItem('sprout.admin.refreshToken', 'test-refresh-token')
   })
   await page.route('**/api/v1/auth/me', async (route) => {
     await route.fulfill({
@@ -84,9 +78,7 @@ test('shows the invalid verification code instead of a generic error', async ({ 
   await expect(page.getByText('操作没有完成，请稍后重试')).toHaveCount(0)
 })
 
-test('uses the fastest available model and the provider default balance', async ({
-  page,
-}) => {
+test('uses the fastest available model and the provider default balance', async ({ page }) => {
   await useAdminSession(page)
   await page.route('**/api/v1/admin/settings', async (route) => {
     if (route.request().method() === 'GET') {
@@ -144,9 +136,7 @@ test('uses the fastest available model and the provider default balance', async 
   await expect(page.getByLabel('默认模型')).toHaveValue('fast-model')
 })
 
-test('fills the current version and the release artifact automatically', async ({
-  page,
-}) => {
+test('fills the current version and the release artifact automatically', async ({ page }) => {
   await useAdminSession(page)
   await page.route('**/api/v1/admin/releases', async (route) => {
     await route.fulfill({
@@ -154,25 +144,22 @@ test('fills the current version and the release artifact automatically', async (
       body: JSON.stringify({ data: { releases: [] } }),
     })
   })
-  await page.route(
-    '**/api/v1/admin/release-artifacts/*',
-    async (route) => {
-      await route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({
-          data: {
-            artifact: {
-              version: '0.8.1',
-              kind: 'client',
-              platform: 'android',
-              download_url: 'https://downloads.example.com/0.8.1/app.apk',
-              sha256: 'a'.repeat(64),
-            },
+  await page.route('**/api/v1/admin/release-artifacts/*', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          artifact: {
+            version: '0.8.1',
+            kind: 'client',
+            platform: 'android',
+            download_url: 'https://downloads.example.com/0.8.1/app.apk',
+            sha256: 'a'.repeat(64),
           },
-        }),
-      })
-    },
-  )
+        },
+      }),
+    })
+  })
 
   await page.goto('/releases')
   await page.getByRole('button', { name: '登记新版本' }).click()
@@ -185,9 +172,7 @@ test('fills the current version and the release artifact automatically', async (
   await expect(page.getByLabel('文件校验值')).toHaveValue('a'.repeat(64))
 })
 
-test('checks and upgrades brand services from the service version page', async ({
-  page,
-}) => {
+test('checks and upgrades brand services from the service version page', async ({ page }) => {
   await useAdminSession(page)
 
   const operation = {
@@ -202,6 +187,148 @@ test('checks and upgrades brand services from the service version page', async (
     log_tail: '已创建升级任务。',
   }
   let serviceSnapshotRequests = 0
+  const releaseRequests: string[] = []
+  const upgradeableServiceIds = new Set([
+    'sub2api',
+    'device_platform',
+    'voice_gateway',
+    'admin_web',
+  ])
+  const infrastructureServiceIds = new Set([
+    'postgres',
+    'redis',
+    'mqtt',
+    'download_http',
+    'download_ftp',
+  ])
+  const serviceVersions = [
+    {
+      id: 'admin_web',
+      display_name: '品牌管理端',
+      role: '管理员查看品牌数据并管理服务',
+      image: 'ghcr.io/tissyboxc/sprout-admin-web:0.9.0',
+      current_version: '0.9.0',
+      latest_version: '0.9.1',
+      status: 'outdated',
+      release_url: 'https://github.com/TissyBoxC/sprout-platform/releases/tag/v0.9.1',
+      is_self: true,
+      can_upgrade: true,
+      last_checked_at: '2026-10-03T10:00:00Z',
+      updated_at: '2026-10-03T10:00:00Z',
+    },
+    {
+      id: 'sub2api',
+      display_name: 'AI 服务',
+      role: '为设备提供 AI 能力',
+      image: 'ghcr.io/tissyboxc/sub2api:0.2.15',
+      current_version: '0.2.15',
+      latest_version: '0.2.16',
+      status: 'outdated',
+      release_url: 'https://github.com/TissyBoxC/sprout-sub2api-fork/releases/tag/v0.2.16',
+      is_self: false,
+      can_upgrade: true,
+      last_checked_at: '2026-10-03T10:00:00Z',
+      updated_at: '2026-10-03T10:00:00Z',
+    },
+    {
+      id: 'device_platform',
+      display_name: '设备平台',
+      role: '管理设备连接和家庭绑定',
+      image: 'ghcr.io/tissyboxc/sprout-device-platform:0.9.0',
+      current_version: '0.9.0',
+      latest_version: '0.9.1',
+      status: 'outdated',
+      release_url: 'https://github.com/TissyBoxC/sprout-platform/releases/tag/v0.9.1',
+      is_self: false,
+      can_upgrade: true,
+      last_checked_at: '2026-10-03T10:00:00Z',
+      updated_at: '2026-10-03T10:00:00Z',
+    },
+    {
+      id: 'voice_gateway',
+      display_name: '语音服务',
+      role: '处理设备语音对话',
+      image: 'ghcr.io/tissyboxc/sprout-voice-gateway:0.9.0',
+      current_version: '0.9.0',
+      latest_version: '0.9.1',
+      status: 'outdated',
+      release_url: 'https://github.com/TissyBoxC/sprout-platform/releases/tag/v0.9.1',
+      is_self: false,
+      can_upgrade: true,
+      last_checked_at: '2026-10-03T10:00:00Z',
+      updated_at: '2026-10-03T10:00:00Z',
+    },
+    {
+      id: 'postgres',
+      display_name: '数据库',
+      role: '保存平台数据',
+      image: 'postgres:16-alpine',
+      current_version: '16',
+      latest_version: '16',
+      status: 'current',
+      release_url: '',
+      is_self: false,
+      can_upgrade: false,
+      last_checked_at: '2026-10-03T10:00:00Z',
+      updated_at: '2026-10-03T10:00:00Z',
+    },
+    {
+      id: 'redis',
+      display_name: '缓存服务',
+      role: '缓存平台运行数据',
+      image: 'redis:7-alpine',
+      current_version: '7',
+      latest_version: '7',
+      status: 'current',
+      release_url: '',
+      is_self: false,
+      can_upgrade: false,
+      last_checked_at: '2026-10-03T10:00:00Z',
+      updated_at: '2026-10-03T10:00:00Z',
+    },
+    {
+      id: 'mqtt',
+      display_name: '设备消息服务',
+      role: '连接设备与平台',
+      image: 'eclipse-mosquitto:2',
+      current_version: '2',
+      latest_version: '2',
+      status: 'current',
+      release_url: '',
+      is_self: false,
+      can_upgrade: false,
+      last_checked_at: '2026-10-03T10:00:00Z',
+      updated_at: '2026-10-03T10:00:00Z',
+    },
+    {
+      id: 'download_http',
+      display_name: '下载服务',
+      role: '提供设备更新下载',
+      image: 'nginx:1.27-alpine',
+      current_version: '1.27',
+      latest_version: '1.27',
+      status: 'current',
+      release_url: '',
+      is_self: false,
+      can_upgrade: false,
+      last_checked_at: '2026-10-03T10:00:00Z',
+      updated_at: '2026-10-03T10:00:00Z',
+    },
+    {
+      id: 'download_ftp',
+      display_name: '发布文件服务',
+      role: '接收新版本发布文件',
+      image: 'atmoz/sftp:alpine',
+      current_version: 'alpine',
+      latest_version: 'alpine',
+      status: 'current',
+      release_url: '',
+      is_self: false,
+      can_upgrade: false,
+      last_checked_at: '2026-10-03T10:00:00Z',
+      updated_at: '2026-10-03T10:00:00Z',
+    },
+  ]
 
   await page.route('**/api/v1/admin/service-versions', async (route) => {
     serviceSnapshotRequests += 1
@@ -209,140 +336,107 @@ test('checks and upgrades brand services from the service version page', async (
       contentType: 'application/json',
       body: JSON.stringify({
         data: {
-          services: [
-            {
-              id: 'admin_web',
-              display_name: '品牌管理端',
-              role: '管理员查看品牌数据并管理服务',
-              image: 'ghcr.io/tissyboxc/sprout-admin-web:0.9.0',
-              current_version: '0.9.0',
-              latest_version: '0.9.1',
-              status: 'outdated',
-              release_url: 'https://github.com/TissyBoxC/sprout-platform/releases/tag/v0.9.1',
-              is_self: true,
-              can_upgrade: true,
-              last_checked_at: '2026-10-03T10:00:00Z',
-              updated_at: '2026-10-03T10:00:00Z',
-            },
-          ],
+          services: serviceVersions,
           checked_at: '2026-10-03T10:00:00Z',
           all_up_to_date: false,
         },
       }),
     })
   })
-  await page.route(
-    '**/api/v1/admin/service-versions/check',
-    async (route) => {
+  await page.route('**/api/v1/admin/service-versions/check', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          services: serviceVersions.map((service) => ({
+            ...service,
+            last_checked_at: '2026-10-03T10:01:00Z',
+            updated_at: '2026-10-03T10:01:00Z',
+          })),
+          checked_at: '2026-10-03T10:01:00Z',
+          all_up_to_date: false,
+        },
+      }),
+    })
+  })
+  await page.route('**/api/v1/admin/service-versions/*/releases**', async (route) => {
+    const requestUrl = new URL(route.request().url())
+    const serviceId = requestUrl.pathname.split('/').at(-2) ?? ''
+    releaseRequests.push(route.request().url())
+    if (!upgradeableServiceIds.has(serviceId)) {
       await route.fulfill({
+        status: 404,
         contentType: 'application/json',
-        body: JSON.stringify({
-          data: {
-            services: [
-              {
-                id: 'admin_web',
-                display_name: '品牌管理端',
-                role: '管理员查看品牌数据并管理服务',
-                image: 'ghcr.io/tissyboxc/sprout-admin-web:0.9.0',
-                current_version: '0.9.0',
-                latest_version: '0.9.1',
-                status: 'outdated',
-                release_url: 'https://github.com/TissyBoxC/sprout-platform/releases/tag/v0.9.1',
-                is_self: true,
-                can_upgrade: true,
-                last_checked_at: '2026-10-03T10:01:00Z',
-                updated_at: '2026-10-03T10:01:00Z',
-              },
-            ],
-            checked_at: '2026-10-03T10:01:00Z',
-            all_up_to_date: false,
-          },
-        }),
+        body: JSON.stringify({ message: 'not found' }),
       })
-    },
-  )
-  await page.route(
-    '**/api/v1/admin/service-versions/admin_web/releases',
-    async (route) => {
-      await route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({
-          data: {
-            service: 'admin_web',
-            releases: [
-              {
-                version: '0.9.1',
-                release_url: 'https://github.com/TissyBoxC/sprout-platform/releases/tag/v0.9.1',
-                published_at: '2026-10-03T10:00:00Z',
-                is_current: false,
-                is_latest: true,
-              },
-              {
-                version: '0.9.0',
-                release_url: 'https://github.com/TissyBoxC/sprout-platform/releases/tag/v0.9.0',
-                published_at: '2026-10-02T10:00:00Z',
-                is_current: true,
-                is_latest: false,
-              },
-            ],
-          },
-        }),
-      })
-    },
-  )
-  await page.route(
-    '**/api/v1/admin/service-versions/upgrade',
-    async (route) => {
-      await route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({ data: { operation } }),
-      })
-    },
-  )
-  await page.route(
-    '**/api/v1/admin/service-versions/admin_web/upgrade',
-    async (route) => {
-      const request = route.request()
-      expect(request.postDataJSON()).toEqual({ target_version: '0.9.1' })
-      await route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({ data: { operation } }),
-      })
-    },
-  )
-  await page.route(
-    '**/api/v1/admin/service-version-operations',
-    async (route) => {
-      await route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({ data: { operations: [operation] } }),
-      })
-    },
-  )
-  await page.route(
-    '**/api/v1/admin/service-version-operations/*',
-    async (route) => {
-      await route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({ data: { operation } }),
-      })
-    },
-  )
+      return
+    }
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          service: serviceId,
+          releases: [
+            {
+              version:
+                serviceId === 'admin_web' ? '0.9.1' : serviceId === 'sub2api' ? '0.2.16' : '0.9.1',
+              release_url: 'https://github.com/TissyBoxC/sprout-platform/releases/tag/v0.9.1',
+              published_at: '2026-10-03T10:00:00Z',
+              is_current: false,
+              is_latest: true,
+            },
+          ],
+        },
+      }),
+    })
+  })
+  await page.route('**/api/v1/admin/service-versions/upgrade', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ data: { operation } }),
+    })
+  })
+  await page.route('**/api/v1/admin/service-versions/admin_web/upgrade', async (route) => {
+    const request = route.request()
+    expect(request.postDataJSON()).toEqual({ target_version: '0.9.1' })
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ data: { operation } }),
+    })
+  })
+  await page.route('**/api/v1/admin/service-version-operations', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ data: { operations: [operation] } }),
+    })
+  })
+  await page.route('**/api/v1/admin/service-version-operations/*', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ data: { operation } }),
+    })
+  })
 
   await page.goto('/services')
 
-  await expect(
-    page.getByRole('heading', { name: '服务版本' }),
-  ).toBeVisible()
+  await expect(page.getByRole('heading', { name: '服务版本' })).toBeVisible()
   await expect(page.getByText('管理端自身')).toBeVisible()
-  await expect(
-    page.getByText('升级期间管理端会短暂重载，完成后自动恢复'),
-  ).toBeVisible()
+  await expect(page.getByText('管理端自身升级时，页面会短暂重载，完成后自动恢复')).toBeVisible()
   await expect(page.getByText('0.9.0', { exact: true }).first()).toBeVisible()
 
   await page.getByRole('button', { name: '检查更新' }).click()
-  await expect(page.getByText('检查完成，有 1 个服务可以升级。')).toBeVisible()
+  await expect(page.getByText('检查完成，有 4 个服务可以升级。')).toBeVisible()
   expect(serviceSnapshotRequests).toBeGreaterThan(0)
+  const requestedReleaseServiceIds = new Set(
+    releaseRequests.map((url) => new URL(url).pathname.split('/').at(-2) ?? ''),
+  )
+  expect(requestedReleaseServiceIds).toEqual(upgradeableServiceIds)
+  expect(
+    [...requestedReleaseServiceIds].some((serviceId) => infrastructureServiceIds.has(serviceId)),
+  ).toBe(false)
+  expect(releaseRequests.every((url) => new URL(url).searchParams.get('page_size') === '100')).toBe(
+    true,
+  )
 
   await expect(page.getByLabel('品牌管理端版本')).toHaveValue('0.9.1')
   await page.getByRole('button', { name: '升级到 0.9.1' }).click()
