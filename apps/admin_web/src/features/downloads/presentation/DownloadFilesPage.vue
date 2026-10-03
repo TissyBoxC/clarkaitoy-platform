@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import {
+  canonicalArtifactRelativePath,
   type DownloadArtifactKind,
   type DownloadArtifactPlatform,
   type DownloadFile,
@@ -15,10 +16,10 @@ import {
 
 const store = useDownloadFilesStore()
 const isUploadOpen = ref(false)
+const isOverwriteOpen = ref(false)
 const pendingDelete = ref<DownloadFile | null>(null)
 const uploadForm = reactive({
   file: null as File | null,
-  directory: 'releases',
   filename: '',
   version: '',
   kind: 'client' as DownloadArtifactKind,
@@ -26,6 +27,19 @@ const uploadForm = reactive({
 })
 
 const versionArtifactRows = computed(() => store.versionArtifacts)
+const uploadTargetPath = computed(() =>
+  canonicalArtifactRelativePath({
+    version: uploadForm.version,
+    kind: uploadForm.kind,
+    platform: uploadForm.platform,
+    filename: uploadForm.filename,
+  }),
+)
+const uploadTargetDirectory = computed(() => {
+  const segments = uploadTargetPath.value.split('/')
+  segments.pop()
+  return segments.join('/')
+})
 const allVersionsRegistered = computed(
   () =>
     store.versionArtifacts.length > 0 &&
@@ -46,6 +60,7 @@ function closeUpload(): void {
     return
   }
   isUploadOpen.value = false
+  isOverwriteOpen.value = false
   resetUploadForm()
 }
 
@@ -65,18 +80,41 @@ async function submitUpload(): Promise<void> {
   if (uploadForm.file === null || !uploadForm.filename.trim()) {
     return
   }
+  if (hasUploadConflict() && !isOverwriteOpen.value) {
+    isOverwriteOpen.value = true
+    return
+  }
+  await performUpload(isOverwriteOpen.value)
+}
+
+async function performUpload(overwrite: boolean): Promise<void> {
+  if (uploadForm.file === null) {
+    return
+  }
   const succeeded = await store.upload({
     file: uploadForm.file,
-    directory: uploadForm.directory,
     filename: uploadForm.filename,
     version: uploadForm.version,
     kind: uploadForm.kind,
     platform: uploadForm.platform,
+    overwrite,
   })
   if (succeeded) {
     isUploadOpen.value = false
+    isOverwriteOpen.value = false
     resetUploadForm()
   }
+}
+
+function hasUploadConflict(): boolean {
+  if (!uploadForm.version.trim() || !uploadForm.filename.trim()) {
+    return false
+  }
+  return store.files.some((file) => file.relativePath === uploadTargetPath.value)
+}
+
+async function confirmOverwrite(): Promise<void> {
+  await performUpload(true)
 }
 
 async function confirmDelete(): Promise<void> {
@@ -91,7 +129,6 @@ async function confirmDelete(): Promise<void> {
 
 function resetUploadForm(): void {
   uploadForm.file = null
-  uploadForm.directory = 'releases'
   uploadForm.filename = ''
   uploadForm.version = ''
   uploadForm.kind = 'client'
@@ -421,7 +458,7 @@ function sha256Summary(value: string): string {
           <p class="eyebrow">上传文件</p>
           <h2 id="download-upload-title">上传到下载服务器</h2>
           <p class="dialog-hint">
-            上传完成后会自动刷新发布索引。请确认文件真实存在后再登记版本。
+            上传完成后会自动刷新发布索引。目录按版本、平台和文件类型生成，文件会被发布流程直接找到。
           </p>
           <div class="field-grid">
             <label class="span-two file-picker">
@@ -430,7 +467,12 @@ function sha256Summary(value: string): string {
             </label>
             <label>
               <span>目标目录</span>
-              <input v-model.trim="uploadForm.directory" type="text" placeholder="例如 releases" />
+              <input
+                :value="uploadTargetDirectory || '填写版本号后自动确定'"
+                type="text"
+                readonly
+                aria-readonly="true"
+              />
             </label>
             <label>
               <span>文件名</span>
@@ -488,6 +530,9 @@ function sha256Summary(value: string): string {
               {{ store.uploadState.isUploading ? '正在上传…' : '上传并刷新索引' }}
             </button>
           </div>
+          <p class="upload-target-hint">
+            将保存为：{{ uploadTargetPath }}
+          </p>
         </form>
       </div>
     </Transition>
@@ -512,6 +557,38 @@ function sha256Summary(value: string): string {
               @click="confirmDelete"
             >
               {{ store.isDeleting(pendingDelete.relativePath) ? '正在删除…' : '确认删除' }}
+            </button>
+          </div>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition name="modal">
+      <div
+        v-if="isOverwriteOpen"
+        class="dialog-backdrop"
+        @click.self="isOverwriteOpen = false"
+      >
+        <section
+          class="dialog confirm-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="download-overwrite-title"
+        >
+          <p class="eyebrow">替换文件</p>
+          <h2 id="download-overwrite-title">替换 {{ uploadForm.filename }}？</h2>
+          <p>下载服务器上已经有同名文件，替换后原文件会被覆盖，版本记录需要重新刷新索引。</p>
+          <div class="dialog-actions">
+            <button type="button" class="secondary" @click="isOverwriteOpen = false">
+              取消
+            </button>
+            <button
+              type="button"
+              class="primary"
+              :disabled="store.uploadState.isUploading"
+              @click="confirmOverwrite"
+            >
+              {{ store.uploadState.isUploading ? '正在替换…' : '替换文件' }}
             </button>
           </div>
         </section>
@@ -794,6 +871,12 @@ input:focus {
   background: #ffffff;
   box-shadow: 0 0 0 3px rgb(217 79 131 / 12%);
   outline: none;
+}
+
+input[readonly] {
+  background: #fff2f5;
+  color: #7b5263;
+  cursor: default;
 }
 
 .text-button {
@@ -1136,6 +1219,16 @@ progress::-moz-progress-bar {
 
 .upload-error {
   color: #a12b4a;
+}
+
+.upload-target-hint {
+  padding: 10px 12px;
+  border-radius: 13px;
+  background: #fff7fa;
+  color: #7b5263;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 @keyframes spin {

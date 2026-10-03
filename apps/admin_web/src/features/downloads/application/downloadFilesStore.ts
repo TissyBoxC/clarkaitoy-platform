@@ -11,6 +11,7 @@ import {
   type DownloadIndexStatus,
 } from '@/api/adminDownloadFiles'
 import { mapApiError, type ApiError } from '@/api/apiError'
+import { createHttpClient } from '@/api/httpClient'
 
 export type DownloadFileStatusFilter = 'all' | 'indexed' | 'pending'
 export type DownloadArtifactKindFilter = 'all' | DownloadArtifactKind
@@ -42,6 +43,7 @@ export const emptyDownloadIndexStatus: DownloadIndexStatus = {
 /// truth so refreshes and uploads stay consistent.
 export const useDownloadFilesStore = defineStore('admin-download-files', () => {
   const client: AdminDownloadFilesClient = createAdminDownloadFilesClient()
+  const httpClient = createHttpClient()
   const files = ref<DownloadFile[]>([])
   const indexStatus = ref<DownloadIndexStatus>({ ...emptyDownloadIndexStatus })
   const filters = ref<DownloadFileFilters>({
@@ -160,13 +162,19 @@ export const useDownloadFilesStore = defineStore('admin-download-files', () => {
     error.value = null
     lastMessage.value = ''
     try {
-      await client.uploadFile(input, (progress) => {
+      const uploadedFile = await client.uploadFile(input, (progress) => {
         uploadState.value = { ...uploadState.value, progress }
       })
       uploadState.value = { ...uploadState.value, progress: 100 }
+      const registration = await registerDraftRelease(uploadedFile)
       await refreshIndex()
       await reloadFiles()
-      lastMessage.value = `${input.filename} 已上传到下载服务器。`
+      lastMessage.value =
+        registration === 'registered'
+          ? `${input.filename} 已上传，并登记为待发布版本。`
+          : registration === 'already_registered'
+            ? `${input.filename} 已上传，版本记录已经存在。`
+            : `${input.filename} 已上传，请在内容发布中确认版本信息。`
       return true
     } catch (caught: unknown) {
       const mappedError = mapApiError(caught)
@@ -182,6 +190,63 @@ export const useDownloadFilesStore = defineStore('admin-download-files', () => {
     }
   }
 
+  /// A manual upload is useful only when it becomes publishable. Register the
+  /// draft with the same metadata the download server wrote, and let a later
+  /// "publish" action decide whether clients may receive it.
+  async function registerDraftRelease(
+    file: DownloadFile,
+  ): Promise<'registered' | 'already_registered' | 'skipped'> {
+    if (
+      !file.version ||
+      !file.sha256 ||
+      !file.downloadUrl ||
+      file.kind === 'unknown' ||
+      file.platform === 'unknown'
+    ) {
+      return 'skipped'
+    }
+    const existing = await findRegisteredRelease(file.version, file.kind, file.platform)
+    if (existing) {
+      return 'already_registered'
+    }
+    await httpClient.post('/api/v1/admin/releases', {
+      version: file.version,
+      channel: 'stable',
+      kind: file.kind,
+      platform: file.platform,
+      download_url: downloadUrlForFile(file),
+      sha256: file.sha256,
+      release_notes: '',
+      is_mandatory: false,
+      min_supported_version: '',
+    })
+    return 'registered'
+  }
+
+  async function findRegisteredRelease(
+    version: string,
+    kind: DownloadArtifactKind,
+    platform: DownloadArtifactPlatform,
+  ): Promise<boolean> {
+    const response = await httpClient.get('/api/v1/admin/releases')
+    const records = response.data?.data?.releases
+    if (!Array.isArray(records)) {
+      return false
+    }
+    return records.some((item: unknown) => {
+      const record = recordValue(item)
+      return (
+        stringValue(record.version) === version &&
+        stringValue(record.kind) === kind &&
+        stringValue(record.platform) === platform
+      )
+    })
+  }
+
+  function downloadUrlForFile(file: DownloadFile): string {
+    return file.downloadUrl
+  }
+
   async function remove(file: DownloadFile): Promise<boolean> {
     deletingPaths.value = [...deletingPaths.value, file.relativePath]
     error.value = null
@@ -189,6 +254,11 @@ export const useDownloadFilesStore = defineStore('admin-download-files', () => {
     try {
       await client.deleteFile(file.relativePath)
       files.value = files.value.filter((item) => item.relativePath !== file.relativePath)
+      indexStatus.value = await client.refreshIndex().catch(() => ({
+        ...emptyDownloadIndexStatus,
+        isAvailable: false,
+      }))
+      await reloadFiles()
       lastMessage.value = `${file.name} 已从下载服务器删除。`
       return true
     } catch (caught: unknown) {
@@ -296,4 +366,14 @@ export function artifactPlatformLabel(value: DownloadArtifactPlatform): string {
       unknown: '未标注',
     }[value] ?? '未标注'
   )
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
+}
+
+function stringValue(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback
 }

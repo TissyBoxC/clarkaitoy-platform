@@ -24,7 +24,16 @@ export interface DownloadFile {
   version: string
   kind: DownloadArtifactKind
   platform: DownloadArtifactPlatform
+  downloadUrl: string
   isIndexed: boolean
+}
+
+export interface DownloadArtifactPathInput {
+  version: string
+  channel?: string
+  kind: DownloadArtifactKind
+  platform: DownloadArtifactPlatform
+  filename: string
 }
 
 export interface DownloadFileQuery {
@@ -34,11 +43,12 @@ export interface DownloadFileQuery {
 
 export interface DownloadFileUpload {
   file: File
-  directory: string
   filename: string
   version: string
   kind: DownloadArtifactKind
   platform: DownloadArtifactPlatform
+  channel?: string
+  overwrite?: boolean
 }
 
 export interface DownloadIndexStatus {
@@ -82,15 +92,18 @@ export function createAdminDownloadFilesClient(
       input: DownloadFileUpload,
       onProgress?: UploadProgressHandler,
     ): Promise<DownloadFile> {
-      const relativePath = joinRelativePath(input.directory, input.filename)
+      const directory = canonicalArtifactDirectory(input)
+      const relativePath = joinRelativePath(directory, input.filename)
       const formData = new FormData()
       formData.append('file', input.file)
       formData.append('relative_path', relativePath)
-      formData.append('directory', normalizeRelativePath(input.directory))
+      formData.append('directory', directory)
       formData.append('filename', input.filename.trim())
       formData.append('version', input.version.trim())
+      formData.append('channel', (input.channel ?? 'stable').trim())
       formData.append('kind', input.kind)
       formData.append('platform', input.platform)
+      formData.append('overwrite', input.overwrite === true ? 'true' : 'false')
 
       const response = await httpClient.post('/api/v1/admin/storage/files/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -151,6 +164,40 @@ export function joinRelativePath(directory: string, filename: string): string {
   return `${normalizedDirectory}/${normalizedFilename}`
 }
 
+/// Mirrors the backend's canonical release layout so the upload form can show
+/// exactly where a file will be written before the request is sent.
+export function canonicalArtifactDirectory(input: DownloadArtifactPathInput): string {
+  const version = input.version.trim()
+  const channel = (input.channel ?? 'stable').trim() || 'stable'
+  return normalizeRelativePath(
+    [version, channel, input.platform, artifactDirectoryKind(input)].join('/'),
+  )
+}
+
+export function canonicalArtifactRelativePath(input: DownloadArtifactPathInput): string {
+  return joinRelativePath(canonicalArtifactDirectory(input), input.filename)
+}
+
+function artifactDirectoryKind(input: DownloadArtifactPathInput): string {
+  const filename = input.filename.trim().toLowerCase()
+  if (input.kind === 'client') {
+    if (input.platform === 'android' && filename.endsWith('.apk')) {
+      return 'apk'
+    }
+    if (input.platform === 'all' && filename.endsWith('.tar.gz')) {
+      return 'admin-web'
+    }
+  }
+  if (
+    input.kind === 'resource' &&
+    input.platform === 'all' &&
+    filename.startsWith('sprout-contracts-')
+  ) {
+    return 'contracts'
+  }
+  return input.kind
+}
+
 function encodeRelativePath(value: string): string {
   return normalizeRelativePath(value)
     .split('/')
@@ -195,6 +242,7 @@ function toDownloadFile(value: unknown): DownloadFile {
 
 function toNullableDownloadFile(value: unknown): DownloadFile | null {
   const record = recordValue(value)
+  const release = recordValue(record.release)
   const relativePath = stringValue(record.relative_path ?? record.relativePath).trim()
   const name = stringValue(record.name ?? record.filename).trim() || basename(relativePath)
   if (!name || !relativePath) {
@@ -211,9 +259,10 @@ function toNullableDownloadFile(value: unknown): DownloadFile | null {
       record.modified_at ?? record.modifiedAt ?? record.updated_at ?? record.updatedAt,
     ),
     sha256: stringValue(record.sha256),
-    version: stringValue(record.version),
-    kind: artifactKind(record.kind),
-    platform: artifactPlatform(record.platform),
+    version: stringValue(record.version ?? release.version),
+    kind: artifactKind(record.kind ?? release.kind),
+    platform: artifactPlatform(record.platform ?? release.platform),
+    downloadUrl: stringValue(record.download_url ?? record.downloadUrl),
     isIndexed: record.is_indexed === true || record.indexed === true,
   }
 }
@@ -238,7 +287,12 @@ function toIndexStatus(value: unknown): DownloadIndexStatus {
 
 function artifactKind(value: unknown): DownloadArtifactKind {
   switch (value) {
+    case 'apk':
+    case 'admin-web':
+      return 'client'
+    case 'contracts':
     case 'resource':
+      return 'resource'
     case 'client':
     case 'firmware':
       return value

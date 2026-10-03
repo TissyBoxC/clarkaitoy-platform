@@ -625,32 +625,43 @@ test('lists download files and manages uploads, deletion, and the release index'
 
   const indexedFile = {
     id: 'file-client',
-    name: 'sprout-parent-app-0.12.3.apk',
-    relative_path: 'releases/android/sprout-parent-app-0.12.3.apk',
-    directory: 'releases/android',
+    file_name: 'sprout-parent-app-0.12.3.apk',
+    relative_path: '0.12.3/stable/android/apk/sprout-parent-app-0.12.3.apk',
+    directory: '0.12.3/stable/android/apk',
     size_bytes: 48234496,
     modified_at: '2026-10-04T02:00:00Z',
     sha256: 'a'.repeat(64),
-    version: '0.12.3',
-    kind: 'client',
-    platform: 'android',
+    download_url:
+      'https://download.example.test/0.12.3/stable/android/apk/sprout-parent-app-0.12.3.apk',
+    release: {
+      version: '0.12.3',
+      channel: 'stable',
+      kind: 'apk',
+      platform: 'android',
+    },
     is_indexed: true,
   }
   const pendingFile = {
     id: 'file-firmware',
-    name: 'sprout-firmware-0.12.3.bin',
-    relative_path: 'releases/firmware/sprout-firmware-0.12.3.bin',
-    directory: 'releases/firmware',
+    file_name: 'sprout-firmware-0.12.3.bin',
+    relative_path: '0.12.3/stable/esp32_s3/firmware/sprout-firmware-0.12.3.bin',
+    directory: '0.12.3/stable/esp32_s3/firmware',
     size_bytes: 2097152,
     modified_at: '2026-10-04T02:10:00Z',
     sha256: 'b'.repeat(64),
-    version: '0.12.3',
-    kind: 'firmware',
-    platform: 'esp32_s3',
+    download_url:
+      'https://download.example.test/0.12.3/stable/esp32_s3/firmware/sprout-firmware-0.12.3.bin',
+    release: {
+      version: '0.12.3',
+      channel: 'stable',
+      kind: 'firmware',
+      platform: 'esp32_s3',
+    },
     is_indexed: false,
   }
   let releaseFiles = [indexedFile, pendingFile]
   const uploadPayloads: Record<string, string> = {}
+  const releasePayloads: string[] = []
   let refreshRequests = 0
   const deletedPaths: string[] = []
 
@@ -672,21 +683,27 @@ test('lists download files and manages uploads, deletion, and the release index'
       'name="version"',
       'name="kind"',
       'name="platform"',
+      'name="overwrite"',
     ]) {
       expect(body).toContain(field)
     }
     uploadPayloads.body = body
     const uploadedFile = {
       id: 'file-resource',
-      name: 'learning-pack-0.12.3.zip',
-      relative_path: 'releases/resource/learning-pack-0.12.3.zip',
-      directory: 'releases/resource',
+      file_name: 'learning-pack-0.12.3.zip',
+      relative_path: '0.12.3/stable/all/resource/learning-pack-0.12.3.zip',
+      directory: '0.12.3/stable/all/resource',
       size_bytes: 1024,
       modified_at: '2026-10-04T03:00:00Z',
       sha256: 'c'.repeat(64),
-      version: '0.12.3',
-      kind: 'resource',
-      platform: 'all',
+      download_url:
+        'https://download.example.test/0.12.3/stable/all/resource/learning-pack-0.12.3.zip',
+      release: {
+        version: '0.12.3',
+        channel: 'stable',
+        kind: 'resource',
+        platform: 'all',
+      },
       is_indexed: true,
     }
     releaseFiles = [...releaseFiles, uploadedFile]
@@ -694,6 +711,25 @@ test('lists download files and manages uploads, deletion, and the release index'
       contentType: 'application/json',
       body: JSON.stringify({ data: { file: uploadedFile } }),
     })
+  })
+  await page.route('**/api/v1/admin/releases', async (route) => {
+    const request = route.request()
+    if (request.method() === 'GET') {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { releases: [] } }),
+      })
+      return
+    }
+    if (request.method() === 'POST') {
+      releasePayloads.push(request.postData() ?? '')
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { release: {} } }),
+      })
+      return
+    }
+    await route.fallback()
   })
   await page.route('**/api/v1/admin/storage/index/status', async (route) => {
     await route.fulfill({
@@ -770,15 +806,24 @@ test('lists download files and manages uploads, deletion, and the release index'
     mimeType: 'application/zip',
     buffer: Buffer.from('learning-pack'),
   })
-  await uploadDialog.getByLabel('目标目录').fill('releases/resource')
   await uploadDialog.getByLabel('文件名').fill('learning-pack-0.12.3.zip')
   await uploadDialog.getByLabel('版本号').fill('0.12.3')
   await uploadDialog.getByLabel('文件类型').selectOption('resource')
   await uploadDialog.getByLabel('适用平台').selectOption('all')
+  await expect(uploadDialog.getByLabel('目标目录')).toHaveValue(
+    '0.12.3/stable/all/resource',
+  )
   await uploadDialog.getByRole('button', { name: '上传并刷新索引' }).click()
 
-  await expect(page.getByText('learning-pack-0.12.3.zip 已上传到下载服务器。')).toBeVisible()
-  expect(uploadPayloads.body).toContain('releases/resource/learning-pack-0.12.3.zip')
+  await expect(
+    page.getByText('learning-pack-0.12.3.zip 已上传，并登记为待发布版本。'),
+  ).toBeVisible()
+  expect(uploadPayloads.body).toContain(
+    '0.12.3/stable/all/resource/learning-pack-0.12.3.zip',
+  )
+  expect(releasePayloads).toHaveLength(1)
+  expect(releasePayloads[0]).toContain('"kind":"resource"')
+  expect(releasePayloads[0]).toContain('"platform":"all"')
   expect(refreshRequests).toBeGreaterThan(0)
   await expect(page.locator('table tbody tr')).toHaveCount(3)
 
@@ -787,5 +832,7 @@ test('lists download files and manages uploads, deletion, and the release index'
   await expect(deleteDialog).toBeVisible()
   await deleteDialog.getByRole('button', { name: '确认删除' }).click()
   await expect(page.getByText('已从下载服务器删除。')).toBeVisible()
-  expect(deletedPaths[0]).toBe('releases/android/sprout-parent-app-0.12.3.apk')
+  expect(deletedPaths[0]).toBe(
+    '0.12.3/stable/android/apk/sprout-parent-app-0.12.3.apk',
+  )
 })
