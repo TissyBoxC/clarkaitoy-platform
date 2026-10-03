@@ -142,10 +142,31 @@ jobs:
         env:
           RELEASE_VERSION: ${{ steps.detect.outputs.version }}
           API_BASE_URL: ${{ steps.endpoints.outputs.api_url }}
+          PARENT_APP_KEYSTORE_BASE64: ${{ secrets.SPROUT_PARENT_APP_KEYSTORE_BASE64 }}
+          PARENT_APP_KEYSTORE_PASSWORD: ${{ secrets.SPROUT_PARENT_APP_KEYSTORE_PASSWORD }}
+          PARENT_APP_KEY_ALIAS: ${{ secrets.SPROUT_PARENT_APP_KEY_ALIAS }}
+          PARENT_APP_KEY_PASSWORD: ${{ secrets.SPROUT_PARENT_APP_KEY_PASSWORD }}
           GRADLE_OPTS: -Xmx4g -XX:MaxMetaspaceSize=1g -Dorg.gradle.daemon=false -Dorg.gradle.configuration-cache=false
         working-directory: apps/parent_app
         run: |
           set -euo pipefail
+          # A release APK must keep one signing identity across versions.
+          # Without a stable keystore Android refuses every in-place upgrade,
+          # so a missing key is a release blocker rather than a warning.
+          if [[ -z "${PARENT_APP_KEYSTORE_BASE64:-}" ||
+                -z "${PARENT_APP_KEYSTORE_PASSWORD:-}" ||
+                -z "${PARENT_APP_KEY_ALIAS:-}" ||
+                -z "${PARENT_APP_KEY_PASSWORD:-}" ]]; then
+            echo "Parent app signing secrets are not configured." >&2
+            exit 1
+          fi
+          printf '%s' "$PARENT_APP_KEYSTORE_BASE64" | base64 --decode > android/app/release.jks
+          {
+            printf 'storePassword=%s\n' "$PARENT_APP_KEYSTORE_PASSWORD"
+            printf 'keyPassword=%s\n' "$PARENT_APP_KEY_PASSWORD"
+            printf 'keyAlias=%s\n' "$PARENT_APP_KEY_ALIAS"
+            printf 'storeFile=release.jks\n'
+          } > android/key.properties
           flutter pub get
           flutter build apk \
             --release \
@@ -154,6 +175,8 @@ jobs:
             --build-name "$RELEASE_VERSION" \
             --build-number "$GITHUB_RUN_NUMBER" \
             --target-platform android-arm,android-arm64
+          # The keystore and its passwords must never leave the runner.
+          rm -f android/app/release.jks android/key.properties
           cp build/app/outputs/flutter-apk/app-release.apk \
             "../../dist/stage/sprout-parent-app-${{ steps.detect.outputs.tag }}.apk"
           cp build/app/outputs/flutter-apk/app-release.apk \
