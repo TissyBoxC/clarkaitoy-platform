@@ -141,7 +141,7 @@ jobs:
         env:
           RELEASE_VERSION: ${{ steps.detect.outputs.version }}
           API_BASE_URL: ${{ steps.endpoints.outputs.api_url }}
-          GRADLE_OPTS: -Xmx4g -XX:MaxMetaspaceSize=1g -Dorg.gradle.daemon=false
+          GRADLE_OPTS: -Xmx4g -XX:MaxMetaspaceSize=1g -Dorg.gradle.daemon=false -Dorg.gradle.configuration-cache=false
         working-directory: apps/parent_app
         run: |
           set -euo pipefail

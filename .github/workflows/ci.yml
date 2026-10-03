@@ -121,5 +121,5 @@ jobs:
       - name: Build Android APK
         working-directory: apps/parent_app
         env:
-          GRADLE_OPTS: -Xmx4g -XX:MaxMetaspaceSize=1g -Dorg.gradle.daemon=false
+          GRADLE_OPTS: -Xmx4g -XX:MaxMetaspaceSize=1g -Dorg.gradle.daemon=false -Dorg.gradle.configuration-cache=false
         run: flutter build apk --release --target-platform android-arm,android-arm64
