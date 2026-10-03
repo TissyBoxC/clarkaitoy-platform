@@ -254,6 +254,59 @@ jobs:
             > "$RUNNER_TEMP/sprout-sftp/known_hosts"
           test -s "$RUNNER_TEMP/sprout-sftp/known_hosts"
 
+      - name: Log in to GitHub Container Registry
+        if: steps.detect.outputs.should_release == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        if: steps.detect.outputs.should_release == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      # Images are published before the download-server upload so an upload
+      # failure cannot block the containers that serve the new publication API.
+      - name: Build and publish platform images
+        if: steps.detect.outputs.should_release == 'true'
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.detect.outputs.version }}
+          REGISTRY_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          owner="$(echo "$REGISTRY_OWNER" | tr '[:upper:]' '[:lower:]')"
+
+          docker buildx build \
+            --push \
+            --tag "ghcr.io/$owner/sprout-device-platform:$RELEASE_VERSION" \
+            --tag "ghcr.io/$owner/sprout-device-platform:latest" \
+            --file services/device_platform/Dockerfile \
+            .
+
+          docker buildx build \
+            --push \
+            --tag "ghcr.io/$owner/sprout-voice-gateway:$RELEASE_VERSION" \
+            --tag "ghcr.io/$owner/sprout-voice-gateway:latest" \
+            --file services/voice_gateway/Dockerfile \
+            .
+
+          docker buildx build \
+            --push \
+            --tag "ghcr.io/$owner/sprout-admin-web:$RELEASE_VERSION" \
+            --tag "ghcr.io/$owner/sprout-admin-web:latest" \
+            --file apps/admin_web/Dockerfile \
+            --build-arg "VITE_API_BASE_URL=" \
+            .
+
+          docker buildx build \
+            --push \
+            --tag "ghcr.io/$owner/sprout-upgrade-worker:$RELEASE_VERSION" \
+            --tag "ghcr.io/$owner/sprout-upgrade-worker:latest" \
+            --file deploy/cloud/upgrade_worker/Dockerfile \
+            .
+
       - name: Publish release artifacts
         id: upload_release
         if: steps.detect.outputs.should_release == 'true'
@@ -355,57 +408,6 @@ jobs:
                   raise SystemExit(f"checksum mismatch: {artifact['url']}")
           print(f"verified {len(manifest['artifacts'])} download artifacts")
           PY
-
-      - name: Log in to GitHub Container Registry
-        if: steps.detect.outputs.should_release == 'true'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        if: steps.detect.outputs.should_release == 'true'
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and publish platform images
-        if: steps.detect.outputs.should_release == 'true'
-        shell: bash
-        env:
-          RELEASE_VERSION: ${{ steps.detect.outputs.version }}
-          REGISTRY_OWNER: ${{ github.repository_owner }}
-        run: |
-          set -euo pipefail
-          owner="$(echo "$REGISTRY_OWNER" | tr '[:upper:]' '[:lower:]')"
-
-          docker buildx build \
-            --push \
-            --tag "ghcr.io/$owner/sprout-device-platform:$RELEASE_VERSION" \
-            --tag "ghcr.io/$owner/sprout-device-platform:latest" \
-            --file services/device_platform/Dockerfile \
-            .
-
-          docker buildx build \
-            --push \
-            --tag "ghcr.io/$owner/sprout-voice-gateway:$RELEASE_VERSION" \
-            --tag "ghcr.io/$owner/sprout-voice-gateway:latest" \
-            --file services/voice_gateway/Dockerfile \
-            .
-
-          docker buildx build \
-            --push \
-            --tag "ghcr.io/$owner/sprout-admin-web:$RELEASE_VERSION" \
-            --tag "ghcr.io/$owner/sprout-admin-web:latest" \
-            --file apps/admin_web/Dockerfile \
-            --build-arg "VITE_API_BASE_URL=" \
-            .
-
-          docker buildx build \
-            --push \
-            --tag "ghcr.io/$owner/sprout-upgrade-worker:$RELEASE_VERSION" \
-            --tag "ghcr.io/$owner/sprout-upgrade-worker:latest" \
-            --file deploy/cloud/upgrade_worker/Dockerfile \
-            .
 
       - name: Publish GitHub release
         if: steps.detect.outputs.should_release == 'true'

@@ -32,9 +32,9 @@ def main() -> int:
     upload_index = workflow.index("Publish release artifacts")
     images_index = workflow.index("Build and publish platform images")
     release_index = workflow.index("Publish GitHub release")
-    if not upload_index < images_index < release_index:
+    if not images_index < upload_index < release_index:
         print(
-            "release workflow order must keep artifact upload before images and GitHub release",
+            "release workflow order must publish images before artifact upload and GitHub release",
             file=sys.stderr,
         )
         return 1
