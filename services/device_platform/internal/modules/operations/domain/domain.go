@@ -210,13 +210,29 @@ func CompareVersions(left string, right string) int {
 			return 1
 		}
 	}
-	if len(leftParts) == 1 && len(rightParts) > 1 {
+	// Both values are equal without a pre-release suffix; indexing the split
+	// result here would panic because SplitN returns one element.
+	leftPrerelease := versionPrerelease(leftParts)
+	rightPrerelease := versionPrerelease(rightParts)
+	switch {
+	case leftPrerelease == "" && rightPrerelease == "":
+		return 0
+	case leftPrerelease == "":
 		return 1
-	}
-	if len(leftParts) > 1 && len(rightParts) == 1 {
+	case rightPrerelease == "":
 		return -1
+	default:
+		return strings.Compare(leftPrerelease, rightPrerelease)
 	}
-	return strings.Compare(leftParts[1], rightParts[1])
+}
+
+// versionPrerelease returns the suffix after the first hyphen, or an empty
+// string when the version has no pre-release part.
+func versionPrerelease(parts []string) string {
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[1]
 }
 
 func versionPart(parts []string, index int) int {
