@@ -241,8 +241,11 @@ send_timeout 3600s;
 
 1Panel 已经在 `server` 上下文写入了 `client_max_body_size`，同一上下文重复
 声明会让 `nginx -t` 直接报 `directive is duplicate`。因此放宽上限必须放在
-`location` 块内，用就近覆盖取代重复声明。在 `/www/sites/api.clarkhub.cn/proxy/`
-下新增 `release-upload.conf`：
+`location` 块内，用就近覆盖取代重复声明。站点配置里写的是 `/www/...`，
+但 1Panel 的 `/www` 是指向 `/opt/1panel/www` 的软链接；如果 shell 中
+`/www` 不可写或提示目录不存在，直接使用实际路径。在
+`/opt/1panel/www/sites/api.clarkhub.cn/proxy/` 下新增
+`release-upload.conf`：
 
 ```nginx
 location ^~ /api/v1/release-publication/ {
