@@ -182,6 +182,19 @@ Sub2API 的 `TOTP_ENCRYPTION_KEY` 必须是 64 位十六进制字符串，不能
 清单和文件仍可下载。管理端只读取 `index.json` 和版本 `manifest.json`，
 SFTP 凭据不会下发到客户端。
 
+管理端“下载文件”页面直接读取同一个共享卷，因此能看到 CI 发布的文件和
+管理员手动上传的文件，并显示每个文件是否已经登记到发布索引。手动上传时
+目录由版本、平台和文件类型自动生成：Android APK 进入
+`<version>/stable/android/apk/`，管理端压缩包进入
+`<version>/stable/all/admin-web/`，其他资源包保留 `<kind>` 目录。上传成功后
+如果版本、校验值和公开下载地址齐全，系统会同时登记一条草稿版本；是否对
+客户端发布仍由“内容发布”页面手动确认。
+
+发布文件查找优先使用已经登记的版本记录；如果 CI 只上传了文件、尚未登记，
+则回退到真实下载清单，因此“自动查找更新文件”不会因为 CI 未写数据库而失败。
+首次升级到包含本功能的版本时，`download_init` 会递归修正共享卷的组权限，
+让 SFTP 与后端使用同一个可写组。
+
 启动后执行：
 
 ```bash
@@ -299,8 +312,8 @@ docker compose --env-file .env up -d --force-recreate mqtt device_platform
 | `SPROUT_DOWNLOAD_HTTP_BIND_ADDRESS` | 文件下载容器监听地址 | 保持 `127.0.0.1`，由 1Panel 反代 |
 | `SPROUT_DOWNLOAD_HTTP_PORT` | 文件下载容器端口 | `8085` |
 | `SPROUT_DOWNLOAD_SFTP_USER` | SFTP 上传用户 | 不要复用系统用户 |
-| `SPROUT_DOWNLOAD_SFTP_UID` | SFTP 用户 UID | 与卷所有权保持一致，示例 `1001` |
-| `SPROUT_DOWNLOAD_SFTP_GID` | SFTP 用户 GID | 与卷所有权保持一致，示例 `1001` |
+| `SPROUT_DOWNLOAD_SFTP_UID` | SFTP 上传用户的 UID | 与卷所有者保持一致，示例 `1001` |
+| `SPROUT_DOWNLOAD_SFTP_GID` | 下载目录的共享写组 | SFTP 与平台服务共同使用，示例 `1001` |
 | `SPROUT_DOWNLOAD_SFTP_AUTHORIZED_KEYS_DIR` | CI 公钥目录 | 只放发布公钥，不提交私钥 |
 | `SPROUT_DOWNLOAD_PUBLIC_BASE_URL` | 下载文件公开地址 | 必须使用 HTTPS，示例 `https://download.clarkhub.cn` |
 
