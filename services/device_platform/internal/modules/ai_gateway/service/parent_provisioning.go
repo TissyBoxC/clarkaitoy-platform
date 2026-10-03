@@ -28,7 +28,7 @@ func (s *Service) CreateParentWithAIAccount(
 	}
 	summary, err = s.EnsureForParent(ctx, account.ID, account.Email)
 	if err != nil {
-		return account, nil, nil
+		return account, nil, err
 	}
 	return account, summary, nil
 }

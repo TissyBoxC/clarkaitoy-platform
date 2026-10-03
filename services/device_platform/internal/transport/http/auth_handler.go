@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/TissyBoxC/sprout-platform/packages/go/httpapi"
+	gatewaydomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/ai_gateway/domain"
 	authdomain "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/domain"
 	authservice "github.com/TissyBoxC/sprout-platform/services/device_platform/internal/modules/auth/service"
 )
@@ -451,6 +452,9 @@ func writeAuthServiceError(
 		writeError(response, request, http.StatusUnauthorized, "session_expired", "登录已过期，请重新登录")
 	case errors.Is(err, authdomain.ErrAccountNotFound):
 		writeError(response, request, http.StatusNotFound, "account_not_found", "没有找到这个账号")
+	case errors.Is(err, gatewaydomain.ErrProviderUnavailable),
+		errors.Is(err, gatewaydomain.ErrProviderRejected):
+		writeError(response, request, http.StatusBadGateway, "ai_service_unavailable", "AI 服务暂时不可用，请稍后重试")
 	default:
 		writeError(response, request, http.StatusInternalServerError, "service_error", "操作没有完成，请稍后重试")
 	}

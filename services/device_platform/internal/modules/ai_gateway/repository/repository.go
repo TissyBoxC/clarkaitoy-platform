@@ -11,6 +11,62 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+const upsertProvisioningQuery = `
+	INSERT INTO ai_accounts (
+		id,
+		parent_account_id,
+		provider_account_id,
+		provider_account_email,
+		credential_ciphertext,
+		credential_nonce,
+		provider_api_key_id,
+		credential_key_version,
+		status,
+		balance_usd,
+		concurrency_limit,
+		available_models,
+		selected_models,
+		allowed_models,
+		created_at,
+		updated_at
+	)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+	ON CONFLICT (parent_account_id) DO UPDATE
+	SET provider_account_id = EXCLUDED.provider_account_id,
+	    provider_account_email = EXCLUDED.provider_account_email,
+	    credential_ciphertext = EXCLUDED.credential_ciphertext,
+	    credential_nonce = EXCLUDED.credential_nonce,
+	    provider_api_key_id = EXCLUDED.provider_api_key_id,
+	    credential_key_version = EXCLUDED.credential_key_version,
+	    status = EXCLUDED.status,
+	    balance_usd = EXCLUDED.balance_usd,
+	    concurrency_limit = EXCLUDED.concurrency_limit,
+	    available_models = EXCLUDED.available_models,
+	    selected_models = EXCLUDED.selected_models,
+	    allowed_models = EXCLUDED.allowed_models,
+	    updated_at = EXCLUDED.updated_at
+	WHERE ai_accounts.credential_ciphertext = ''::bytea
+	   OR ai_accounts.credential_nonce = ''::bytea
+	   OR ai_accounts.provider_api_key_id = 0
+	RETURNING
+		id,
+		parent_account_id,
+		provider_account_id,
+		provider_account_email,
+		credential_ciphertext,
+		credential_nonce,
+		provider_api_key_id,
+		credential_key_version,
+		status,
+		balance_usd,
+		concurrency_limit,
+		available_models,
+		selected_models,
+		allowed_models,
+		created_at,
+		updated_at
+`
+
 // Repository stores parent AI account state and encrypted credentials.
 type Repository interface {
 	GetByParentAccountID(
@@ -22,7 +78,10 @@ type Repository interface {
 		providerAccountID string,
 	) (*domain.Account, error)
 	List(ctx context.Context) ([]domain.Account, error)
-	Create(ctx context.Context, account *domain.Account) error
+	// UpsertProvisioning atomically creates or repairs one account projection.
+	// It returns the stored account so callers can detect a concurrent winner
+	// without issuing a second credential.
+	UpsertProvisioning(ctx context.Context, account *domain.Account) (*domain.Account, error)
 	UpdateFromProvider(ctx context.Context, account *domain.Account) error
 	UpdateStatus(
 		ctx context.Context,
@@ -142,29 +201,18 @@ func (r *PostgresRepository) List(ctx context.Context) ([]domain.Account, error)
 	return accounts, nil
 }
 
-// Create inserts the platform account projection.
-func (r *PostgresRepository) Create(ctx context.Context, account *domain.Account) error {
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO ai_accounts (
-			id,
-			parent_account_id,
-			provider_account_id,
-			provider_account_email,
-			credential_ciphertext,
-			credential_nonce,
-			provider_api_key_id,
-			credential_key_version,
-			status,
-			balance_usd,
-			concurrency_limit,
-			available_models,
-			selected_models,
-			allowed_models,
-			created_at,
-			updated_at
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-	`,
+// UpsertProvisioning stores the encrypted credential and provider projection
+// in one statement. The unique parent id makes retries safe: the latest
+// provider key replaces only an incomplete platform credential, while an
+// existing caller that already completed provisioning wins the conflict.
+func (r *PostgresRepository) UpsertProvisioning(
+	ctx context.Context,
+	account *domain.Account,
+) (*domain.Account, error) {
+	if !accountHasCredential(account) {
+		return nil, errors.New("AI account credential is incomplete")
+	}
+	row := r.pool.QueryRow(ctx, upsertProvisioningQuery,
 		account.ID,
 		account.ParentAccountID,
 		account.ProviderAccountID,
@@ -182,10 +230,32 @@ func (r *PostgresRepository) Create(ctx context.Context, account *domain.Account
 		account.CreatedAt,
 		account.UpdatedAt,
 	)
-	if err != nil {
-		return fmt.Errorf("insert AI account: %w", err)
+	stored, err := scanAccount(row)
+	if err == nil {
+		return stored, nil
 	}
-	return nil
+	if !errors.Is(err, domain.ErrAccountNotFound) {
+		return nil, fmt.Errorf("upsert AI account provisioning: %w", err)
+	}
+
+	// A concurrent writer already stored a complete credential. Read and
+	// return that winner so the caller can delete the provider key it no
+	// longer needs.
+	current, currentErr := r.GetByParentAccountID(ctx, account.ParentAccountID)
+	if currentErr != nil {
+		return nil, currentErr
+	}
+	if !accountHasCredential(current) {
+		return nil, errors.New("AI account credential is incomplete")
+	}
+	return current, nil
+}
+
+func accountHasCredential(account *domain.Account) bool {
+	return account != nil &&
+		len(account.APIKeyCiphertext) > 0 &&
+		len(account.APIKeyNonce) > 0 &&
+		account.ProviderAPIKeyID > 0
 }
 
 // UpdateFromProvider updates the non-secret provider projection without

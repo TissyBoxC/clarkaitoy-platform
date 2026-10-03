@@ -67,6 +67,41 @@ func (c *Client) GetAccount(
 	return response.toDomain(), nil
 }
 
+// GetRuntimeConfig returns the gateway's authoritative defaults and model
+// latency measurements. The platform never substitutes local defaults when
+// this call fails because doing so could create accounts with a different
+// opening balance.
+func (c *Client) GetRuntimeConfig(
+	ctx context.Context,
+) (*gatewaydomain.ProviderRuntimeConfig, error) {
+	var response providerRuntimeConfigData
+	if _, err := c.doJSON(
+		ctx,
+		http.MethodGet,
+		"/internal/sprout/v1/runtime-config",
+		nil,
+		&response,
+	); err != nil {
+		return nil, err
+	}
+	models := make([]gatewaydomain.ProviderModelLatency, 0, len(response.Models))
+	for _, model := range response.Models {
+		models = append(models, gatewaydomain.ProviderModelLatency{
+			Model:                     model.Model,
+			Status:                    model.Status,
+			PrimaryLatencyMs:          model.PrimaryLatencyMs,
+			AverageLatency7DaysMs:     model.AverageLatency7DaysMs,
+			RecommendedForNewAccounts: model.RecommendedForNewAccounts,
+		})
+	}
+	return &gatewaydomain.ProviderRuntimeConfig{
+		DefaultBalanceUSD:  response.DefaultBalanceUSD,
+		DefaultConcurrency: response.DefaultConcurrency,
+		RecommendedModel:   response.RecommendedModel,
+		Models:             models,
+	}, nil
+}
+
 // CreateAccount creates one provider execution account.
 func (c *Client) CreateAccount(
 	ctx context.Context,
@@ -78,9 +113,11 @@ func (c *Client) CreateAccount(
 		"provider_account_id":    request.ProviderAccountID,
 		"provider_account_email": strings.TrimSpace(request.ProviderAccountEmail),
 		"password":               password,
-		"balance_usd":            request.BalanceUSD,
 		"concurrency_limit":      request.ConcurrencyLimit,
 		"allowed_models":         request.AllowedModels,
+	}
+	if request.HasBalanceUSD {
+		payload["balance_usd"] = request.BalanceUSD
 	}
 	if _, err := c.doJSON(
 		ctx,
@@ -107,10 +144,12 @@ func (c *Client) UpdateAccount(
 	allowedModels := request.AllowedModels
 	payload := map[string]any{
 		"status":            status,
-		"balance_usd":       balance,
 		"concurrency_limit": concurrency,
 		"allowed_models":    allowedModels,
 		"reason":            strings.TrimSpace(reason),
+	}
+	if request.HasBalanceUSD {
+		payload["balance_usd"] = balance
 	}
 	var response providerAccountData
 	if _, err := c.doJSON(
@@ -302,6 +341,21 @@ type providerAccountData struct {
 	BalanceUSD        float64  `json:"balance_usd"`
 	ConcurrencyLimit  int      `json:"concurrency_limit"`
 	AllowedModels     []string `json:"allowed_models"`
+}
+
+type providerRuntimeConfigData struct {
+	DefaultBalanceUSD  float64                    `json:"default_balance_usd"`
+	DefaultConcurrency int                        `json:"default_concurrency"`
+	RecommendedModel   string                     `json:"recommended_model"`
+	Models             []providerModelLatencyData `json:"models"`
+}
+
+type providerModelLatencyData struct {
+	Model                     string `json:"model"`
+	Status                    string `json:"status"`
+	PrimaryLatencyMs          *int   `json:"primary_latency_ms"`
+	AverageLatency7DaysMs     *int   `json:"average_latency_7d_ms"`
+	RecommendedForNewAccounts bool   `json:"recommended_for_new_accounts"`
 }
 
 func (data providerAccountData) toDomain() *gatewaydomain.ProviderAccount {

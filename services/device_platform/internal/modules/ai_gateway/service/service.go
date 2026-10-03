@@ -27,6 +27,7 @@ const (
 
 // Provider calls the private sub2api account and API key API.
 type Provider interface {
+	GetRuntimeConfig(ctx context.Context) (*domain.ProviderRuntimeConfig, error)
 	GetAccount(
 		ctx context.Context,
 		providerAccountID string,
@@ -58,6 +59,14 @@ type Provider interface {
 		providerAccountID string,
 		apiKeyID int64,
 	) error
+}
+
+// RuntimeConfigForAdmin returns the authoritative gateway defaults and model
+// latency values used by the management console.
+func (s *Service) RuntimeConfigForAdmin(
+	ctx context.Context,
+) (*domain.ProviderRuntimeConfig, error) {
+	return s.provider.GetRuntimeConfig(ctx)
 }
 
 // CredentialCipher encrypts provider API keys before they reach PostgreSQL.
@@ -156,9 +165,10 @@ func (s *Service) effectiveDefaults(
 
 // EnsureForParent creates or repairs the account projection and API key.
 //
-// The operation is idempotent. If the provider created a key but the platform
-// failed before persisting it, a later retry rotates the existing provider key
-// rather than accumulating valid credentials.
+// The operation is idempotent. A retry that finds a provider account with a
+// missing platform credential rotates the recorded provider key instead of
+// accumulating usable credentials. When the provider account was created by a
+// concurrent request, the rejected create is reconciled by one account read.
 func (s *Service) EnsureForParent(
 	ctx context.Context,
 	parentAccountID string,
@@ -172,63 +182,56 @@ func (s *Service) EnsureForParent(
 	if err != nil && !errors.Is(err, domain.ErrAccountNotFound) {
 		return nil, err
 	}
-	if existing != nil && len(existing.APIKeyCiphertext) > 0 &&
-		len(existing.APIKeyNonce) > 0 {
+	if isProviderCredentialReady(existing) {
 		if len(existing.AvailableModels) == 0 {
+			_, _, defaultModels, defaultsErr := s.effectiveDefaults(ctx)
+			if defaultsErr != nil {
+				return nil, defaultsErr
+			}
 			existing.AvailableModels = append(
 				[]string(nil),
-				s.defaultModels...,
+				defaultModels...,
 			)
-			existing.AllowedModels = effectiveModels(
-				existing.SelectedModels,
-				existing.AvailableModels,
-			)
-			existing.UpdatedAt = s.timeSource.Now().UTC()
-			if err := s.repository.UpdateFromProvider(ctx, existing); err != nil {
-				return nil, err
-			}
+		}
+		existing.AllowedModels = effectiveModels(
+			existing.SelectedModels,
+			existing.AvailableModels,
+		)
+		existing.UpdatedAt = s.timeSource.Now().UTC()
+		if err := s.repository.UpdateFromProvider(ctx, existing); err != nil {
+			return nil, err
 		}
 		return s.summaryFromAccount(existing), nil
 	}
 
 	providerAccountID := providerAccountIDForParent(parentAccountID)
-	providerAccount, err := s.provider.GetAccount(ctx, providerAccountID)
-	if errors.Is(err, domain.ErrAccountNotFound) {
-		defaultBalance, defaultConcurrency, defaultModels, defaultsErr :=
-			s.effectiveDefaults(ctx)
-		if defaultsErr != nil {
-			return nil, defaultsErr
-		}
-		providerAccount, err = s.provider.CreateAccount(
-			ctx,
-			domain.ProviderAccount{
-				ProviderAccountID:    providerAccountID,
-				ProviderAccountEmail: controlledEmail(parentEmail, parentAccountID),
-				Status:               statusActive,
-				BalanceUSD:           defaultBalance,
-				ConcurrencyLimit:     defaultConcurrency,
-				AllowedModels:        append([]string(nil), defaultModels...),
-			},
-			randomProviderPassword(),
-		)
-	}
+	providerAccount, err := s.loadOrCreateProviderAccount(
+		ctx,
+		providerAccountID,
+		parentAccountID,
+		parentEmail,
+	)
 	if err != nil {
 		return nil, err
-	}
-	if providerAccount == nil {
-		return nil, domain.ErrProviderUnavailable
 	}
 
 	existingKeyID := int64(0)
 	if existing != nil {
 		existingKeyID = existing.ProviderAPIKeyID
 	}
-	providerKey, err := s.ensureKey(ctx, providerAccountID, existingKeyID)
+	providerKey, staleKeyID, err := s.ensureProviderKey(
+		ctx,
+		providerAccountID,
+		existingKeyID,
+	)
 	if err != nil {
 		return nil, err
 	}
 	encryptedKey, nonce, err := s.cipher.Encrypt([]byte(providerKey.Key))
 	if err != nil {
+		// A provider key was created or rotated but cannot be used without its
+		// encrypted copy, so remove the known key before returning.
+		_ = s.provider.DeleteAPIKey(ctx, providerAccountID, providerKey.ID)
 		return nil, fmt.Errorf("encrypt AI credential: %w", err)
 	}
 
@@ -250,6 +253,10 @@ func (s *Service) EnsureForParent(
 			Status:               providerAccount.Status,
 			BalanceUSD:           providerAccount.BalanceUSD,
 			ConcurrencyLimit:     providerAccount.ConcurrencyLimit,
+			APIKeyCiphertext:     encryptedKey,
+			APIKeyNonce:          nonce,
+			ProviderAPIKeyID:     providerKey.ID,
+			CredentialKeyVersion: 1,
 			// A new account starts with the platform-approved pool available and
 			// no explicit guardian selection, which means "all available".
 			AvailableModels: availableModels,
@@ -258,12 +265,20 @@ func (s *Service) EnsureForParent(
 			CreatedAt:       now,
 			UpdatedAt:       now,
 		}
-		if err := s.repository.Create(ctx, existing); err != nil {
+		stored, err := s.repository.UpsertProvisioning(ctx, existing)
+		if err != nil {
 			// Do not leave a usable provider credential if the platform could
 			// not persist its encrypted copy.
 			_ = s.provider.DeleteAPIKey(ctx, providerAccountID, providerKey.ID)
 			return nil, err
 		}
+		if stored.ProviderAPIKeyID != providerKey.ID {
+			// A concurrent request stored a complete credential first. The key
+			// created by this request is now redundant.
+			_ = s.provider.DeleteAPIKey(ctx, providerAccountID, providerKey.ID)
+		}
+		s.deleteStaleProviderKey(ctx, providerAccountID, staleKeyID, stored)
+		return s.summaryFromAccount(stored), nil
 	}
 	existing.APIKeyCiphertext = encryptedKey
 	existing.APIKeyNonce = nonce
@@ -284,10 +299,134 @@ func (s *Service) EnsureForParent(
 		existing.AvailableModels,
 	)
 	existing.UpdatedAt = now
-	if err := s.repository.UpdateFromProvider(ctx, existing); err != nil {
+	stored, err := s.repository.UpsertProvisioning(ctx, existing)
+	if err != nil {
+		// The platform projection did not have a usable credential, so the new
+		// provider key must not remain orphaned when persistence fails.
+		_ = s.provider.DeleteAPIKey(ctx, providerAccountID, providerKey.ID)
 		return nil, err
 	}
-	return s.summaryFromAccount(existing), nil
+	if stored.ProviderAPIKeyID != providerKey.ID {
+		_ = s.provider.DeleteAPIKey(ctx, providerAccountID, providerKey.ID)
+	}
+	s.deleteStaleProviderKey(ctx, providerAccountID, staleKeyID, stored)
+	return s.summaryFromAccount(stored), nil
+}
+
+// loadOrCreateProviderAccount returns the provider account, creating it when
+// absent. A rejected create is retried once by reading the account, because a
+// concurrent request can win the create between our read and write.
+func (s *Service) loadOrCreateProviderAccount(
+	ctx context.Context,
+	providerAccountID string,
+	parentAccountID string,
+	parentEmail string,
+) (*domain.ProviderAccount, error) {
+	providerAccount, err := s.provider.GetAccount(ctx, providerAccountID)
+	if err == nil {
+		if providerAccount == nil {
+			return nil, domain.ErrProviderUnavailable
+		}
+		return providerAccount, nil
+	}
+	if !errors.Is(err, domain.ErrAccountNotFound) {
+		return nil, err
+	}
+	defaultBalance, defaultConcurrency, defaultModels, defaultsErr :=
+		s.effectiveDefaults(ctx)
+	if defaultsErr != nil {
+		return nil, defaultsErr
+	}
+	providerAccount, err = s.provider.CreateAccount(
+		ctx,
+		domain.ProviderAccount{
+			ProviderAccountID:    providerAccountID,
+			ProviderAccountEmail: controlledEmail(parentEmail, parentAccountID),
+			Status:               statusActive,
+			BalanceUSD:           defaultBalance,
+			HasBalanceUSD:        true,
+			ConcurrencyLimit:     defaultConcurrency,
+			AllowedModels:        append([]string(nil), defaultModels...),
+		},
+		randomProviderPassword(),
+	)
+	if err != nil && errors.Is(err, domain.ErrProviderRejected) {
+		recovered, recoverErr := s.provider.GetAccount(ctx, providerAccountID)
+		if recoverErr == nil && recovered != nil {
+			return recovered, nil
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	if providerAccount == nil {
+		return nil, domain.ErrProviderUnavailable
+	}
+	return providerAccount, nil
+}
+
+// ensureProviderKey returns a usable provider credential.
+//
+// When the platform already records a key id it rotates that key in place.
+// If the provider reports the recorded key as rejected, a replacement is
+// created and the stale id is returned so it can be removed after the new
+// credential has been persisted. Never remove the stale key before a usable
+// replacement is durable.
+func (s *Service) ensureProviderKey(
+	ctx context.Context,
+	providerAccountID string,
+	existingKeyID int64,
+) (*domain.ProviderAPIKey, int64, error) {
+	request := domain.ProviderAPIKey{
+		Name:     "sprout-platform",
+		QuotaUSD: 0,
+	}
+	if existingKeyID <= 0 {
+		providerKey, err := s.provider.CreateAPIKey(
+			ctx,
+			providerAccountID,
+			request,
+		)
+		return providerKey, 0, err
+	}
+	providerKey, err := s.provider.RotateAPIKey(
+		ctx,
+		providerAccountID,
+		existingKeyID,
+		request,
+	)
+	if err == nil {
+		return providerKey, 0, nil
+	}
+	if !errors.Is(err, domain.ErrProviderRejected) {
+		// A transient provider failure must not create a second credential;
+		// the recorded key may still be valid.
+		return nil, 0, err
+	}
+	providerKey, createErr := s.provider.CreateAPIKey(
+		ctx,
+		providerAccountID,
+		request,
+	)
+	if createErr != nil {
+		return nil, 0, createErr
+	}
+	return providerKey, existingKeyID, nil
+}
+
+// deleteStaleProviderKey removes a superseded credential only after the
+// replacement projection is durable. Deletion is best effort because the
+// stale key is no longer referenced by the platform.
+func (s *Service) deleteStaleProviderKey(
+	ctx context.Context,
+	providerAccountID string,
+	staleKeyID int64,
+	stored *domain.Account,
+) {
+	if staleKeyID <= 0 || stored == nil || stored.ProviderAPIKeyID == staleKeyID {
+		return
+	}
+	_ = s.provider.DeleteAPIKey(ctx, providerAccountID, staleKeyID)
 }
 
 // GetForParent returns the parent-safe AI account summary.
@@ -335,6 +474,7 @@ func (s *Service) UpdateForAdmin(
 			ProviderAccountID: providerAccountID,
 			Status:            status,
 			BalanceUSD:        balanceUSD,
+			HasBalanceUSD:     true,
 			ConcurrencyLimit:  concurrencyLimit,
 			AllowedModels:     append([]string(nil), allowedModels...),
 		},
@@ -395,6 +535,7 @@ func (s *Service) UpdateModelsForParent(
 			ProviderAccountID: account.ProviderAccountID,
 			Status:            providerAccount.Status,
 			BalanceUSD:        providerAccount.BalanceUSD,
+			HasBalanceUSD:     true,
 			ConcurrencyLimit:  providerAccount.ConcurrencyLimit,
 			AllowedModels:     allowedModels,
 		},
@@ -440,26 +581,6 @@ func (s *Service) CredentialForDevice(
 		ProviderAccountID: account.ProviderAccountID,
 		APIKey:            string(plaintext),
 	}, nil
-}
-
-func (s *Service) ensureKey(
-	ctx context.Context,
-	providerAccountID string,
-	existingKeyID int64,
-) (*domain.ProviderAPIKey, error) {
-	request := domain.ProviderAPIKey{
-		Name:     "sprout-platform",
-		QuotaUSD: 0,
-	}
-	if existingKeyID <= 0 {
-		return s.provider.CreateAPIKey(ctx, providerAccountID, request)
-	}
-	return s.provider.RotateAPIKey(
-		ctx,
-		providerAccountID,
-		existingKeyID,
-		request,
-	)
 }
 
 func normalizeModelSelection(models []string) ([]string, error) {
@@ -537,8 +658,15 @@ func (s *Service) summaryFromAccount(
 		AvailableModels:  append([]string(nil), account.AvailableModels...),
 		SelectedModels:   append([]string(nil), account.SelectedModels...),
 		AllowedModels:    append([]string(nil), account.AllowedModels...),
-		ProviderReady:    len(account.APIKeyCiphertext) > 0 && len(account.APIKeyNonce) > 0,
+		ProviderReady:    isProviderCredentialReady(account),
 	}
+}
+
+func isProviderCredentialReady(account *domain.Account) bool {
+	return account != nil &&
+		len(account.APIKeyCiphertext) > 0 &&
+		len(account.APIKeyNonce) > 0 &&
+		account.ProviderAPIKeyID > 0
 }
 
 // AESGCMCipher encrypts credentials with a versioned, authenticated key.

@@ -35,8 +35,8 @@ type Account struct {
 	SelectedModels []string
 	// AllowedModels is the effective allowlist sent to the provider.
 	AllowedModels []string
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // ProviderAccount is the response from the AI provider account API.
@@ -46,8 +46,28 @@ type ProviderAccount struct {
 	UserID               int64
 	Status               string
 	BalanceUSD           float64
+	HasBalanceUSD        bool
 	ConcurrencyLimit     int
 	AllowedModels        []string
+}
+
+// ProviderRuntimeConfig is the authoritative default account policy and model
+// latency snapshot published by the AI gateway.
+type ProviderRuntimeConfig struct {
+	DefaultBalanceUSD  float64
+	DefaultConcurrency int
+	RecommendedModel   string
+	Models             []ProviderModelLatency
+}
+
+// ProviderModelLatency describes one model's availability and measured
+// latency. Nil latency means no successful measurement is available yet.
+type ProviderModelLatency struct {
+	Model                     string
+	Status                    string
+	PrimaryLatencyMs          *int
+	AverageLatency7DaysMs     *int
+	RecommendedForNewAccounts bool
 }
 
 // ProviderAPIKey is a one-time plaintext credential returned by the provider.
