@@ -106,6 +106,9 @@ jobs:
         with:
           flutter-version: '3.41.9'
           cache: true
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - name: Install parent app dependencies
         working-directory: apps/parent_app
         run: flutter pub get
@@ -117,4 +120,6 @@ jobs:
         run: flutter test
       - name: Build Android APK
         working-directory: apps/parent_app
-        run: flutter build apk --release
+        env:
+          GRADLE_OPTS: -Xmx4g -XX:MaxMetaspaceSize=1g -Dorg.gradle.daemon=false
+        run: flutter build apk --release --target-platform android-arm,android-arm64
