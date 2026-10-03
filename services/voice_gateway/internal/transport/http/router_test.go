@@ -2,6 +2,7 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log/slog"
 	stdhttp "net/http"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/TissyBoxC/sprout-platform/packages/go/httpapi"
 	"github.com/TissyBoxC/sprout-platform/services/voice_gateway/internal/config"
+	"github.com/TissyBoxC/sprout-platform/services/voice_gateway/internal/usage"
 )
 
 func TestHealthEndpoint(t *testing.T) {
@@ -94,6 +96,75 @@ func TestInternalAPIContractDocumentsRuntimeEndpoint(t *testing.T) {
 	if !bytes.Contains(contract, []byte("/internal/v1/runtime")) {
 		t.Fatal("expected runtime endpoint in internal API contract")
 	}
+}
+
+func TestInternalUsageEndpointRequiresServiceToken(t *testing.T) {
+	options := newTestRouterOptions()
+	options.InternalAPIConfig = config.InternalAPIConfig{
+		Enabled:   true,
+		AuthToken: strings.Repeat("t", 32),
+	}
+	options.UsageRecorder = &recordingUsageRepository{}
+
+	request := httptest.NewRequest(
+		stdhttp.MethodPost,
+		"/internal/v1/usage/conversations",
+		strings.NewReader(`{"device_id":"device-001"}`),
+	)
+	recorder := httptest.NewRecorder()
+	NewRouter(options).ServeHTTP(recorder, request)
+
+	if recorder.Code != stdhttp.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", stdhttp.StatusUnauthorized, recorder.Code)
+	}
+}
+
+func TestInternalUsageEndpointRecordsConversation(t *testing.T) {
+	options := newTestRouterOptions()
+	options.InternalAPIConfig = config.InternalAPIConfig{
+		Enabled:   true,
+		AuthToken: strings.Repeat("t", 32),
+	}
+	usageRepository := &recordingUsageRepository{}
+	options.UsageRecorder = usageRepository
+
+	request := httptest.NewRequest(
+		stdhttp.MethodPost,
+		"/internal/v1/usage/conversations",
+		strings.NewReader(`{
+			"device_id": "device-001",
+			"model": "model-a",
+			"input_size": 12,
+			"output_size": 34,
+			"spent_usd": 0.0012
+		}`),
+	)
+	request.Header.Set("Authorization", "Bearer "+strings.Repeat("t", 32))
+	recorder := httptest.NewRecorder()
+	NewRouter(options).ServeHTTP(recorder, request)
+
+	if recorder.Code != stdhttp.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", stdhttp.StatusOK, recorder.Code, recorder.Body.String())
+	}
+	if usageRepository.record.DeviceID != "device-001" ||
+		usageRepository.record.Model != "model-a" ||
+		usageRepository.record.InputSize != 12 ||
+		usageRepository.record.OutputSize != 34 ||
+		usageRepository.record.SpentUSD != 0.0012 {
+		t.Fatalf("unexpected usage record: %+v", usageRepository.record)
+	}
+}
+
+type recordingUsageRepository struct {
+	record usage.Record
+}
+
+func (r *recordingUsageRepository) Record(
+	_ context.Context,
+	record usage.Record,
+) error {
+	r.record = record
+	return nil
 }
 
 type testEnvelope struct {

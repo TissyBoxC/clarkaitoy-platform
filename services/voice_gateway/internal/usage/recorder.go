@@ -1,7 +1,10 @@
 // Package usage records AI and voice usage.
 package usage
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // Record describes one billable or observable usage event.
 type Record struct {
@@ -10,9 +13,10 @@ type Record struct {
 	Latency    time.Duration
 	InputSize  int
 	OutputSize int
+	SpentUSD   float64
 }
 
 // Recorder stores usage events.
 type Recorder interface {
-	Record(record Record) error
+	Record(ctx context.Context, record Record) error
 }

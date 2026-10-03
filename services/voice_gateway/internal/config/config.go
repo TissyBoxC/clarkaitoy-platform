@@ -15,8 +15,14 @@ type Config struct {
 	Internal InternalAPIConfig
 	Log      LogConfig
 	Redis    RedisConfig
+	Database DatabaseConfig
 	Sub2API  Sub2APIConfig
 	Security SecurityConfig
+}
+
+// DatabaseConfig contains the read/write connection used for usage records.
+type DatabaseConfig struct {
+	DSN string
 }
 
 // HTTPConfig contains HTTP server settings.
@@ -89,6 +95,9 @@ func Load() (Config, error) {
 		Redis: RedisConfig{
 			Address:  env("VOICE_GATEWAY_REDIS_ADDRESS", "127.0.0.1:6379"),
 			Password: env("VOICE_GATEWAY_REDIS_PASSWORD", ""),
+		},
+		Database: DatabaseConfig{
+			DSN: env("VOICE_GATEWAY_DATABASE_DSN", ""),
 		},
 		Sub2API: Sub2APIConfig{
 			BaseURL: env("VOICE_GATEWAY_SUB2API_BASE_URL", "http://127.0.0.1:8080"),

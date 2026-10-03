@@ -16,6 +16,8 @@ import (
 	"github.com/TissyBoxC/sprout-platform/services/voice_gateway/internal/config"
 	"github.com/TissyBoxC/sprout-platform/services/voice_gateway/internal/platform/cache"
 	gatewayhttp "github.com/TissyBoxC/sprout-platform/services/voice_gateway/internal/transport/http"
+	"github.com/TissyBoxC/sprout-platform/services/voice_gateway/internal/usage"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Run starts the voice gateway and waits for a shutdown signal.
@@ -42,11 +44,22 @@ func Run() error {
 	}
 	defer redisCache.Close()
 
+	var usageRecorder usage.Recorder
+	if cfg.Database.DSN != "" {
+		databaseStore, err := pgxpool.New(startupCtx, cfg.Database.DSN)
+		if err != nil {
+			return fmt.Errorf("open usage database: %w", err)
+		}
+		defer databaseStore.Close()
+		usageRecorder = usage.NewPostgresRecorder(databaseStore)
+	}
+
 	server := &http.Server{
 		Addr: cfg.HTTP.Address(),
 		Handler: gatewayhttp.NewRouter(gatewayhttp.RouterOptions{
 			Logger:            logger,
 			InternalAPIConfig: cfg.Internal,
+			UsageRecorder:     usageRecorder,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
