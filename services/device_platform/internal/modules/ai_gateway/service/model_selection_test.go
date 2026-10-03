@@ -96,27 +96,34 @@ func TestModelIDsFromRuntimeConfigTrimsDeduplicatesAndPreservesOrder(t *testing.
 	}
 }
 
-func TestRecommendedModelForPoolUsesFallbackWhenRecommendationIsMissing(
-	t *testing.T,
-) {
-	got := recommendedModelForPool(
-		"retired-model",
-		[]string{"model-a", "model-b"},
-	)
-
-	if got != "model-a" {
-		t.Fatalf("expected the first available model, got %q", got)
-	}
-}
-
 func TestDefaultSelectedModelsPreservesValidSelection(t *testing.T) {
 	got := defaultSelectedModels(
 		[]string{"model-b"},
 		[]string{"model-a", "model-b"},
-		"model-a",
 	)
 
 	if !reflect.DeepEqual(got, []string{"model-b"}) {
 		t.Fatalf("expected the explicit selection, got %v", got)
+	}
+}
+
+func TestDefaultSelectedModelsSelectsWholePoolForNewAccount(t *testing.T) {
+	pool := []string{"model-a", "model-b"}
+
+	got := defaultSelectedModels(nil, pool)
+
+	if !reflect.DeepEqual(got, pool) {
+		t.Fatalf("expected the whole pool, got %v", got)
+	}
+}
+
+func TestDefaultSelectedModelsDoesNotAliasAvailablePool(t *testing.T) {
+	pool := []string{"model-a", "model-b"}
+
+	got := defaultSelectedModels(nil, pool)
+	got[0] = "mutated"
+
+	if pool[0] != "model-a" {
+		t.Fatal("defaultSelectedModels must not alias the available pool")
 	}
 }

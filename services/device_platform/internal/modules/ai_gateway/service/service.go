@@ -88,10 +88,8 @@ type Service struct {
 }
 
 // providerModelCatalog is the live model policy returned by the gateway.
-// Keeping the pool and recommendation together prevents selection drift.
 type providerModelCatalog struct {
-	availableModels  []string
-	recommendedModel string
+	availableModels []string
 }
 
 // RuntimePolicyReader supplies the operator defaults used when a new AI
@@ -183,10 +181,6 @@ func (s *Service) resolveModelCatalog(
 		if len(availableModels) > 0 {
 			return providerModelCatalog{
 				availableModels: availableModels,
-				recommendedModel: recommendedModelForPool(
-					runtimeConfig.RecommendedModel,
-					availableModels,
-				),
 			}, nil
 		}
 	}
@@ -198,10 +192,6 @@ func (s *Service) resolveModelCatalog(
 	availableModels := normalizeModelIDs(defaultModels)
 	return providerModelCatalog{
 		availableModels: availableModels,
-		recommendedModel: recommendedModelForPool(
-			"",
-			availableModels,
-		),
 	}, nil
 }
 
@@ -228,7 +218,6 @@ func (s *Service) repairModelCatalog(
 	account.SelectedModels = defaultSelectedModels(
 		account.SelectedModels,
 		account.AvailableModels,
-		catalog.recommendedModel,
 	)
 	allowedModels := effectiveModels(
 		account.SelectedModels,
@@ -356,7 +345,6 @@ func (s *Service) EnsureForParent(
 		selectedModels := defaultSelectedModels(
 			nil,
 			availableModels,
-			catalog.recommendedModel,
 		)
 		allowedModels := effectiveModels(selectedModels, availableModels)
 		existing = &domain.Account{
@@ -444,7 +432,6 @@ func (s *Service) loadOrCreateProviderAccount(
 	selectedModels := defaultSelectedModels(
 		nil,
 		catalog.availableModels,
-		catalog.recommendedModel,
 	)
 	allowedModels := effectiveModels(selectedModels, catalog.availableModels)
 
@@ -610,12 +597,10 @@ func (s *Service) UpdateForAdmin(
 			)
 			if len(account.SelectedModels) == 0 &&
 				len(availableModels) > 0 {
-				account.SelectedModels = []string{
-					recommendedModelForPool(
-						catalog.recommendedModel,
-						availableModels,
-					),
-				}
+				account.SelectedModels = defaultSelectedModels(
+					nil,
+					availableModels,
+				)
 			}
 		}
 	}
@@ -798,42 +783,22 @@ func normalizeModelIDs(models []string) []string {
 	return normalized
 }
 
-func recommendedModelForPool(
-	recommendedModel string,
-	availableModels []string,
-) string {
-	recommendedModel = strings.TrimSpace(recommendedModel)
-	for _, model := range availableModels {
-		if strings.EqualFold(model, recommendedModel) {
-			return model
-		}
-	}
-	if len(availableModels) == 0 {
-		return ""
-	}
-	return availableModels[0]
-}
-
 // defaultSelectedModels preserves a valid explicit selection and otherwise
-// chooses the recommended model. Returning no selection is safe only when the
-// pool itself is empty because callers interpret nil as "all available".
+// selects the entire available pool. Guardians start with every approved
+// model rather than a single recommendation, and may narrow the selection
+// later in either client.
 func defaultSelectedModels(
 	selectedModels []string,
 	availableModels []string,
-	recommendedModel string,
 ) []string {
 	selectedModels = intersectModels(selectedModels, availableModels)
 	if len(selectedModels) > 0 {
 		return selectedModels
 	}
-	recommendedModel = recommendedModelForPool(
-		recommendedModel,
-		availableModels,
-	)
-	if recommendedModel == "" {
+	if len(availableModels) == 0 {
 		return nil
 	}
-	return []string{recommendedModel}
+	return append([]string(nil), availableModels...)
 }
 
 func isModelSubset(selectedModels []string, availableModels []string) bool {

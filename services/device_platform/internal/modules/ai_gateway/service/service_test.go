@@ -75,16 +75,16 @@ func TestEnsureForParentPersistsCredentialOnFirstCreate(t *testing.T) {
 	}
 	if !reflect.DeepEqual(
 		repository.created.SelectedModels,
-		[]string{"model-b"},
+		[]string{"model-a", "model-b"},
 	) {
 		t.Fatalf(
-			"expected the recommended model to be preselected, got %v",
+			"expected the whole model pool to be preselected, got %v",
 			repository.created.SelectedModels,
 		)
 	}
 	if !reflect.DeepEqual(
 		provider.createdAccount.AllowedModels,
-		[]string{"model-b"},
+		[]string{"model-a", "model-b"},
 	) {
 		t.Fatalf(
 			"expected the effective allowlist on create, got %v",
@@ -139,8 +139,11 @@ func TestEnsureForParentBackfillsLegacyModelPool(t *testing.T) {
 	) {
 		t.Fatalf("expected the runtime pool, got %v", summary.AvailableModels)
 	}
-	if !reflect.DeepEqual(summary.SelectedModels, []string{"model-b"}) {
-		t.Fatalf("expected the recommended selection, got %v", summary.SelectedModels)
+	if !reflect.DeepEqual(
+		summary.SelectedModels,
+		[]string{"model-a", "model-b"},
+	) {
+		t.Fatalf("expected the whole model pool, got %v", summary.SelectedModels)
 	}
 }
 
@@ -308,8 +311,11 @@ func TestUpdateForAdminBackfillsLegacyModelPoolFromRuntimeConfig(t *testing.T) {
 	if !reflect.DeepEqual(account.AvailableModels, []string{"model-a", "model-b"}) {
 		t.Fatalf("expected the runtime pool, got %v", account.AvailableModels)
 	}
-	if !reflect.DeepEqual(account.SelectedModels, []string{"model-b"}) {
-		t.Fatalf("expected the recommended selection, got %v", account.SelectedModels)
+	if !reflect.DeepEqual(
+		account.SelectedModels,
+		[]string{"model-a", "model-b"},
+	) {
+		t.Fatalf("expected the whole model pool, got %v", account.SelectedModels)
 	}
 }
 
