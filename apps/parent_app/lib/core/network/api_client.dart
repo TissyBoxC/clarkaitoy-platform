@@ -114,6 +114,12 @@ class DioApiClient implements ApiClient {
         path,
         queryParameters: queryParameters,
       );
+      // Some endpoints answer 204 with no body to mean "nothing to return",
+      // which has no JSON envelope to decode. Surfacing that as a failure
+      // would turn a normal result into an error.
+      if (response.statusCode == 204) {
+        return const <String, Object?>{};
+      }
       return _requireResponseMap(response.data);
     } on Object catch (error) {
       throw mapApiError(error);

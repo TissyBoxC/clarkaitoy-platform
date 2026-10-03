@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/theme/app_theme.dart';
+import '../features/ota/presentation/mandatory_update_gate.dart';
 import 'router/app_router.dart';
 
 /// Root widget that composes application-wide services and navigation.
@@ -30,6 +31,10 @@ class _ParentAppState extends ConsumerState<ParentApp> {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       routerConfig: router,
+      // The gate wraps the routed content so a required client update blocks
+      // every route, including sign-in, without replacing the router.
+      builder: (context, child) =>
+          MandatoryUpdateGate(child: child ?? const SizedBox.shrink()),
     );
   }
 }

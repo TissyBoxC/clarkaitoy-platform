@@ -70,6 +70,29 @@ void main() {
     expect(refreshCount, 1);
   });
 
+  test('a 204 response with no body yields an empty result', () async {
+    final secureStore = InMemorySecureStore();
+    final dio = Dio(BaseOptions(baseUrl: 'https://api.example.test'));
+    dio.httpClientAdapter = _NoContentAdapter();
+
+    final client = DioApiClient(
+      config: ApiClientConfig(
+        appConfig: AppConfig(
+          apiBaseUrl: Uri.parse('https://api.example.test'),
+          requestTimeout: const Duration(seconds: 1),
+        ),
+      ),
+      secureStore: secureStore,
+      refreshSession: (refreshToken) async =>
+          const AuthSession(accessToken: 'unused', refreshToken: 'unused'),
+      dio: dio,
+    );
+
+    final response = await client.get('/api/v1/app/update');
+
+    expect(response, isEmpty);
+  });
+
   test('keeps the refresh token when refresh fails transiently', () async {
     final secureStore = InMemorySecureStore();
     await secureStore.write(DioApiClient.accessTokenKey, 'expired');
@@ -295,6 +318,20 @@ class _InvalidCredentialsAdapter implements HttpClientAdapter {
         Headers.contentTypeHeader: <String>[Headers.jsonContentType],
       },
     );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+class _NoContentAdapter implements HttpClientAdapter {
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    return ResponseBody.fromString('', 204);
   }
 
   @override
