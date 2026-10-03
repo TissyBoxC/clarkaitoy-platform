@@ -26,13 +26,14 @@ async function logout(): Promise<void> {
         />
         <span>
           <strong>如此萌屋</strong>
-          <small>芽系列 · 初芽</small>
+          <small>品牌管理端</small>
         </span>
       </RouterLink>
       <nav class="admin-nav" aria-label="主要导航">
+        <p class="nav-section">品牌管理</p>
         <RouterLink to="/">
           <span class="nav-dot" aria-hidden="true"></span>
-          运营概览
+          品牌总览
         </RouterLink>
         <RouterLink to="/families">
           <span class="nav-dot" aria-hidden="true"></span>
@@ -44,11 +45,16 @@ async function logout(): Promise<void> {
         </RouterLink>
         <RouterLink to="/releases">
           <span class="nav-dot" aria-hidden="true"></span>
-          更新发布
+          内容发布
         </RouterLink>
         <RouterLink to="/ui-text">
           <span class="nav-dot" aria-hidden="true"></span>
           界面文案
+        </RouterLink>
+        <p class="nav-section nav-section-services">服务管理</p>
+        <RouterLink to="/services">
+          <span class="nav-dot" aria-hidden="true"></span>
+          服务版本
         </RouterLink>
         <RouterLink to="/settings">
           <span class="nav-dot" aria-hidden="true"></span>
@@ -128,6 +134,18 @@ async function logout(): Promise<void> {
 .admin-nav {
   display: grid;
   gap: 8px;
+}
+
+.nav-section {
+  margin: 3px 14px 1px;
+  color: #6b4f5a;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.nav-section-services {
+  margin-top: 14px;
 }
 
 .admin-nav a {

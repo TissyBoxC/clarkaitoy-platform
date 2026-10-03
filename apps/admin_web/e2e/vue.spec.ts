@@ -184,3 +184,141 @@ test('fills the current version and the release artifact automatically', async (
   )
   await expect(page.getByLabel('文件校验值')).toHaveValue('a'.repeat(64))
 })
+
+test('checks and upgrades brand services from the service version page', async ({
+  page,
+}) => {
+  await useAdminSession(page)
+
+  const operation = {
+    id: 'operation-admin-web',
+    target_service: 'admin_web',
+    current_version: '0.9.0',
+    target_version: '0.9.1',
+    status: 'queued',
+    message: '升级任务已排队。',
+    started_at: '2026-10-03T10:00:00Z',
+    finished_at: '',
+    log_tail: '已创建升级任务。',
+  }
+  let serviceSnapshotRequests = 0
+
+  await page.route('**/api/v1/admin/service-versions', async (route) => {
+    serviceSnapshotRequests += 1
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          services: [
+            {
+              id: 'admin_web',
+              display_name: '品牌管理端',
+              role: '管理员查看品牌数据并管理服务',
+              image: 'ghcr.io/tissyboxc/sprout-admin-web:0.9.0',
+              current_version: '0.9.0',
+              latest_version: '0.9.1',
+              status: 'outdated',
+              release_url: 'https://github.com/TissyBoxC/sprout-platform/releases/tag/v0.9.1',
+              is_self: true,
+              can_upgrade: true,
+              last_checked_at: '2026-10-03T10:00:00Z',
+              updated_at: '2026-10-03T10:00:00Z',
+            },
+          ],
+          checked_at: '2026-10-03T10:00:00Z',
+          all_up_to_date: false,
+        },
+      }),
+    })
+  })
+  await page.route(
+    '**/api/v1/admin/service-versions/check',
+    async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            services: [
+              {
+                id: 'admin_web',
+                display_name: '品牌管理端',
+                role: '管理员查看品牌数据并管理服务',
+                image: 'ghcr.io/tissyboxc/sprout-admin-web:0.9.0',
+                current_version: '0.9.0',
+                latest_version: '0.9.1',
+                status: 'outdated',
+                release_url: 'https://github.com/TissyBoxC/sprout-platform/releases/tag/v0.9.1',
+                is_self: true,
+                can_upgrade: true,
+                last_checked_at: '2026-10-03T10:01:00Z',
+                updated_at: '2026-10-03T10:01:00Z',
+              },
+            ],
+            checked_at: '2026-10-03T10:01:00Z',
+            all_up_to_date: false,
+          },
+        }),
+      })
+    },
+  )
+  await page.route(
+    '**/api/v1/admin/service-versions/upgrade',
+    async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { operation } }),
+      })
+    },
+  )
+  await page.route(
+    '**/api/v1/admin/service-versions/admin_web/upgrade',
+    async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { operation } }),
+      })
+    },
+  )
+  await page.route(
+    '**/api/v1/admin/service-version-operations',
+    async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { operations: [operation] } }),
+      })
+    },
+  )
+  await page.route(
+    '**/api/v1/admin/service-version-operations/*',
+    async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { operation } }),
+      })
+    },
+  )
+
+  await page.goto('/services')
+
+  await expect(
+    page.getByRole('heading', { name: '服务版本' }),
+  ).toBeVisible()
+  await expect(page.getByText('管理端自身')).toBeVisible()
+  await expect(
+    page.getByText('升级期间管理端会短暂重载，完成后自动恢复'),
+  ).toBeVisible()
+  await expect(page.getByText('0.9.0', { exact: true }).first()).toBeVisible()
+
+  await page.getByRole('button', { name: '检查更新' }).click()
+  await expect(page.getByText('检查完成，有 1 个服务可以升级。')).toBeVisible()
+  expect(serviceSnapshotRequests).toBeGreaterThan(0)
+
+  await page.getByRole('button', { name: '仅升级此服务' }).click()
+  await expect(
+    page.getByRole('heading', { name: '升级品牌管理端？' }),
+  ).toBeVisible()
+  await page.getByRole('button', { name: '立即升级' }).click()
+
+  await expect(page.getByText('品牌管理端 的升级已开始。')).toBeVisible()
+  await expect(page.getByRole('button', { name: '查看进度' })).toBeVisible()
+})
